@@ -67,25 +67,40 @@ class SlidingWindowGate:
         return self._hard_cap - await self.usage(now)
 
     async def reserve(self, n: int) -> int:
-        """Reserva capacidad para hasta `n` accesos ANTES del fetch. Devuelve
-        el id de reserva (para reconciliar)."""
+        """Reserva capacidad para hasta `n` accesos ANTES del fetch. Bloquea
+        (espera a que eventos viejos salgan de la ventana) si hace falta.
+        Devuelve el id de reserva (para reconciliar)."""
         if n <= 0:
             raise ValueError("n debe ser > 0")
         if n > self._hard_cap:
             raise ComplianceError(f"pedido de {n} excede el hard_cap {self._hard_cap}")
-        async with self._lock:
-            async with aiosqlite.connect(self._db_path) as db:
-                now = int(self._clock())
-                used = await self._usage(db, now)
-                if used + n <= self._hard_cap:
-                    cur = await db.execute(
-                        "INSERT INTO access_ledger(ts, count) VALUES(?, ?)",
-                        (now, n),
-                    )
-                    await db.commit()
-                    return int(cur.lastrowid)  # type: ignore[arg-type]
-        # TEMPORAL: Task 4 reemplaza esto por la espera de ventana deslizante.
-        raise ComplianceError("sin presupuesto")
+        while True:
+            async with self._lock:
+                async with aiosqlite.connect(self._db_path) as db:
+                    now = int(self._clock())
+                    used = await self._usage(db, now)
+                    if used + n <= self._hard_cap:
+                        cur = await db.execute(
+                            "INSERT INTO access_ledger(ts, count) VALUES(?, ?)",
+                            (now, n),
+                        )
+                        await db.commit()
+                        return int(cur.lastrowid)  # type: ignore[arg-type]
+                    wait_s = await self._wait_seconds(db, now)
+            # sleep FUERA del lock: no bloquea a otras corrutinas ni al reconcile.
+            await self._sleep(wait_s)
+
+    async def _wait_seconds(self, db: aiosqlite.Connection, now: int) -> float:
+        """Segundos hasta que el evento más viejo de la ventana caiga afuera."""
+        cur = await db.execute(
+            "SELECT MIN(ts) FROM access_ledger WHERE ts > ?",
+            (now - self._window_s,),
+        )
+        row = await cur.fetchone()
+        oldest = row[0] if row and row[0] is not None else None
+        if oldest is None:
+            return 1.0
+        return float(max(1, (oldest + self._window_s) - now))
 
     async def reconcile(self, reservation_id: int, actual: int) -> None:
         """Ajusta la reserva al conteo real de objetos accedidos tras el fetch."""
