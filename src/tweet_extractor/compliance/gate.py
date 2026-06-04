@@ -59,6 +59,8 @@ class SlidingWindowGate:
         return int(row[0]) if row else 0
 
     async def usage(self, now: int | None = None) -> int:
+        # Lectura lock-free intencional: solo `reserve` (bajo lock) hace crecer el uso,
+        # así que un `usage` concurrente puede quedar levemente atrás pero nunca sub-cuenta el cap.
         async with aiosqlite.connect(self._db_path) as db:
             moment = int(self._clock()) if now is None else now
             return await self._usage(db, moment)
@@ -85,7 +87,9 @@ class SlidingWindowGate:
                             (now, n),
                         )
                         await db.commit()
-                        return int(cur.lastrowid)  # type: ignore[arg-type]
+                        rid = cur.lastrowid
+                        assert rid is not None  # garantizado tras un INSERT exitoso
+                        return rid
                     wait_s = await self._wait_seconds(db, now)
             # sleep FUERA del lock: no bloquea a otras corrutinas ni al reconcile.
             await self._sleep(wait_s)
@@ -99,6 +103,8 @@ class SlidingWindowGate:
         row = await cur.fetchone()
         oldest = row[0] if row and row[0] is not None else None
         if oldest is None:
+            # Defensivo/inalcanzable: solo se llega acá con used + n > hard_cap, lo que
+            # implica que hay eventos en la ventana (n > hard_cap ya falló antes).
             return 1.0
         return float(max(1, (oldest + self._window_s) - now))
 
