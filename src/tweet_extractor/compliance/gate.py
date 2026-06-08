@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from types import TracebackType
 from typing import Any
 
 import aiosqlite
@@ -61,6 +62,20 @@ class SlidingWindowGate:
         if self._conn is not None:
             await self._conn.close()
             self._conn = None
+
+    async def __aenter__(self) -> SlidingWindowGate:
+        """`async with SlidingWindowGate(...) as gate:` deja el ledger listo
+        (setup) y garantiza el cierre de la conexión al salir."""
+        await self.setup()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.close()
 
     async def setup(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
