@@ -272,6 +272,7 @@ def test_tweet_normaliza_created_at_cruza_medianoche():
         content="x",
     )
     assert t.created_at == datetime(2023, 6, 2, 2, 0, tzinfo=UTC)
+    assert t.created_at.tzinfo == UTC  # ancla la zona, no solo el instante
 
 
 def test_tweet_acepta_content_vacio():
@@ -324,3 +325,15 @@ def test_tweetlink_es_inmutable():
     link = TweetLink(url="https://t.co/a", expanded_url="https://e.com")
     with pytest.raises(ValidationError):
         link.url = "https://t.co/b"  # frozen: reasignar atributo falla
+
+
+def test_tweet_created_at_fuera_de_rango_es_validation_error():
+    # astimezone() cerca de año 9999 con offset negativo desbordaría: el contrato §5
+    # exige que se manifieste como ValidationError, no como OverflowError crudo.
+    with pytest.raises(ValidationError):
+        Tweet(
+            id="1",
+            account="u",
+            created_at=datetime(9999, 12, 31, 23, 0, tzinfo=timezone(timedelta(hours=-3))),
+            content="x",
+        )

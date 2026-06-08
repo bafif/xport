@@ -105,7 +105,13 @@ class Tweet(BaseModel):
         # `tzinfo is None`: atrapa también un tzinfo cuyo utcoffset() devuelve None).
         if v.utcoffset() is None:
             raise ValueError("created_at debe ser timezone-aware (UTC en almacenamiento)")
-        return v.astimezone(UTC)
+        try:
+            return v.astimezone(UTC)
+        except (OverflowError, TypeError) as e:
+            # astimezone desborda cerca de año 1/9999 con offset, o falla con un tzinfo
+            # roto: lo re-lanzamos como ValueError para honrar el contrato §5 (toda
+            # violación se manifiesta como ValidationError, no como excepción cruda).
+            raise ValueError("created_at fuera de rango representable en UTC") from e
 
     @model_validator(mode="after")
     def _quoted_coherente(self) -> Tweet:
