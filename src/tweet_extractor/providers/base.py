@@ -22,7 +22,7 @@ class SearchQuery:
     include_retweets: bool = False
 
     def __post_init__(self) -> None:
-        if self.since.tzinfo is None or self.until.tzinfo is None:
+        if self.since.utcoffset() is None or self.until.utcoffset() is None:
             raise ValueError("SearchQuery.since y until deben ser timezone-aware (usar UTC)")
         if self.since >= self.until:
             raise ValueError("SearchQuery.since debe ser anterior a until")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 
 import pytest
 
@@ -64,4 +64,24 @@ def test_searchquery_rechaza_since_posterior_o_igual_a_until():
             username="u",
             since=datetime(2024, 1, 1, tzinfo=UTC),
             until=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+
+
+def test_searchquery_rechaza_tzinfo_con_utcoffset_none():
+    # Coherencia con Tweet.created_at: "naive" = utcoffset() is None (no solo tzinfo is None).
+    class _UtcoffsetNone(tzinfo):
+        def utcoffset(self, dt):
+            return None
+
+        def tzname(self, dt):
+            return "none"
+
+        def dst(self, dt):
+            return None
+
+    with pytest.raises(ValueError):
+        SearchQuery(
+            username="u",
+            since=datetime(2023, 1, 1, tzinfo=_UtcoffsetNone()),
+            until=datetime(2024, 1, 1, tzinfo=UTC),
         )
