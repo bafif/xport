@@ -7,8 +7,8 @@ import pytest
 from tweet_extractor.compliance.gate import ComplianceError, SlidingWindowGate
 
 
-async def test_reserve_dentro_del_presupuesto_inserta_y_devuelve_id(tmp_path):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_reserve_dentro_del_presupuesto_inserta_y_devuelve_id(tmp_path, make_gate):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
 
     rid = await gate.reserve(100)
@@ -18,24 +18,26 @@ async def test_reserve_dentro_del_presupuesto_inserta_y_devuelve_id(tmp_path):
     assert await gate.remaining() == 900
 
 
-async def test_reserve_n_mayor_que_cap_lanza_compliance_error(tmp_path):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_reserve_n_mayor_que_cap_lanza_compliance_error(tmp_path, make_gate):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
 
     with pytest.raises(ComplianceError):
         await gate.reserve(1001)
 
 
-async def test_reserve_n_no_positivo_lanza_value_error(tmp_path):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_reserve_n_no_positivo_lanza_value_error(tmp_path, make_gate):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
 
     with pytest.raises(ValueError):
         await gate.reserve(0)
 
 
-async def test_usage_refleja_la_cota_superior_hasta_reconcile_y_reconcile_libera(tmp_path):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_usage_refleja_la_cota_superior_hasta_reconcile_y_reconcile_libera(
+    tmp_path, make_gate
+):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
 
     rid = await gate.reserve(500)
@@ -45,14 +47,16 @@ async def test_usage_refleja_la_cota_superior_hasta_reconcile_y_reconcile_libera
     assert await gate.usage() == 120  # reconciliado al conteo real
 
 
-async def test_bloquea_y_espera_hasta_que_el_evento_viejo_sale_de_la_ventana(tmp_path, fake_clock):
+async def test_bloquea_y_espera_hasta_que_el_evento_viejo_sale_de_la_ventana(
+    tmp_path, make_gate, fake_clock
+):
     slept: list[float] = []
 
     async def fake_sleep(s: float) -> None:
         slept.append(s)
         fake_clock.advance(s)
 
-    gate = SlidingWindowGate(
+    gate = make_gate(
         tmp_path / "ledger.db",
         hard_cap=1000,
         window_s=86_400,
@@ -71,11 +75,11 @@ async def test_bloquea_y_espera_hasta_que_el_evento_viejo_sale_de_la_ventana(tmp
     assert await gate.usage() == 200  # el bloque viejo ya salió de la ventana
 
 
-async def test_ventana_deslizante_no_es_bucket_de_dia_calendario(tmp_path, fake_clock):
+async def test_ventana_deslizante_no_es_bucket_de_dia_calendario(tmp_path, make_gate, fake_clock):
     async def fake_sleep(s: float) -> None:
         fake_clock.advance(s)
 
-    gate = SlidingWindowGate(
+    gate = make_gate(
         tmp_path / "ledger.db",
         hard_cap=1000,
         window_s=86_400,
@@ -93,18 +97,18 @@ async def test_ventana_deslizante_no_es_bucket_de_dia_calendario(tmp_path, fake_
     assert await gate.usage() == 600  # solo el segundo bloque queda en la ventana
 
 
-async def test_persistencia_entre_reinicios(tmp_path):
+async def test_persistencia_entre_reinicios(tmp_path, make_gate):
     db = tmp_path / "ledger.db"
-    gate1 = SlidingWindowGate(db, hard_cap=1000)
+    gate1 = make_gate(db, hard_cap=1000)
     await gate1.setup()
     await gate1.reserve(300)
 
-    gate2 = SlidingWindowGate(db, hard_cap=1000)  # "reinicio": mismo path
+    gate2 = make_gate(db, hard_cap=1000)  # "reinicio": mismo path
     assert await gate2.usage() == 300
 
 
-async def test_el_ledger_no_deduplica(tmp_path):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_el_ledger_no_deduplica(tmp_path, make_gate):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
 
     await gate.reserve(100)
@@ -113,11 +117,11 @@ async def test_el_ledger_no_deduplica(tmp_path):
     assert await gate.usage() == 200
 
 
-async def test_reserve_poda_filas_fuera_de_la_ventana(tmp_path, fake_clock):
+async def test_reserve_poda_filas_fuera_de_la_ventana(tmp_path, make_gate, fake_clock):
     async def fake_sleep(s: float) -> None:
         fake_clock.advance(s)
 
-    gate = SlidingWindowGate(
+    gate = make_gate(
         tmp_path / "ledger.db",
         hard_cap=1000,
         window_s=86_400,
@@ -138,8 +142,8 @@ async def test_reserve_poda_filas_fuera_de_la_ventana(tmp_path, fake_clock):
     assert await gate.usage() == 200
 
 
-async def test_concurrencia_serializa_y_no_cruza_el_cap(tmp_path):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_concurrencia_serializa_y_no_cruza_el_cap(tmp_path, make_gate):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
 
     rids = await asyncio.gather(*[gate.reserve(100) for _ in range(10)])
@@ -149,8 +153,8 @@ async def test_concurrencia_serializa_y_no_cruza_el_cap(tmp_path):
     assert await gate.remaining() == 0
 
 
-async def test_regresion_c1_mismo_segundo_ids_distintos(tmp_path, fake_clock):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000, clock=fake_clock.time)
+async def test_regresion_c1_mismo_segundo_ids_distintos(tmp_path, make_gate, fake_clock):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000, clock=fake_clock.time)
     await gate.setup()
 
     rid1 = await gate.reserve(100)
@@ -163,14 +167,14 @@ async def test_regresion_c1_mismo_segundo_ids_distintos(tmp_path, fake_clock):
     assert await gate.usage() == 110  # solo rid1 cambió
 
 
-async def test_espera_progresiva_multi_bloque(tmp_path, fake_clock):
+async def test_espera_progresiva_multi_bloque(tmp_path, make_gate, fake_clock):
     slept: list[float] = []
 
     async def fake_sleep(s: float) -> None:
         slept.append(s)
         fake_clock.advance(s)
 
-    gate = SlidingWindowGate(
+    gate = make_gate(
         tmp_path / "ledger.db",
         hard_cap=1000,
         window_s=86_400,
@@ -191,7 +195,9 @@ async def test_espera_progresiva_multi_bloque(tmp_path, fake_clock):
     assert await gate.usage() == 600
 
 
-async def test_reconcile_despierta_al_que_espera_sin_agotar_el_sleep(tmp_path, fake_clock):
+async def test_reconcile_despierta_al_que_espera_sin_agotar_el_sleep(
+    tmp_path, make_gate, fake_clock
+):
     # En prod el sleep puede ser de 24 h; un reconcile que libera presupuesto debe
     # DESPERTAR al que espera sin aguardar todo el sleep. Con el sleep no-reactivo
     # viejo, reserve(200) quedaría dormido 3600 s reales y el test colgaría.
@@ -201,7 +207,7 @@ async def test_reconcile_despierta_al_que_espera_sin_agotar_el_sleep(tmp_path, f
         sleep_started.set()
         await asyncio.sleep(3600)  # "largo": debe ser cancelado por el reconcile
 
-    gate = SlidingWindowGate(
+    gate = make_gate(
         tmp_path / "ledger.db",
         hard_cap=1000,
         clock=fake_clock.time,
@@ -223,8 +229,8 @@ async def test_reconcile_despierta_al_que_espera_sin_agotar_el_sleep(tmp_path, f
     assert await gate.usage() == 250  # 50 (reconciliado) + 200
 
 
-async def test_reconcile_durante_espera_permite_proceder(tmp_path, fake_clock):
-    gate = SlidingWindowGate(
+async def test_reconcile_durante_espera_permite_proceder(tmp_path, make_gate, fake_clock):
+    gate = make_gate(
         tmp_path / "ledger.db",
         hard_cap=1000,
         window_s=86_400,
@@ -249,3 +255,14 @@ async def test_reconcile_durante_espera_permite_proceder(tmp_path, fake_clock):
     assert rid > 0
     assert calls["n"] == 1
     assert await gate.usage() == 250
+
+
+async def test_context_manager_hace_setup_y_cierra(tmp_path):
+    # `async with` hace setup automático y cierra la conexión de forma determinista
+    # (sin ResourceWarning de aiosqlite). Es la forma de uso en la app.
+    async with SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000) as gate:
+        rid = await gate.reserve(10)
+        assert rid > 0
+        assert await gate.usage() == 10
+
+    assert gate._conn is None  # la conexión quedó cerrada al salir del bloque

@@ -7,8 +7,10 @@ from tweet_extractor.compliance.gated_provider import GatedProvider
 from tweet_extractor.providers.base import Page, SearchQuery, TweetProvider
 
 
-async def test_cuenta_accessed_count_no_len_tweets(tmp_path, make_provider, sample_query):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_cuenta_accessed_count_no_len_tweets(
+    tmp_path, make_gate, make_provider, sample_query
+):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
     pages = [
         Page(tweets=[{"id": "1"}], accessed_count=5, next_cursor="p1"),
@@ -22,8 +24,10 @@ async def test_cuenta_accessed_count_no_len_tweets(tmp_path, make_provider, samp
     assert await gate.usage() == 12  # 5+7 accedidos, NO 3 emitidos
 
 
-async def test_reserva_la_cota_superior_antes_de_pedir_y_reconcilia_despues(tmp_path, sample_query):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_reserva_la_cota_superior_antes_de_pedir_y_reconcilia_despues(
+    tmp_path, make_gate, sample_query
+):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
     observed: dict[str, int] = {}
 
@@ -43,7 +47,7 @@ async def test_reserva_la_cota_superior_antes_de_pedir_y_reconcilia_despues(tmp_
 
 
 async def test_el_fetch_espera_si_el_gate_esta_lleno(
-    tmp_path, fake_clock, make_provider, sample_query
+    tmp_path, make_gate, fake_clock, make_provider, sample_query
 ):
     slept: list[float] = []
 
@@ -51,7 +55,7 @@ async def test_el_fetch_espera_si_el_gate_esta_lleno(
         slept.append(s)
         fake_clock.advance(s)
 
-    gate = SlidingWindowGate(
+    gate = make_gate(
         tmp_path / "ledger.db",
         hard_cap=50,
         window_s=86_400,
@@ -71,10 +75,10 @@ async def test_el_fetch_espera_si_el_gate_esta_lleno(
     assert await gate.usage() == 5
 
 
-async def test_reconcile_pisa_accessed_count_al_menos_len_tweets(tmp_path, sample_query):
+async def test_reconcile_pisa_accessed_count_al_menos_len_tweets(tmp_path, make_gate, sample_query):
     # Defensivo: un provider que sub-reporta accessed_count NO debe hacer
     # sub-contar el ledger (la dirección insegura del cap).
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
 
     class UnderReportingProvider(TweetProvider):
@@ -95,6 +99,8 @@ async def test_reconcile_pisa_accessed_count_al_menos_len_tweets(tmp_path, sampl
 
 
 def test_gated_provider_rechaza_inner_sin_max_accessed_per_page(tmp_path):
+    # Test síncrono: no abre conexión (falla en el __init__ antes de tocar la DB),
+    # así que construye el gate directo (no necesita el factory async make_gate).
     gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
 
     class ProviderSinCota(TweetProvider):
@@ -105,8 +111,10 @@ def test_gated_provider_rechaza_inner_sin_max_accessed_per_page(tmp_path):
         GatedProvider(ProviderSinCota(), gate)
 
 
-async def test_excepcion_durante_fetch_mantiene_cota_superior_en_ledger(tmp_path, sample_query):
-    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+async def test_excepcion_durante_fetch_mantiene_cota_superior_en_ledger(
+    tmp_path, make_gate, sample_query
+):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
 
     class FailingProvider(TweetProvider):
