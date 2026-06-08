@@ -144,7 +144,7 @@ para poder cambiar el backend (scraping ↔ API oficial de X) sin tocar el resto
 ```
 providers/   contrato TweetProvider (intercambiable)     ✅ contrato listo
 mappers/     normalización GraphQL → dominio             ⬜ pendiente
-domain/      modelo Tweet (pydantic)                     ⬜ pendiente
+domain/      modelo Tweet (pydantic)                     ✅ Tweet + TweetLink (validado)
 compliance/  SlidingWindowGate + GatedProvider           ✅ implementado y testeado
 storage/     SQLite intermedio + exportador CSV          ⬜ pendiente
 service/     FastAPI (jobs + estado del gate)            ⬜ pendiente
@@ -156,9 +156,11 @@ presentation CLI (Typer) y extensión de navegador        ⬜ pendiente
 ## Roadmap
 
 1. **Compliance Gate** + tests, envuelto en `GatedProvider`. ✅
-2. `domain/models.py` (el `Tweet`) y `TwscrapeProvider` (scraping gratis vía httpx, sin navegador).
-3. `mappers/` (quotes sí, retweets no, links) + `storage/` (SQLite + CSV en streaming) + `cli.py`.
+2. **Modelo de dominio** (`Tweet`/`TweetLink`, pydantic, validado). ✅
+3. **(siguiente)** `TwscrapeProvider` (scraping gratis vía httpx, sin navegador) → `mappers/` (quotes sí, retweets no, links) → `storage/` (SQLite + CSV en streaming) → `cli.py`.
 4. FastAPI + Nginx (app local) y extensiones de Firefox/Chrome.
+
+> **Estado detallado y handoff** (para retomar desde otra máquina): [`docs/ESTADO.md`](docs/ESTADO.md).
 
 El plan completo y el razonamiento de cada decisión están en
 [`docs/plan-extractor-tweets.md`](docs/plan-extractor-tweets.md).

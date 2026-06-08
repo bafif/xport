@@ -228,12 +228,14 @@ volumes:
 
 ## Estado del repo / por dónde empezar
 
-Repo **greenfield**. Orden de construcción (Fase 1 MVP, CLI + scraping gratis):
+> **Estado actual y handoff** (qué está hecho, qué sigue, cómo arrancar en otra máquina): ver **`docs/ESTADO.md`**. Mantenerlo al día al cerrar cada fase. La memoria de claude-mem/context-mode es local; el handoff vive en git.
 
-1. `uv init` + dependencias (ver comandos).
-2. **Compliance Gate primero** (`compliance/`) + sus tests. Envolver con `GatedProvider`. Nada de scraping real antes de esto.
-3. `domain/models.py` (el `Tweet`).
-4. `TwscrapeProvider.fetch_tweets()` con búsqueda `from:user since/until` troceada, granularidad de página, reporte de `accessed_count`.
+Orden de construcción (Fase 1 MVP, CLI + scraping gratis):
+
+1. ✅ `uv init` + dependencias (ver comandos).
+2. ✅ **Compliance Gate** (`compliance/`) + tests, envuelto en `GatedProvider`.
+3. ✅ `domain/models.py` (el `Tweet` + `TweetLink`, pydantic, validado).
+4. **(siguiente)** `TwscrapeProvider.fetch_tweets()` con búsqueda `from:user since/until` troceada, granularidad de página, reporte de `accessed_count`.
 5. `mappers/twscrape_mapper.py` (quotes incluidos, retweets excluidos, links).
 6. `storage/csv_exporter.py` (streaming, un CSV por cuenta) + SQLite intermedio.
 7. `cli.py`.
