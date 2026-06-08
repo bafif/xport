@@ -29,5 +29,9 @@ class GatedProvider(TweetProvider):
         # try/finally que reconcilie a 0 — sería sub-contar y violaría el cap.
         rid = await self._gate.reserve(self.max_accessed_per_page)
         page = await self._inner.fetch_page(query, cursor)
-        await self._gate.reconcile(rid, page.accessed_count)
+        # Piso defensivo: el ledger nunca debe contar MENOS que los tweets que el
+        # provider efectivamente entregó. Si un backend sub-reporta accessed_count,
+        # sub-contar es la dirección INSEGURA del cap; nos quedamos con el máximo.
+        accessed = max(page.accessed_count, len(page.tweets))
+        await self._gate.reconcile(rid, accessed)
         return page

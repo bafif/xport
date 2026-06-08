@@ -71,6 +71,29 @@ async def test_el_fetch_espera_si_el_gate_esta_lleno(
     assert await gate.usage() == 5
 
 
+async def test_reconcile_pisa_accessed_count_al_menos_len_tweets(tmp_path, sample_query):
+    # Defensivo: un provider que sub-reporta accessed_count NO debe hacer
+    # sub-contar el ledger (la dirección insegura del cap).
+    gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
+    await gate.setup()
+
+    class UnderReportingProvider(TweetProvider):
+        max_accessed_per_page = 40
+
+        async def fetch_page(self, query: SearchQuery, cursor: str | None) -> Page:
+            return Page(
+                tweets=[{"id": "1"}, {"id": "2"}, {"id": "3"}],
+                accessed_count=0,  # miente: dice 0 pese a entregar 3
+                next_cursor=None,
+            )
+
+    gated = GatedProvider(UnderReportingProvider(), gate)
+
+    _ = [t async for t in gated.fetch_tweets(sample_query)]
+
+    assert await gate.usage() == 3  # piso = len(tweets), NO 0
+
+
 def test_gated_provider_rechaza_inner_sin_max_accessed_per_page(tmp_path):
     gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
 

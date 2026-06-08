@@ -39,6 +39,20 @@ async def test_fetch_tweets_pagina_vacia_con_cursor_continua(make_provider, samp
     assert provider.cursors_seen == [None, "p1"]
 
 
+async def test_fetch_tweets_corta_si_el_cursor_se_repite(make_provider, sample_query):
+    # Un backend que devuelve el MISMO cursor (p1 → p1) no debe loopear infinito.
+    pages = [
+        Page(tweets=[{"id": "1"}], accessed_count=1, next_cursor="p1"),
+        Page(tweets=[{"id": "2"}], accessed_count=1, next_cursor="p1"),  # se repite
+    ]
+    provider = make_provider(pages)
+
+    out = [t async for t in provider.fetch_tweets(sample_query)]
+
+    assert [t["id"] for t in out] == ["1", "2"]
+    assert provider.cursors_seen == [None, "p1"]  # corta, no vuelve a pedir "p1"
+
+
 def test_searchquery_rechaza_datetime_naive():
     with pytest.raises(ValueError):
         SearchQuery(username="u", since=datetime(2023, 1, 1), until=datetime(2024, 1, 1))

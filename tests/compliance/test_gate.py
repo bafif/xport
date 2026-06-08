@@ -113,6 +113,31 @@ async def test_el_ledger_no_deduplica(tmp_path):
     assert await gate.usage() == 200
 
 
+async def test_reserve_poda_filas_fuera_de_la_ventana(tmp_path, fake_clock):
+    async def fake_sleep(s: float) -> None:
+        fake_clock.advance(s)
+
+    gate = SlidingWindowGate(
+        tmp_path / "ledger.db",
+        hard_cap=1000,
+        window_s=86_400,
+        clock=fake_clock.time,
+        sleep=fake_sleep,
+    )
+    await gate.setup()
+
+    await gate.reserve(100)  # bloque viejo en t0
+    fake_clock.advance(86_401)  # cae fuera de la ventana
+    await gate.reserve(200)  # éxito → poda el bloque viejo
+
+    db = await gate._db()
+    cur = await db.execute("SELECT COUNT(*) FROM access_ledger")
+    row = await cur.fetchone()
+    assert row is not None
+    assert row[0] == 1  # el ledger no crece sin fin: solo queda el bloque vivo
+    assert await gate.usage() == 200
+
+
 async def test_concurrencia_serializa_y_no_cruza_el_cap(tmp_path):
     gate = SlidingWindowGate(tmp_path / "ledger.db", hard_cap=1000)
     await gate.setup()
@@ -164,6 +189,38 @@ async def test_espera_progresiva_multi_bloque(tmp_path, fake_clock):
     assert rid > 0
     assert slept == [86_300.0, 100.0]  # camina al oldest, luego al siguiente
     assert await gate.usage() == 600
+
+
+async def test_reconcile_despierta_al_que_espera_sin_agotar_el_sleep(tmp_path, fake_clock):
+    # En prod el sleep puede ser de 24 h; un reconcile que libera presupuesto debe
+    # DESPERTAR al que espera sin aguardar todo el sleep. Con el sleep no-reactivo
+    # viejo, reserve(200) quedaría dormido 3600 s reales y el test colgaría.
+    sleep_started = asyncio.Event()
+
+    async def blocking_sleep(s: float) -> None:
+        sleep_started.set()
+        await asyncio.sleep(3600)  # "largo": debe ser cancelado por el reconcile
+
+    gate = SlidingWindowGate(
+        tmp_path / "ledger.db",
+        hard_cap=1000,
+        clock=fake_clock.time,
+        sleep=blocking_sleep,
+    )
+    await gate.setup()
+    rid_old = await gate.reserve(900)
+
+    async def free_budget() -> None:
+        await sleep_started.wait()
+        await gate.reconcile(rid_old, 50)  # libera presupuesto mientras el otro espera
+
+    freer = asyncio.ensure_future(free_budget())
+    async with asyncio.timeout(5):  # si regresiona el wake reactivo, falla rápido
+        rid = await gate.reserve(200)
+    await freer
+
+    assert rid > 0
+    assert await gate.usage() == 250  # 50 (reconciliado) + 200
 
 
 async def test_reconcile_durante_espera_permite_proceder(tmp_path, fake_clock):

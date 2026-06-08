@@ -46,7 +46,10 @@ class TweetProvider(ABC):
     la paginación (`fetch_tweets`) es concreta y se hereda gratis."""
 
     max_accessed_per_page: int
-    """Cota superior de accesos por página (= 2 * page_size, por quote embebido)."""
+    """Cota superior REAL de accesos por página (citante + quotes embebidos).
+    DEBE sobre-estimar: si fuera menor que lo que el backend accede de verdad, el
+    gate reservaría de menos y dejaría cruzar el cap. Sobre-estimar solo gasta
+    presupuesto de más (fail-closed)."""
 
     @abstractmethod
     async def fetch_page(self, query: SearchQuery, cursor: str | None) -> Page:
@@ -57,13 +60,16 @@ class TweetProvider(ABC):
         """Pagina sobre `fetch_page` y hace yield de cada tweet.
 
         Continúa aunque una página traiga `tweets=[]` mientras `next_cursor`
-        sea no-None (páginas parciales válidas de algunos backends).
+        sea no-None (páginas parciales válidas de algunos backends). Corta si el
+        backend repite el cursor (X devuelve el mismo "bottom cursor" al final de
+        los resultados): sin este guard el bucle sería infinito y, vía el gate,
+        drenaría todo el presupuesto diario en una sola query atascada.
         """
         cursor: str | None = None
         while True:
             page = await self.fetch_page(query, cursor)
             for tweet in page.tweets:
                 yield tweet
-            if page.next_cursor is None:
+            if page.next_cursor is None or page.next_cursor == cursor:
                 break
             cursor = page.next_cursor

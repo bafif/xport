@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+import gc
 from datetime import UTC, datetime
 
 import pytest
+import pytest_asyncio
 
+from tweet_extractor.compliance.gate import SlidingWindowGate
 from tweet_extractor.providers.base import Page, SearchQuery, TweetProvider
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _close_gate_connections():
+    """Cierra la conexión persistente de cualquier gate vivo DENTRO del event
+    loop del test (que es function-scoped). Sin esto, la conexión aiosqlite se
+    recolecta después de que su loop cerró y aiosqlite avisa 'Event loop is
+    closed'. La app real cierra con `gate.close()` en el shutdown."""
+    yield
+    for obj in gc.get_objects():
+        if isinstance(obj, SlidingWindowGate):
+            await obj.close()
 
 
 class FakeClock:
