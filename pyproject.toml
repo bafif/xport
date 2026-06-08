@@ -3,6 +3,8 @@ name = "tweet-extractor"
 version = "0.1.0"
 description = "Extractor de tweets por rango de fechas → CSV"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Bautista D. Fiori", email = "bautistafiori6@gmail.com" }
 ]

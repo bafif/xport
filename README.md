@@ -162,3 +162,9 @@ presentation CLI (Typer) y extensión de navegador        ⬜ pendiente
 
 El plan completo y el razonamiento de cada decisión están en
 [`docs/plan-extractor-tweets.md`](docs/plan-extractor-tweets.md).
+
+---
+
+## Licencia
+
+[MIT](LICENSE) © 2026 Bautista D. Fiori.
