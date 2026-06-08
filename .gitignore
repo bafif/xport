@@ -1,4 +1,8 @@
+# Secretos: ignorar .env y todas sus variantes (.env.local, .env.production…),
+# pero versionar la plantilla sin valores reales.
 .env
+.env.*
+!.env.example
 data/
 *.db
 *.sqlite*
@@ -10,5 +14,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# Artefactos de SO (macOS escribe ._* y .DS_Store; viajan al comprimir en .zip)
 .DS_Store
+._*
 .planning/
