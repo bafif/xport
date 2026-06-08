@@ -11,9 +11,10 @@ class TweetLink(BaseModel):
     Normaliza whitespace de borde de `url`/`expanded_url` y rechaza vacíos. El
     filtrado de `expanded_url` autorreferencial (apunta de vuelta a un status de
     x.com) es del mapper; el modelo solo garantiza forma (no vacío, sin bordes).
+    `extra="forbid"`: un campo desconocido (typo del mapper) falla, no se descarta.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     url: str  # el t.co
     expanded_url: str  # destino real (el que se exporta)
@@ -27,25 +28,37 @@ class TweetLink(BaseModel):
             raise ValueError("url y expanded_url no pueden estar vacíos")
         return s
 
+    @field_validator("display_url")
+    @classmethod
+    def _display_normalizado(cls, v: str | None) -> str | None:
+        # Opcional/cosmético: normaliza whitespace de borde; whitespace-only -> None
+        # (ausencia), coherente con la higiene de forma del resto de los campos.
+        if v is None:
+            return None
+        return v.strip() or None
+
 
 class Tweet(BaseModel):
     """El tweet normalizado: única fuente de verdad del shape (ver CLAUDE.md).
 
     Value object inmutable. Valida invariantes de *forma* — no parsing de
-    GraphQL, que vive solo en `mappers/`: `created_at` tz-aware en UTC, strings
-    de forma trimeados y no vacíos (`id`, `account`, y `quoted_*` si están
-    presentes), y coherencia del quote (id y url juntos o ninguno). Quitar el `@`
-    de `account` sigue siendo del mapper. Alcance minimalista (columnas del CSV +
-    `id` como PK de storage); `is_quote` es propiedad computada; sin `is_retweet`
-    ni `media_urls`.
+    GraphQL, que vive solo en `mappers/`: `created_at` es un `datetime`
+    timezone-aware (no epoch ni string) normalizado a UTC, `id`/`account`
+    trimeados y no vacíos, `quoted_*` no vacíos si están presentes, y coherencia
+    del quote (id y url juntos o ninguno). `content` es texto libre y PUEDE ser
+    vacío (tweets de solo-media/link/quote); no se trimea (es contenido, no un
+    identificador). `extra="forbid"`: un campo desconocido falla, no se descarta.
+    Alcance minimalista (columnas del CSV + `id` como PK de storage); `is_quote`
+    es propiedad computada; sin `is_retweet` ni `media_urls`. No es hasheable (el
+    campo `links: list` lo impide); la dedupe es por `id` en storage, no en memoria.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str  # PK; snowflake como string (no int: precisión)
     account: str  # handle sin @
     created_at: datetime  # tz-aware; normalizado a UTC
-    content: str  # texto completo (note_tweet si aplica) — lo resuelve el mapper
+    content: str  # texto libre; puede ser vacío; NO se trimea (es contenido)
     links: list[TweetLink] = []
     quoted_tweet_id: str | None = None
     quoted_tweet_url: str | None = None
@@ -75,10 +88,22 @@ class Tweet(BaseModel):
             raise ValueError("quoted_tweet_id/url, si presentes, no pueden ser vacíos")
         return s
 
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _es_datetime(cls, v: object) -> object:
+        # fail-fast (D2): el mapper debe pasar un datetime ya parseado. Un epoch crudo
+        # (int seg o ms) o un string se coercionarían en silencio a una fecha plausible
+        # —un mixup seg/ms daría un timestamp errado sin señal—; se rechazan.
+        if not isinstance(v, datetime):
+            raise ValueError("created_at debe ser datetime (parsealo en el mapper, no epoch/str)")
+        return v
+
     @field_validator("created_at")
     @classmethod
     def _aware_utc(cls, v: datetime) -> datetime:
-        if v.tzinfo is None:
+        # `utcoffset() is None` es el test canónico de "naive" (más fuerte que
+        # `tzinfo is None`: atrapa también un tzinfo cuyo utcoffset() devuelve None).
+        if v.utcoffset() is None:
             raise ValueError("created_at debe ser timezone-aware (UTC en almacenamiento)")
         return v.astimezone(UTC)
 
