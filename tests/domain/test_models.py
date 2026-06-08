@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
 
 import pytest
 from pydantic import ValidationError
@@ -218,3 +218,109 @@ def test_tweet_trimea_quoted_tweet_id_y_url():
     assert t.quoted_tweet_id == "999"
     assert t.quoted_tweet_url == "https://x.com/i/web/status/999"
     assert t.is_quote is True
+
+
+# --- Hardening post code-review ---
+
+
+def test_tweet_rechaza_created_at_epoch_int():
+    # fail-fast (D2): un epoch crudo (seg) del mapper no debe aceptarse silenciosamente.
+    with pytest.raises(ValidationError):
+        Tweet(id="1", account="u", created_at=1685620800, content="x")
+
+
+def test_tweet_rechaza_created_at_epoch_ms():
+    # peor aún: un mixup seg/ms daría una fecha plausible-pero-errada sin señal.
+    with pytest.raises(ValidationError):
+        Tweet(id="1", account="u", created_at=1685620800000, content="x")
+
+
+def test_tweet_rechaza_created_at_string():
+    # el contrato es un datetime ya parseado; el parseo de strings es del mapper.
+    with pytest.raises(ValidationError):
+        Tweet(id="1", account="u", created_at="2023-06-01T12:00:00Z", content="x")
+
+
+def test_tweet_rechaza_created_at_con_utcoffset_none():
+    # Un tzinfo "aware" cuyo utcoffset() devuelve None es semánticamente naive: rechazar.
+    class _UtcoffsetNone(tzinfo):
+        def utcoffset(self, dt):
+            return None
+
+        def tzname(self, dt):
+            return "none"
+
+        def dst(self, dt):
+            return None
+
+    with pytest.raises(ValidationError):
+        Tweet(
+            id="1",
+            account="u",
+            created_at=datetime(2023, 6, 1, 12, 0, tzinfo=_UtcoffsetNone()),
+            content="x",
+        )
+
+
+def test_tweet_normaliza_created_at_cruza_medianoche():
+    # 23:00 -03:00 = 02:00 UTC del día SIGUIENTE: la conversión debe avanzar la fecha.
+    ba = timezone(timedelta(hours=-3))
+    t = Tweet(
+        id="1",
+        account="u",
+        created_at=datetime(2023, 6, 1, 23, 0, tzinfo=ba),
+        content="x",
+    )
+    assert t.created_at == datetime(2023, 6, 2, 2, 0, tzinfo=UTC)
+
+
+def test_tweet_acepta_content_vacio():
+    # Decisión deliberada: content libre puede ser vacío (tweets solo-media/link/quote).
+    t = Tweet(id="1", account="u", created_at=datetime(2023, 6, 1, tzinfo=UTC), content="")
+    assert t.content == ""
+
+
+def test_tweet_rechaza_id_bool():
+    # bool es subclase de int: el guardián de "snowflake como string" también lo cubre.
+    with pytest.raises(ValidationError):
+        Tweet(id=True, account="u", created_at=datetime(2023, 6, 1, tzinfo=UTC), content="x")
+
+
+def test_tweet_rechaza_campo_desconocido():
+    # extra='forbid': un typo del mapper en un campo no se descarta en silencio.
+    with pytest.raises(ValidationError):
+        Tweet(
+            id="1",
+            account="u",
+            created_at=datetime(2023, 6, 1, tzinfo=UTC),
+            content="x",
+            quoted_tweet_ur="typo",
+        )
+
+
+def test_tweet_valida_links_a_nivel_elemento():
+    # Un TweetLink malformado dentro de links propaga ValidationError.
+    with pytest.raises(ValidationError):
+        Tweet(
+            id="1",
+            account="u",
+            created_at=datetime(2023, 6, 1, tzinfo=UTC),
+            content="x",
+            links=[{"url": "", "expanded_url": "https://e.com"}],
+        )
+
+
+def test_tweetlink_display_url_whitespace_se_vuelve_none():
+    link = TweetLink(url="https://t.co/a", expanded_url="https://e.com", display_url="   ")
+    assert link.display_url is None
+
+
+def test_tweetlink_rechaza_campo_desconocido():
+    with pytest.raises(ValidationError):
+        TweetLink(url="https://t.co/a", expanded_url="https://e.com", foo="bar")
+
+
+def test_tweetlink_es_inmutable():
+    link = TweetLink(url="https://t.co/a", expanded_url="https://e.com")
+    with pytest.raises(ValidationError):
+        link.url = "https://t.co/b"  # frozen: reasignar atributo falla
