@@ -337,3 +337,48 @@ def test_tweet_created_at_fuera_de_rango_es_validation_error():
             created_at=datetime(9999, 12, 31, 23, 0, tzinfo=timezone(timedelta(hours=-3))),
             content="x",
         )
+
+
+def test_tweet_rechaza_id_con_control_char():
+    # un newline embebido en la PK corrompería el dedupe/CSV.
+    with pytest.raises(ValidationError):
+        Tweet(id="1\n2", account="u", created_at=datetime(2023, 6, 1, tzinfo=UTC), content="x")
+
+
+def test_tweet_rechaza_account_con_control_char():
+    with pytest.raises(ValidationError):
+        Tweet(id="1", account="us\ter", created_at=datetime(2023, 6, 1, tzinfo=UTC), content="x")
+
+
+def test_tweet_content_permite_saltos_de_linea():
+    # content es texto LIBRE: los saltos de línea del cuerpo se preservan tal cual
+    # (fidelidad para reconstruir el tweet / markdown). NO se sanitiza ni se trimea.
+    t = Tweet(
+        id="1",
+        account="u",
+        created_at=datetime(2023, 6, 1, tzinfo=UTC),
+        content="línea1\nlínea2\n",
+    )
+    assert t.content == "línea1\nlínea2\n"
+
+
+def test_tweet_rechaza_quoted_url_con_control_char():
+    with pytest.raises(ValidationError):
+        Tweet(
+            id="1",
+            account="u",
+            created_at=datetime(2023, 6, 1, tzinfo=UTC),
+            content="x",
+            quoted_tweet_id="999",
+            quoted_tweet_url="https://x.com/i/web/\nstatus/999",
+        )
+
+
+def test_tweetlink_rechaza_url_con_control_char():
+    with pytest.raises(ValidationError):
+        TweetLink(url="https://t.co/a\tb", expanded_url="https://e.com")
+
+
+def test_tweetlink_rechaza_expanded_url_con_control_char():
+    with pytest.raises(ValidationError):
+        TweetLink(url="https://t.co/a", expanded_url="https://e.com/\r\npath")

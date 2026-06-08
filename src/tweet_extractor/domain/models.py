@@ -1,8 +1,21 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _limpiar(v: str) -> str:
+    """Trimea whitespace de borde y rechaza caracteres de control (C0/DEL): un
+    salto/CR/TAB embebido corrompería la PK o los identificadores y partiría una
+    fila del CSV. NO se aplica a `content` (texto libre del tweet, que se preserva)."""
+    s = v.strip()
+    if _CONTROL_CHARS.search(s):
+        raise ValueError("no puede contener caracteres de control")
+    return s
 
 
 class TweetLink(BaseModel):
@@ -23,7 +36,7 @@ class TweetLink(BaseModel):
     @field_validator("url", "expanded_url")
     @classmethod
     def _no_vacio(cls, v: str) -> str:
-        s = v.strip()
+        s = _limpiar(v)
         if not s:
             raise ValueError("url y expanded_url no pueden estar vacíos")
         return s
@@ -35,7 +48,7 @@ class TweetLink(BaseModel):
         # (ausencia), coherente con la higiene de forma del resto de los campos.
         if v is None:
             return None
-        return v.strip() or None
+        return _limpiar(v) or None
 
 
 class Tweet(BaseModel):
@@ -71,7 +84,7 @@ class Tweet(BaseModel):
     @field_validator("id", "account")
     @classmethod
     def _no_vacio(cls, v: str) -> str:
-        s = v.strip()
+        s = _limpiar(v)
         if not s:
             raise ValueError("id y account no pueden estar vacíos")
         return s
@@ -83,7 +96,7 @@ class Tweet(BaseModel):
         # se rechaza (fail-fast, D2) en vez de silenciarlo dejando is_quote en True.
         if v is None:
             return None
-        s = v.strip()
+        s = _limpiar(v)
         if not s:
             raise ValueError("quoted_tweet_id/url, si presentes, no pueden ser vacíos")
         return s
