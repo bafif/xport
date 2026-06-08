@@ -195,3 +195,15 @@ Un segundo code-review (9 finder angles → verify 3-estado → sweep; 31 candid
 - **T6 — `Tweet` no es hasheable** (el campo `links: list` lo impide pese a `frozen`). Decisión consciente previa (`list` sobre `tuple`): la dedupe es por `id` en SQLite, no `set[Tweet]` en memoria. Se documenta en el docstring; sin cambio de tipo.
 
 Tests del dominio: 20 → 32.
+
+### Re-review (2.ª iteración, código endurecido)
+
+Un segundo pase del code-review (sobre los fixes T1-T5) sumó tres endurecimientos más:
+
+- **N1 — `created_at` fuera de rango → `ValidationError`.** `.astimezone(UTC)` lanza `OverflowError` (fechas cerca de año 1/9999 con offset) o `TypeError` (tzinfo roto), que pydantic **no** envuelve. `_aware_utc` ahora lo captura y re-lanza `ValueError`, honrando el contrato §5 (un mapper con `try/except ValidationError` no crashea el job).
+- **N-control — caracteres de control rechazados.** Helper centralizado `_limpiar()` (trim + rechazo de C0/DEL) aplicado a `id`/`account`/`url`/`expanded_url`/`quoted_*`/`display_url`. Un `\n`/`\r`/`\t` embebido corrompería la PK/identificadores o partiría una fila del CSV. **`content` NO se sanitiza** (texto libre; sus saltos de línea se preservan para reconstruir el tweet — el CSV los maneja con `QUOTE_ALL`).
+- **N-SearchQuery — coherencia tz.** `SearchQuery.__post_init__` (`providers/base.py`) pasa de `tzinfo is None` a `utcoffset() is None`: una sola definición de "naive" en los dos value objects de frontera del dominio.
+
+**No accionado:** `links → tuple` (mismo trade-off que ya se decidió a favor de `list`; sin motivo nuevo); normalizar subclases de `datetime` (over-engineering).
+
+Tests del dominio: 32 → 39 (+1 en `providers/test_base.py`). Suite total: 71.
