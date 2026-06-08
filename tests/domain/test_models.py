@@ -150,3 +150,71 @@ def test_tweet_es_inmutable():
     )
     with pytest.raises(ValidationError):
         t.content = "otro"  # frozen: reasignar atributo falla
+
+
+def test_tweet_trimea_whitespace_de_id_y_account():
+    # El modelo normaliza whitespace de BORDE (higiene de forma); quitar el @ es del mapper.
+    t = Tweet(
+        id="  123  ",
+        account="  user  ",
+        created_at=datetime(2023, 6, 1, 12, 0, tzinfo=UTC),
+        content="hola",
+    )
+    assert t.id == "123"
+    assert t.account == "user"
+
+
+def test_tweetlink_trimea_url_y_expanded_url():
+    link = TweetLink(url="  https://t.co/abc  ", expanded_url="  https://ejemplo.com  ")
+    assert link.url == "https://t.co/abc"
+    assert link.expanded_url == "https://ejemplo.com"
+
+
+def test_tweet_rechaza_id_int():
+    # snowflake como string, no int (precisión): pydantic v2 no coerciona int->str.
+    with pytest.raises(ValidationError):
+        Tweet(
+            id=123,
+            account="user",
+            created_at=datetime(2023, 6, 1, 12, 0, tzinfo=UTC),
+            content="hola",
+        )
+
+
+def test_tweet_rechaza_quoted_tweet_id_int():
+    with pytest.raises(ValidationError):
+        Tweet(
+            id="123",
+            account="user",
+            created_at=datetime(2023, 6, 1, 12, 0, tzinfo=UTC),
+            content="hola",
+            quoted_tweet_id=999,
+            quoted_tweet_url="https://x.com/i/web/status/999",
+        )
+
+
+def test_tweet_rechaza_quoted_tweet_id_vacio():
+    # Quote degenerado: id "presente" pero vacío. is_quote no debe quedar True con basura.
+    with pytest.raises(ValidationError):
+        Tweet(
+            id="123",
+            account="user",
+            created_at=datetime(2023, 6, 1, 12, 0, tzinfo=UTC),
+            content="hola",
+            quoted_tweet_id="",
+            quoted_tweet_url="https://x.com/i/web/status/999",
+        )
+
+
+def test_tweet_trimea_quoted_tweet_id_y_url():
+    t = Tweet(
+        id="123",
+        account="user",
+        created_at=datetime(2023, 6, 1, 12, 0, tzinfo=UTC),
+        content="hola",
+        quoted_tweet_id="  999  ",
+        quoted_tweet_url="  https://x.com/i/web/status/999  ",
+    )
+    assert t.quoted_tweet_id == "999"
+    assert t.quoted_tweet_url == "https://x.com/i/web/status/999"
+    assert t.is_quote is True

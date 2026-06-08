@@ -164,3 +164,17 @@ Sin cambios en `pyproject.toml` (no hay deps nuevas: pydantic v2 ya está).
 - **Sin `is_retweet` ni `media_urls`** (YAGNI; ver D1). Agregarlos a futuro es aditivo y no rompe consumidores.
 - **Validación de forma en el modelo, parsing de GraphQL solo en el mapper** (D2): el límite de capas del CLAUDE.md se mantiene.
 - **`account` sin `@` y `content` con texto completo**: convenciones que cumple el mapper; el modelo solo valida no-vacío / forma.
+
+---
+
+## 9. Refinamientos post-revisión adversarial (2026-06-08)
+
+Una revisión adversarial multi-lente (pydantic, typing, CLAUDE.md, edge cases) sobre la implementación confirmó tres mejoras de robustez, todas dentro del espíritu de D2 ("el modelo valida *forma* estricta y falla temprano"). No cambian el shape ni tocan el Compliance Gate.
+
+- **R1 — Los validadores `_no_vacio` normalizan (trim), no solo chequean.** Antes hacían `v.strip()` para *decidir* pero devolvían `v` sin trimear: incoherente (ni normalizaban ni rechazaban el whitespace de borde). Ahora devuelven `v.strip()`. Aplica a `Tweet.id`/`account` y `TweetLink.url`/`expanded_url`. Esto es higiene de *forma* (whitespace de borde); **quitar el `@` de `account` sigue siendo del mapper** (normalización semántica, distinta).
+
+- **R2 — `quoted_tweet_id`/`quoted_tweet_url` no pueden ser strings vacíos cuando están presentes.** `_quoted_coherente` usa `is None`, así que un `quoted_tweet_id=""` (string vacío) pasaba la coherencia y dejaba `is_quote == True` con basura (quote degenerado). Se agrega `_quote_no_vacio` (`field_validator`): `None` → `None`; si está presente, trimea y **rechaza** el vacío (fail-fast, en vez de silenciarlo). `is_quote` se mantiene como `quoted_tweet_id is not None` (ahora seguro: nunca `""`).
+
+- **R3 — Tests guardián del contrato de tipo.** Se ancla con tests que `id`/`quoted_tweet_id` como `int` se **rechazan** (pydantic v2 no coerciona `int → str`): refuerza "snowflake como string, no int" como invariante verificada, no solo comentario.
+
+Tests del dominio: 14 → 20. (Los descartes de la revisión: la narrativa "rompe la dedupe por PK / severidad high" estaba inflada — la normalización del mapper y el storage aún no existen; el fix se aplicó por coherencia de bajo riesgo, no como bug crítico.)
