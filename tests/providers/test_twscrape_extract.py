@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from tests.providers._fixtures import (
     cursor_entry,
     search_response,
     tweet_entry,
     tweet_result,
 )
+from tweet_extractor.providers.base import SearchQuery
 from tweet_extractor.providers.twscrape_provider import (
+    build_query,
     count_accessed,
     extract_bottom_cursor,
     extract_tweet_results,
@@ -81,3 +85,21 @@ def test_count_accessed_tweet_with_visibility_results_cuenta_dos():
 def test_count_accessed_nunca_menor_que_tweets_de_nivel_tope():
     raw = search_response([tweet_entry("1", quoted=tweet_result("q1")), tweet_entry("2")])
     assert count_accessed(raw) >= len(extract_tweet_results(raw))
+
+
+def test_build_query_formato_from_user_y_fechas():
+    q = SearchQuery(
+        username="someuser",
+        since=datetime(2023, 1, 1, tzinfo=UTC),
+        until=datetime(2024, 1, 1, tzinfo=UTC),
+    )
+    assert build_query(q) == "from:someuser since:2023-01-01 until:2024-01-01"
+
+
+def test_build_query_usa_granularidad_de_fecha_no_segundos():
+    q = SearchQuery(
+        username="u",
+        since=datetime(2023, 3, 5, 14, 30, tzinfo=UTC),
+        until=datetime(2023, 3, 12, 9, 0, tzinfo=UTC),
+    )
+    assert build_query(q) == "from:u since:2023-03-05 until:2023-03-12"
