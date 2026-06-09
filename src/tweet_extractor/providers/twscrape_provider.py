@@ -3,7 +3,19 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
+from tweet_extractor.providers.base import SearchQuery
+
 _TWEET_TYPENAMES = frozenset({"Tweet", "TweetWithVisibilityResults"})
+
+
+def build_query(query: SearchQuery) -> str:
+    """La query de búsqueda `from:user since: until:` con operadores POR FECHA
+    (granularidad de día), alineada a UTC. Se eligen `since:`/`until:` sobre
+    `since_time:`/`until_time:` (epoch): mismo costo por request, los segundos no se
+    necesitan, y son los operadores más battle-tested (menor riesgo de no-op del
+    filtro). `until:` es exclusivo y `since:` inclusivo -> ventanas adyacentes no
+    solapan. `query.since/until` son UTC tz-aware (garantía de `SearchQuery`)."""
+    return f"from:{query.username} since:{query.since:%Y-%m-%d} until:{query.until:%Y-%m-%d}"
 
 
 def _walk(obj: Any) -> Iterator[dict[str, Any]]:
