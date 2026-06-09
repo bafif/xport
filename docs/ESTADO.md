@@ -2,7 +2,7 @@
 
 > **Documento vivo.** Resumen de DÓNDE estamos y CÓMO seguir. Es recuperable con `git pull` desde cualquier máquina — a diferencia de la memoria de claude-mem / context-mode y del historial de chat, que son **locales a cada PC y NO viajan por git**. Si retomás en otra máquina, este archivo + los specs/plans + los mensajes de commit son la fuente de verdad.
 
-**Última actualización:** 2026-06-08.
+**Última actualización:** 2026-06-09.
 
 ---
 
@@ -15,22 +15,35 @@ Fase 1 (MVP CLI + scraping), en curso:
    - Specs/plan: `docs/superpowers/specs/2026-06-04-compliance-gate-core-design.md`, `docs/superpowers/plans/2026-06-04-compliance-gate-core.md`.
 3. ✅ **Modelo de dominio** — `domain/models.py` (`Tweet`, `TweetLink`), pydantic v2, validación estricta de forma. Pasó dos rondas de code-review xhigh recall.
    - Specs/plan: `docs/superpowers/specs/2026-06-08-domain-model-design.md` (incluye §9 y §10 con todas las decisiones y endurecimientos), `docs/superpowers/plans/2026-06-08-domain-model.md`.
+4. ✅ **`TwscrapeProvider`** (paso 4) — primer provider concreto (scraping gratis vía `twscrape`, sin navegador). `fetch_page(query, cursor) -> Page` devuelve dicts crudos de GraphQL; lo envuelve el `GatedProvider` sin saltear el gate. Piezas: `providers/_twscrape_gql.py` (ÚNICA superficie de acoplamiento con twscrape: `OP_SearchTimeline` con queryId auto-actualizado, `QueueClient`, `encode_params`), `providers/twscrape_provider.py` (helpers puros de envelope `extract_tweet_results`/`extract_bottom_cursor`/`count_accessed`, `build_query` por fecha UTC, `build_pool` de una cuenta desde `.env`, DI del `page_fetcher` → tests offline), `providers/subwindows.py` (troceado puro). Ejecutado con subagentes (implementer + revisión spec/calidad por task) + review final → READY TO MERGE.
+   - Spec/plan: `docs/superpowers/specs/2026-06-09-twscrape-provider-design.md`, `docs/superpowers/plans/2026-06-09-twscrape-provider.md`.
 
-**Calidad actual:** 71 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. Todo en `main`, pusheado a `bafif/xport`.
+**Calidad actual:** 100 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main` (mergeado desde `feat/twscrape-provider`).
 
 ---
 
-## Próximo paso → `TwscrapeProvider` (paso 4 del orden de CLAUDE.md)
+## Próximo paso → `mappers/twscrape_mapper.py` (paso 5 del orden de CLAUDE.md)
 
-`providers/twscrape_provider.py` — el primer provider concreto (scraping gratis vía `httpx`, sin navegador):
+Interpreta los dicts crudos de GraphQL que entrega `TwscrapeProvider` y los mapea al `Tweet` de dominio:
 
-- Búsqueda `from:user since:… until:…` **troceada en sub-ventanas** (esquiva el techo de ~3.200 del timeline). Minimizar el solape (gasta presupuesto del gate).
-- Granularidad de página; reportar `accessed_count` = TODO objeto-tweet tocado (citante + quotes embebidos + RT descartados), no `len(tweets)`.
-- Se envuelve **siempre** con `GatedProvider` — ningún fetch saltea el gate.
-- Requiere: `uv add twscrape httpx`; cookies `X_AUTH_TOKEN`/`X_CT0` en `.env` (cuenta de X descartable).
-- Recomendado seguir el mismo flujo que las fases previas: brainstorming → spec → plan → TDD.
+- **Quotes sí, retweets no**: descartar los que tengan `retweeted_status_result`; el quote citado sale de `quoted_status_result.result` (y, defensivamente, `legacy.quoted_status_result`).
+- Normalizar `__typename` `Tweet` y `TweetWithVisibilityResults` (en este último el tweet real está bajo `.tweet` — el provider entrega el wrapper crudo, el mapper lo desenvuelve).
+- Extraer `links` de `legacy.entities.urls[]` (`expanded_url`), validando vacíos/autorreferenciales.
+- **Política de replies** (decidida acá, no en el provider): definición *por raíz de conversación* usando `conversationId` — self-threads sí, replies a terceros no; resuelve el caso del self-reply que cuelga de una conversación ajena.
+- Las fixtures de `tests/providers/_fixtures.py` siembran esta fase (ya modelan Tweet/TVR/quote/RT anidados).
 
-Después: `mappers/twscrape_mapper.py` (quotes sí, retweets no, links) → `storage/` (SQLite intermedio + CSV streaming) → `cli.py`.
+Después: `storage/` (SQLite intermedio + CSV streaming) + el **loop orquestador de sub-ventanas** (un `SearchQuery` por tramo de `subwindows()` → `gated.fetch_tweets`) → `cli.py`.
+
+### Verificaciones contra datos vivos (pendientes hasta tener cookies — NO bloquean lo hecho)
+
+Los tests del provider son 100% offline. Antes de confiar el pipeline, con una cuenta descartable real (spec `2026-06-09-twscrape-provider-design.md` §11):
+
+1. El filtro temporal `since:/until:` realmente acota (descartar no-op del operador en el endpoint GraphQL → drenaría el presupuesto).
+2. El cursor `Bottom` pagina y termina (el guard de cursor-repetido de `base.py` corta).
+3. El shape real matchea las fixtures (`tweet_results.result`, `quoted_status_result`, `retweeted_status_result`, `__typename`); ajustar la navegación defensiva si x.com cambió algo.
+4. `accessed_count` real ≤ la cota de reserva (60) por página.
+
+**Notas de robustez del review final (menores, validar en el punto 3):** (a) `extract_tweet_results`/`count_accessed` usan un `_walk` global en vez de anclar a `instructions[].entries[]` — elegido por robustez ante rotación del envelope; un `entryId:"tweet-*"` anidado dentro de un quote se tomaría como nivel-tope (imposible con datos reales; la dirección del cap sigue segura). (b) Ningún test fija estructuralmente la garantía offline. Reconsiderar (a) si el shape vivo sorprende.
 
 ---
 
