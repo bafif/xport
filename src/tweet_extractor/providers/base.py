@@ -11,6 +11,11 @@ RawTweet = dict[str, Any]
 El shape de dominio lo fija el mapper en su fase; el gate es agnóstico."""
 
 
+class ProviderError(RuntimeError):
+    """Un provider no pudo completar un fetch: cuenta inválida/suspendida,
+    rate-limit agotado, o configuración faltante (p.ej. cookies)."""
+
+
 @dataclass(frozen=True)
 class SearchQuery:
     """Parámetros de una búsqueda `from:user since/until`."""

@@ -2,7 +2,17 @@ from __future__ import annotations
 
 
 def test_settings_defaults(monkeypatch):
-    for k in ("HARD_CAP", "WINDOW_S", "PAGE_SIZE", "X_AUTH_TOKEN", "X_CT0"):
+    from pathlib import Path
+
+    for k in (
+        "HARD_CAP",
+        "WINDOW_S",
+        "PAGE_SIZE",
+        "X_AUTH_TOKEN",
+        "X_CT0",
+        "ACCOUNTS_DB_PATH",
+        "SUBWINDOW_DAYS",
+    ):
         monkeypatch.delenv(k, raising=False)
 
     from tweet_extractor.config import Settings
@@ -13,6 +23,8 @@ def test_settings_defaults(monkeypatch):
     assert s.page_size == 20
     assert s.max_accessed_per_page == 60  # 20 * 3 (citante + 2 niveles de quote)
     assert s.x_auth_token is None
+    assert s.accounts_db_path == Path("data/accounts.db")
+    assert s.subwindow_days == 7
 
 
 def test_settings_lee_env_vars(monkeypatch):
