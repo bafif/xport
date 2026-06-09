@@ -25,7 +25,9 @@ class Settings(BaseSettings):
 
     audit_db_path: Path = Path("data/audit/ledger.db")
     data_db_path: Path = Path("data/tweets.db")
+    accounts_db_path: Path = Path("data/accounts.db")  # cuentas/cookies de twscrape (git-ignored)
     page_size: int = 20
+    subwindow_days: int = 7  # paso default (días) del troceado de búsqueda
     x_auth_token: str | None = None
     x_ct0: str | None = None
 
