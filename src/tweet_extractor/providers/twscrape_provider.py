@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 
-from tweet_extractor.providers.base import SearchQuery
+from twscrape import AccountsPool
+
+from tweet_extractor.config import Settings
+from tweet_extractor.providers._twscrape_gql import fetch_search_page
+from tweet_extractor.providers.base import Page, SearchQuery, TweetProvider
 
 _TWEET_TYPENAMES = frozenset({"Tweet", "TweetWithVisibilityResults"})
 
@@ -65,3 +69,33 @@ def count_accessed(raw: dict[str, Any]) -> int:
     Sobre-cuenta a propósito (un TweetWithVisibilityResults cuenta 2: wrapper + `.tweet`)
     — la dirección SEGURA del cap (el ledger no deduplica; sobre-contar es seguro)."""
     return sum(1 for d in _walk(raw) if d.get("__typename") in _TWEET_TYPENAMES)
+
+
+PageFetcher = Callable[[AccountsPool | None, str, int, "str | None"], Awaitable[dict[str, Any]]]
+
+
+class TwscrapeProvider(TweetProvider):
+    """Provider de scraping gratis vía twscrape (httpx, sin navegador). Entrega dicts
+    crudos de GraphQL por página; el mapper los interpreta. Conforma `fetch_page`
+    (un request por página, cursor externo) para que el `GatedProvider` lo gatee. El
+    fetcher de red se inyecta (`page_fetcher`) -> tests offline con fixtures."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        pool: AccountsPool | None,
+        *,
+        page_fetcher: PageFetcher = fetch_search_page,
+    ) -> None:
+        self.max_accessed_per_page = settings.max_accessed_per_page  # cota de reserva del gate
+        self._count = settings.page_size
+        self._pool = pool
+        self._fetch = page_fetcher
+
+    async def fetch_page(self, query: SearchQuery, cursor: str | None) -> Page:
+        raw = await self._fetch(self._pool, build_query(query), self._count, cursor)
+        return Page(
+            tweets=extract_tweet_results(raw),
+            accessed_count=count_accessed(raw),
+            next_cursor=extract_bottom_cursor(raw),
+        )
