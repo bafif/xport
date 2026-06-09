@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from tests.providers._fixtures import cursor_entry, search_response, tweet_entry, tweet_result
 from tweet_extractor.compliance.gated_provider import GatedProvider
 from tweet_extractor.config import Settings
-from tweet_extractor.providers.base import SearchQuery
-from tweet_extractor.providers.twscrape_provider import TwscrapeProvider
+from tweet_extractor.providers._twscrape_gql import _build_params
+from tweet_extractor.providers.base import ProviderError, SearchQuery
+from tweet_extractor.providers.twscrape_provider import TwscrapeProvider, build_pool
 
 
 def _settings() -> Settings:
@@ -84,3 +87,49 @@ async def _unused_fetcher(
     pool: Any, query_str: str, count: int, cursor: str | None
 ) -> dict[str, Any]:
     return search_response([])
+
+
+def test_build_params_incluye_rawquery_count_product():
+    params = _build_params("from:u since:2023-01-01 until:2023-01-08", 20, None)
+    variables = params["variables"]
+    assert variables["rawQuery"] == "from:u since:2023-01-01 until:2023-01-08"
+    assert variables["count"] == 20
+    assert variables["product"] == "Latest"
+    assert "cursor" not in variables  # primera página sin cursor
+
+
+def test_build_params_agrega_cursor_si_hay():
+    params = _build_params("from:u since:2023-01-01 until:2023-01-08", 20, "CUR")
+    assert params["variables"]["cursor"] == "CUR"
+
+
+async def test_build_pool_carga_cuenta_activa_con_cookies(tmp_path):
+    settings = Settings(
+        _env_file=None,
+        x_auth_token="AUTHTOKEN",
+        x_ct0="CT0TOKEN",
+        accounts_db_path=tmp_path / "accounts.db",
+    )
+    pool = await build_pool(settings)
+    acc = await pool.get_account("xport-session")
+    assert acc is not None
+    assert acc.active is True
+
+
+async def test_build_pool_idempotente(tmp_path):
+    settings = Settings(
+        _env_file=None,
+        x_auth_token="AUTHTOKEN",
+        x_ct0="CT0TOKEN",
+        accounts_db_path=tmp_path / "accounts.db",
+    )
+    await build_pool(settings)
+    pool = await build_pool(settings)  # segunda vez: no debe crashear ni duplicar
+    acc = await pool.get_account("xport-session")
+    assert acc is not None
+
+
+async def test_build_pool_sin_cookies_falla(tmp_path):
+    settings = Settings(_env_file=None, accounts_db_path=tmp_path / "accounts.db")
+    with pytest.raises(ProviderError):
+        await build_pool(settings)
