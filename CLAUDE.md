@@ -238,7 +238,9 @@ Orden de construcción (Fase 1 MVP, CLI + scraping gratis):
 4. ✅ `TwscrapeProvider.fetch_tweets()` con búsqueda `from:user since/until` troceada, granularidad de página, reporte de `accessed_count`.
 5. ✅ `mappers/twscrape_mapper.py` (quotes incluidos, retweets excluidos, links, política de replies por raíz de conversación).
 6. ✅ `storage/csv_exporter.py` (streaming, un CSV por cuenta, defaults provisionales del CSV) + SQLite intermedio (dedupe por PK, checkpointing por sub-ventana).
-7. **(siguiente)** `cli.py` + loop orquestador de sub-ventanas.
+7. ✅ `cli.py` (Typer) + `orchestrator.py` (loop de sub-ventanas; lo comparten CLI hoy y FastAPI en Fase 3).
+
+**Fase 1 (MVP CLI) completa en código.** Antes de confiar el pipeline: verificaciones contra datos vivos con cookies reales (ver `docs/ESTADO.md`).
 
 Fases 2-4 (modularización + stub API oficial, FastAPI + Nginx, extensiones Firefox/Chrome): ver `docs/plan-extractor-tweets.md`.
 

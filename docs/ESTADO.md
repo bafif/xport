@@ -28,17 +28,18 @@ Fase 1 (MVP CLI + scraping), en curso:
    - **`csv_exporter`**: `write_csv` en streaming (chunks de 500 filas, escrituras vía `asyncio.to_thread`, nada de I/O bloqueante en el loop), `QUOTE_ALL`, **escritura atómica** (`.tmp` + `os.replace`; un fallo a mitad limpia el tmp y preserva el CSV previo). `export_account(store, account, out_dir)` → `<account>.csv` en orden cronológico aplicando `passes_reply_policy` en streaming (predicado extraído de `apply_reply_policy`, única fuente de la regla) con los `own_ids` persistidos. Cuenta vacía → CSV solo-header. Links múltiples en una celda separados por espacio (no ambiguo en URLs).
    - **Defaults provisionales aplicados**: UTF-8 sin BOM, delimitador `,`, `QUOTE_ALL`, `created_at` ISO UTC. Todos configurables por parámetro (`encoding`/`delimiter`); columnas: `account, created_at, content, links, quoted_tweet_id, quoted_tweet_url` (sin `id`, según CLAUDE.md).
 
-**Calidad actual:** 158 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main`.
+7. ✅ **`orchestrator.py` + `cli.py`** (paso 7 — **cierra la Fase 1 en código**):
+   - **`orchestrator.run_job`**: por cuenta, un `SearchQuery` por tramo de `subwindows()` (salteando los `is_window_done` SIN tocar al provider: cero presupuesto del gate) → `provider.fetch_tweets` → `map_tweet` (None = RT/tombstone) → `store.save` en tandas de 200 → `mark_window_done` al CERRAR el tramo → `export_account` al final de la cuenta (ahí se aplica la política de replies). Falla rápido: un error a mitad de tramo propaga sin checkpoint ni CSV de esa cuenta; lo persistido sobrevive y el re-run repite solo ese tramo (dedupe absorbe). `provider` DEBE ser el `GatedProvider`. Módulo separado de la CLI a propósito: el FastAPI de Fase 3 consume el mismo `run_job`.
+   - **`cli.py`** (Typer, `tweet-extractor` como script + `python -m tweet_extractor.cli`): `--account/-a` repetible (tolera `@`), `--since/--until` YYYY-MM-DD UTC (validación inclusiva/exclusiva), `--out-dir`, `--subwindow-days`, `--encoding`/`--delimiter` (defaults provisionales). Wiring real en `cli._run`: `build_pool` + `SlidingWindowGate` + `SqliteStore` + `GatedProvider`. Resumen final por cuenta + uso/restante del gate. Errores de dominio (`ProviderError`/`ComplianceError`/`MapperError`) → exit 1 con mensaje; tests mockean `cli._run`.
+   - Se agregó **typer** a las deps y `[project.scripts]` en `pyproject.toml`.
+
+**Calidad actual:** 171 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main`.
 
 ---
 
-## Próximo paso → `cli.py` (paso 7, cierra la Fase 1)
+## Próximo paso → verificaciones contra datos vivos, después Fase 2
 
-El **loop orquestador** + la CLI (Typer — ojo: falta `uv add typer`, hoy no está en las deps):
-
-- Por cuenta: un `SearchQuery` por tramo de `subwindows()` (saltando los que `is_window_done`) → `GatedProvider(TwscrapeProvider).fetch_tweets` → `map_tweet` → `store.save` por página → `mark_window_done` al cerrar el tramo → al final del job, `export_account` (la política de replies ya queda aplicada ahí).
-- Wiring real: `build_pool(settings)` + `SlidingWindowGate(settings.audit_db_path, ...)`.
-- Recordar las **verificaciones contra datos vivos** (sección de abajo) antes de confiar el pipeline.
+La Fase 1 está completa en código pero **NO verificada contra x.com real**. Con cookies de una cuenta descartable en `.env` (sección de abajo, spec §11): correr `uv run tweet-extractor -a <cuenta> --since ... --until ...` acotado y validar los 4 puntos de la sección "Verificaciones contra datos vivos". Después: Fase 2 (factory `get_provider` + stub `OfficialApiProvider` + mapper API v2) y Fase 3 (FastAPI + Nginx), ver `docs/plan-extractor-tweets.md`.
 
 ### Verificaciones contra datos vivos (pendientes hasta tener cookies — NO bloquean lo hecho)
 

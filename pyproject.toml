@@ -14,7 +14,11 @@ dependencies = [
     "pydantic-settings>=2.0",
     "aiosqlite>=0.19",
     "twscrape>=0.18.1",
+    "typer>=0.26.7",
 ]
+
+[project.scripts]
+tweet-extractor = "tweet_extractor.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.11.17,<0.12.0"]
