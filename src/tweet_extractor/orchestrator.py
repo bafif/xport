@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from tweet_extractor.mappers.twscrape_mapper import MappedTweet, map_tweet
+from tweet_extractor.mappers.base import MappedTweet, Mapper
 from tweet_extractor.providers.base import SearchQuery, TweetProvider
 from tweet_extractor.providers.subwindows import subwindows
 from tweet_extractor.storage.csv_exporter import (
@@ -37,6 +37,7 @@ async def run_job(
     until: datetime,
     *,
     provider: TweetProvider,
+    mapper: Mapper,
     store: SqliteStore,
     out_dir: Path,
     subwindow_days: int = 7,
@@ -67,7 +68,7 @@ async def run_job(
                 windows_skipped += 1
                 log(f"{tramo}: ya completado, se saltea")
                 continue
-            saved_tramo = await _run_window(account, w_since, w_until, provider, store)
+            saved_tramo = await _run_window(account, w_since, w_until, provider, mapper, store)
             await store.mark_window_done(account, w_since, w_until)
             saved += saved_tramo
             windows_run += 1
@@ -94,6 +95,7 @@ async def _run_window(
     w_since: datetime,
     w_until: datetime,
     provider: TweetProvider,
+    mapper: Mapper,
     store: SqliteStore,
 ) -> int:
     """Fetchea y persiste UN tramo. Devuelve cuántos tweets nuevos guardó."""
@@ -101,7 +103,7 @@ async def _run_window(
     saved = 0
     batch: list[MappedTweet] = []
     async for raw in provider.fetch_tweets(query):
-        mapped = map_tweet(raw, account=account)
+        mapped = mapper(raw, account=account)
         if mapped is None:  # RT/tombstone: descarte esperado (ya contó en el gate)
             continue
         batch.append(mapped)

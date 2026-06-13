@@ -1,16 +1,33 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
-from collections.abc import Set as AbstractSet
-from dataclasses import dataclass
+from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
 
 from tweet_extractor.domain.models import Tweet, TweetLink
+from tweet_extractor.mappers.base import (
+    MappedTweet,
+    Mapper,
+    MapperError,
+    apply_reply_policy,
+    passes_reply_policy,
+)
 from tweet_extractor.providers.base import RawTweet
+
+# Lo agnóstico de backend (MappedTweet, MapperError, la política de replies, el
+# Protocol Mapper) vive en `mappers/base`. Se re-exporta acá para no romper los
+# imports existentes (storage, cli, tests los traían de este módulo).
+__all__ = [
+    "MappedTweet",
+    "Mapper",
+    "MapperError",
+    "apply_reply_policy",
+    "passes_reply_policy",
+    "map_tweet",
+]
 
 # Formato legacy de X: "Wed Jan 04 00:00:00 +0000 2023". Trae offset (%z) -> el
 # datetime sale tz-aware, como exige el modelo. strptime usa los nombres de
@@ -24,27 +41,6 @@ _STATUS_URL = re.compile(
     r"https?://(?:www\.|mobile\.)?(?:twitter|x)\.com/(?:i/web|[^/]+)/status(?:es)?/(\d+)",
     re.IGNORECASE,
 )
-
-
-class MapperError(ValueError):
-    """El backend entregó un objeto-tweet con shape inesperado (rotación del
-    GraphQL de x.com o bug del provider). Se lanza fuerte —no se descarta en
-    silencio— para que una rotación de shape se note como error y no como un
-    CSV vacío. Distinto de los descartes ESPERADOS (RT, tombstone), que son
-    `None`."""
-
-
-@dataclass(frozen=True)
-class MappedTweet:
-    """Un `Tweet` de dominio + los metadatos de conversación que necesita la
-    política de replies (que es por-colección, no por-tweet: ver
-    `apply_reply_policy`). `conversation_id` es la raíz de la conversación
-    (`legacy.conversation_id_str`); `is_reply` deriva de la presencia de
-    `in_reply_to_status_id_str`."""
-
-    tweet: Tweet
-    is_reply: bool
-    conversation_id: str | None
 
 
 def map_tweet(raw: RawTweet, *, account: str) -> MappedTweet | None:
@@ -87,41 +83,6 @@ def map_tweet(raw: RawTweet, *, account: str) -> MappedTweet | None:
         is_reply=_clean_str(legacy.get("in_reply_to_status_id_str")) is not None,
         conversation_id=_clean_str(legacy.get("conversation_id_str")),
     )
-
-
-def apply_reply_policy(mapped: Iterable[MappedTweet]) -> list[Tweet]:
-    """Política de replies POR RAÍZ DE CONVERSACIÓN (decisión en ESTADO.md):
-    self-threads sí, replies a conversaciones ajenas no. Un reply se conserva
-    sólo si su `conversation_id` (la raíz) es un tweet de la propia cuenta —
-    eso excluye también al self-reply que cuelga de una conversación ajena,
-    aunque responda a un tweet propio. Reply sin `conversation_id` -> se
-    descarta (no se puede probar que es self-thread; cerrado por defecto).
-
-    Aplicar sobre la colección COMPLETA de la cuenta (todas las sub-ventanas
-    del job), no por página: la raíz suele aparecer en otra página/tramo.
-    Limitación conocida: si la raíz quedó fuera del rango de fechas pedido, sus
-    replies en-rango se descartan. Preserva el orden de entrada.
-    """
-    items = list(mapped)
-    own_ids = {m.tweet.id for m in items}
-    return [
-        m.tweet
-        for m in items
-        if passes_reply_policy(
-            is_reply=m.is_reply, conversation_id=m.conversation_id, own_ids=own_ids
-        )
-    ]
-
-
-def passes_reply_policy(
-    *, is_reply: bool, conversation_id: str | None, own_ids: AbstractSet[str]
-) -> bool:
-    """El predicado por-tweet de la política (única fuente de la regla): no-reply
-    pasa siempre; un reply pasa sólo si su raíz está entre los ids propios.
-    Separado de `apply_reply_policy` para poder filtrar en STREAMING (p.ej. el
-    export desde storage: `own_ids` ya persistidos + filas de a una) sin
-    materializar la colección entera."""
-    return not is_reply or conversation_id in own_ids
 
 
 def _unwrap(result: dict[str, Any]) -> dict[str, Any] | None:
