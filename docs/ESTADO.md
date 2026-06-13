@@ -2,7 +2,7 @@
 
 > **Documento vivo.** Resumen de DÓNDE estamos y CÓMO seguir. Es recuperable con `git pull` desde cualquier máquina — a diferencia de la memoria de claude-mem / context-mode y del historial de chat, que son **locales a cada PC y NO viajan por git**. Si retomás en otra máquina, este archivo + los specs/plans + los mensajes de commit son la fuente de verdad.
 
-**Última actualización:** 2026-06-13.
+**Última actualización:** 2026-06-13 21:30 UTC.
 
 ---
 
