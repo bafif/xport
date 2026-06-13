@@ -8,7 +8,7 @@
 
 ## Qué está hecho
 
-**Fase 1 (MVP CLI + scraping): COMPLETA en código. Fase 2 (modularización + backend oficial stub): COMPLETA en código.**
+**Fase 1 (MVP CLI + scraping): COMPLETA en código. Fase 2 (modularización + backend oficial stub): COMPLETA en código. Fase 3 (FastAPI + Nginx): COMPLETA en código.**
 
 1. ✅ **Scaffolding** — `uv`, estructura `src/tweet_extractor/`, configs (`pyproject.toml`, `.gitignore`, `.env.example`, etc.).
 2. ✅ **Compliance Gate** — `compliance/gate.py` (`SlidingWindowGate`) + `compliance/gated_provider.py` (`GatedProvider`) + contrato `providers/base.py` (`TweetProvider`, `SearchQuery`, `Page`) + `config.py`. Tests completos.
@@ -42,13 +42,24 @@
    - **Config**: `provider_backend: Literal["twscrape","official"] = "twscrape"` + `x_api_bearer_token`. `.env.example` actualizado.
    - Fase 2 ítems 3-4 del plan (storage dedupe/checkpoint; async backoff) ya estaban: storage se hizo en paso 6; el backoff/rate-limit lo maneja twscrape (`QueueClient`).
 
-**Calidad actual:** 193 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main`.
+9. ✅ **Fase 3 — FastAPI + Nginx (`service/` + `deploy/`)**: API HTTP sobre el MISMO `orchestrator.run_job` que la CLI.
+   - **`service/app.py`**: `create_app(settings, *, backend_builder)` (factory inyectable para tests: DBs temporales + backend fake sin twscrape/cookies). El **lifespan abre el gate y el store como SINGLETONS** de la app (un único ledger global, regla #1; una sola conexión de datos compartida por todos los jobs) y los cierra al apagar (después de cancelar los jobs en vuelo). `app = create_app()` a nivel módulo = entry-point de uvicorn (`tweet_extractor.service.app:app`). **CORS lo maneja FastAPI** (CORSMiddleware, solo si `cors_allow_origins` no está vacío), NUNCA Nginx (regla: no duplicar headers).
+   - **`service/jobs.py`**: `JobStatus` (pending/running/done/error), `JobRecord` (estado mutable en memoria + rastro de log por sub-ventana), `JobRegistry` (índice + tracking de tasks para cancelarlas en el shutdown), `ServiceState` (lo compartido por Depends), `run_extraction` (corutina de background: `build_backend` → `GatedProvider` sobre el gate **compartido** → `run_job`; captura TODO error para reportarlo vía la API en vez de morir en silencio; `CancelledError` propaga). **Los DATOS del job son durables** (tweets/CSV/checkpoints en disco): re-enviar un job reanuda desde los checkpoints; el estado *runtime* del job (status/log) es en memoria.
+   - **`service/routers.py`**: `POST /jobs` (encola y corre en background, 201 + id), `GET /jobs` (lista), `GET /jobs/{id}` (estado + log + resultados con URL de descarga), `GET /jobs/{id}/csv/{account}` (FileResponse; **por cuenta**, ya que un job son varios CSV — un archivo por cuenta, según el spec; 409 si el job no terminó, 404 si no existe/cuenta ajena), `GET /gate` (uso/restante/cap/ventana — la invariante crítica, observable), `GET /healthz`.
+   - **`service/schemas.py`**: DTOs pydantic. `JobCreate` valida fechas `YYYY-MM-DD` (since<until), limpia handles (`@`, vacíos) y **rechaza separadores de path** en el handle (defensa en profundidad: el handle es nombre de archivo + segmento de URL).
+   - **`deploy/`**: `Dockerfile` multi-stage Alpine (uv 0.11.19 pineado en build → runtime `python:3.12-alpine` no-root; `/data` chowneado para que los volúmenes nombrados hereden ownership escribible), `docker-compose.yml` (app + `nginx:alpine`; **ledger del gate en su propio volumen** `audit-ledger`, separado de `app-data`; paths absolutos del contenedor por `environment`, cookies por `env_file`), `nginx.conf` (reverse-proxy, sin CORS). **Build Alpine verificado** (`docker build` OK) y **contenedor verificado sirviendo** healthz/gate/openapi.
+   - **Config**: `csv_dir` (raíz de CSV; el service usa un subdir por job para no pisar CSVs entre jobs) + `cors_allow_origins`. `.env.example` actualizado.
+   - **14 tests del service** (`tests/service/`, TestClient sobre app con backend fake + DBs tmp): happy path POST→poll→descarga CSV, el gate singleton **cuenta los accesos** del job, **el RT se descarta pero igual cuenta en el gate** (regla #1 vía HTTP), 404/409/422, lista de jobs, job con backend que falla → `error`.
+
+**Calidad actual:** 207 tests verdes · `mypy --strict` limpio (28 archivos) · `ruff` (lint+format) limpio · build Docker Alpine OK. En `main`.
 
 ---
 
-## Próximo paso → verificaciones contra datos vivos, después Fase 3
+## Próximo paso → verificaciones contra datos vivos, después Fase 4
 
-Fases 1 y 2 completas en código pero **NO verificadas contra x.com real**. Con cookies de una cuenta descartable en `.env` (sección de abajo, spec §11): correr `uv run tweet-extractor -a <cuenta> --since ... --until ...` acotado y validar los 4 puntos de "Verificaciones contra datos vivos". Después: **Fase 3 (FastAPI + Nginx)** — endpoints `POST /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv` + estado del gate (uso/restante), reverse-proxy Nginx; el `service/` consume el mismo `orchestrator.run_job`. Ver `docs/plan-extractor-tweets.md`. La implementación REAL del backend oficial (llenar el seam de red de `official_api.py` + el `api_v2_mapper`) queda para cuando haya una API key de pago y se pueda verificar contra respuestas v2 reales.
+Fases 1, 2 y 3 completas en código pero el pipeline de scraping **NO está verificado contra x.com real**. Con cookies de una cuenta descartable en `.env` (sección de abajo, spec §11): correr `uv run tweet-extractor -a <cuenta> --since ... --until ...` acotado (o `uv run fastapi dev src/tweet_extractor/service/app.py` + `POST /jobs`) y validar los 4 puntos de "Verificaciones contra datos vivos". Después: **Fase 4 (extensiones Firefox/Chrome)** — UI MV3 que pega contra esta API local; código compartido entre navegadores; bundler (Vite/WXT) → `dist/chrome` y `dist/firefox`; Node por `fnm` en dev (en Docker se pinea la imagen, NO fnm). Ver `docs/plan-extractor-tweets.md`.
+
+Pendientes que NO bloquean: (a) **ODQ del CSV** (encoding/BOM, delimitador, timezone display, replies/media) siguen como defaults provisionales — confirmar antes de fijar. (b) La implementación REAL del backend oficial (llenar el seam de red de `official_api.py` + el `api_v2_mapper`) queda para cuando haya una API key de pago y se pueda verificar contra respuestas v2 reales. (c) **Persistencia del estado runtime de los jobs**: hoy `JobRegistry` es en memoria (los DATOS sí son durables); si el server reinicia, los jobs `running` se pierden pero re-enviarlos reanuda desde los checkpoints. Evaluar persistirlo si se quiere sobrevivir reinicios sin re-POST.
 
 ### Verificaciones contra datos vivos (pendientes hasta tener cookies — NO bloquean lo hecho)
 
@@ -80,7 +91,7 @@ git clone git@github.com:bafif/xport.git    # URL estándar — ver "Nota de acc
 cd xport
 uv sync                                       # crea .venv desde uv.lock (build reproducible)
 cp .env.example .env                          # completar cookies X (NUNCA se commitean)
-uv run pytest -q                              # 158 verdes confirma que el entorno quedó OK
+uv run pytest -q                              # 207 verdes confirma que el entorno quedó OK
 ```
 
 Comandos de calidad: `uv run ruff check . && uv run ruff format .` · `uv run mypy src` · `uv run pytest`.

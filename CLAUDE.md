@@ -240,9 +240,11 @@ Orden de construcción (Fase 1 MVP, CLI + scraping gratis):
 6. ✅ `storage/csv_exporter.py` (streaming, un CSV por cuenta, defaults provisionales del CSV) + SQLite intermedio (dedupe por PK, checkpointing por sub-ventana).
 7. ✅ `cli.py` (Typer) + `orchestrator.py` (loop de sub-ventanas; lo comparten CLI hoy y FastAPI en Fase 3).
 
-**Fases 1 (MVP CLI) y 2 (modularización + stub API oficial) completas en código.** Antes de confiar el pipeline: verificaciones contra datos vivos con cookies reales (ver `docs/ESTADO.md`). El intercambio de backend pasa por `providers/factory.py` (`build_backend`, lee `PROVIDER_BACKEND`); el `OfficialApiProvider` y `api_v2_mapper` son stubs (fallan cerrado) hasta tener una API key v2 con qué verificar.
+**Fases 1 (MVP CLI), 2 (modularización + stub API oficial) y 3 (FastAPI + Nginx) completas en código.** Antes de confiar el pipeline: verificaciones contra datos vivos con cookies reales (ver `docs/ESTADO.md`). El intercambio de backend pasa por `providers/factory.py` (`build_backend`, lee `PROVIDER_BACKEND`); el `OfficialApiProvider` y `api_v2_mapper` son stubs (fallan cerrado) hasta tener una API key v2 con qué verificar.
 
-Fases 3-4 (FastAPI + Nginx, extensiones Firefox/Chrome): ver `docs/plan-extractor-tweets.md`.
+La Fase 3 vive en `src/tweet_extractor/service/` (FastAPI sobre el mismo `orchestrator.run_job`; gate+store SINGLETONS en el lifespan; jobs en background con `JobRegistry`; endpoints `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{account}`, `GET /gate`, `GET /healthz`) y en `deploy/` (Dockerfile Alpine multi-stage + docker-compose con Nginx + ledger del gate en volumen aparte; build Alpine verificado). En dev: `uv run fastapi dev src/tweet_extractor/service/app.py`.
+
+Fase 4 (extensiones Firefox/Chrome): ver `docs/plan-extractor-tweets.md`.
 
 ---
 

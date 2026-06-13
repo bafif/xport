@@ -28,8 +28,14 @@ class Settings(BaseSettings):
     audit_db_path: Path = Path("data/audit/ledger.db")
     data_db_path: Path = Path("data/tweets.db")
     accounts_db_path: Path = Path("data/accounts.db")  # cuentas/cookies de twscrape (git-ignored)
+    csv_dir: Path = Path("data/csv")  # raíz de salida de los CSV (el service usa un subdir por job)
     page_size: int = 20
     subwindow_days: int = 7  # paso default (días) del troceado de búsqueda
+
+    # CORS del FastAPI: orígenes permitidos para la extensión de navegador (Fase 4).
+    # Vacío por default (sin middleware CORS) = seguro. El CORS lo maneja FastAPI,
+    # NUNCA Nginx (regla de CLAUDE.md: no duplicar headers CORS entre ambos).
+    cors_allow_origins: list[str] = []
 
     # Backend de datos: el ÚNICO punto de intercambio scraping ↔ API oficial (la
     # factory lo lee). Un valor inválido falla la validación de pydantic.
