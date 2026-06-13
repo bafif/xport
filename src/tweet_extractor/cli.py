@@ -61,7 +61,7 @@ def extract(
     until_dt = _parse_day(until, "--until")
     if since_dt >= until_dt:
         raise typer.BadParameter("--since debe ser anterior a --until")
-    accounts = [a.lstrip("@").strip() for a in account]
+    accounts = [a.strip().lstrip("@").strip() for a in account]
     if any(not a for a in accounts):
         raise typer.BadParameter("--account no puede ser vacío")
 

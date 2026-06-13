@@ -23,15 +23,17 @@ class JobCreate(BaseModel):
     @field_validator("accounts")
     @classmethod
     def _clean_accounts(cls, raw: list[str]) -> list[str]:
-        cleaned = [a.lstrip("@").strip() for a in raw]
+        # Whitespace PRIMERO, después el @ (un " @nasa" debe quedar "nasa", no "@nasa").
+        cleaned = [a.strip().lstrip("@").strip() for a in raw]
         if any(not a for a in cleaned):
             raise ValueError("los handles no pueden ser vacíos")
         # Defensa en profundidad: el handle se usa como nombre de archivo del CSV
-        # (<account>.csv) y como segmento de URL de descarga. Rechazar separadores
-        # acá (422 al enviar) en vez de que el job falle recién al exportar.
+        # (<account>_<since>_<until>.csv) y como segmento de URL de descarga. Rechazar
+        # separadores acá (422 al enviar) en vez de que el job falle recién al exportar.
         if any(sep in a for a in cleaned for sep in ("/", "\\", "..")):
             raise ValueError("handle inválido (no puede contener '/', '\\' ni '..')")
-        return cleaned
+        # Dedup preservando orden: la misma cuenta dos veces no debe duplicar el CSV.
+        return list(dict.fromkeys(cleaned))
 
     @model_validator(mode="after")
     def _range_ordenado(self) -> JobCreate:

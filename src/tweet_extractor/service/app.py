@@ -32,23 +32,25 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         gate = SlidingWindowGate(cfg.audit_db_path, cfg.hard_cap, cfg.window_s)
-        await gate.setup()
         store = SqliteStore(cfg.data_db_path)
-        await store.setup()
-        app.state.svc = ServiceState(
-            settings=cfg,
-            gate=gate,
-            store=store,
-            registry=JobRegistry(),
-            backend_builder=backend_builder,
-        )
+        registry = JobRegistry()
+        # setup DENTRO del try: si `store.setup()` falla, el `finally` igual cierra
+        # el gate (su conexión ya abierta) — close() es no-op si no se abrió.
         try:
+            await gate.setup()
+            await store.setup()
+            app.state.svc = ServiceState(
+                settings=cfg,
+                gate=gate,
+                store=store,
+                registry=registry,
+                backend_builder=backend_builder,
+            )
             yield
         finally:
             # Orden importante: cancelar los jobs en vuelo ANTES de cerrar las
             # conexiones (un run_job a mitad no debe tocar un gate/store cerrado).
-            svc: ServiceState = app.state.svc
-            await svc.registry.shutdown()
+            await registry.shutdown()
             await store.close()
             await gate.close()
 
