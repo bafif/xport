@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -103,7 +104,24 @@ def apply_reply_policy(mapped: Iterable[MappedTweet]) -> list[Tweet]:
     """
     items = list(mapped)
     own_ids = {m.tweet.id for m in items}
-    return [m.tweet for m in items if not m.is_reply or m.conversation_id in own_ids]
+    return [
+        m.tweet
+        for m in items
+        if passes_reply_policy(
+            is_reply=m.is_reply, conversation_id=m.conversation_id, own_ids=own_ids
+        )
+    ]
+
+
+def passes_reply_policy(
+    *, is_reply: bool, conversation_id: str | None, own_ids: AbstractSet[str]
+) -> bool:
+    """El predicado por-tweet de la política (única fuente de la regla): no-reply
+    pasa siempre; un reply pasa sólo si su raíz está entre los ids propios.
+    Separado de `apply_reply_policy` para poder filtrar en STREAMING (p.ej. el
+    export desde storage: `own_ids` ya persistidos + filas de a una) sin
+    materializar la colección entera."""
+    return not is_reply or conversation_id in own_ids
 
 
 def _unwrap(result: dict[str, Any]) -> dict[str, Any] | None:

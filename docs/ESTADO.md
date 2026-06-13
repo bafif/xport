@@ -23,16 +23,22 @@ Fase 1 (MVP CLI + scraping), en curso:
    - **Links**: `legacy.entities.urls[]` + `entity_set` del note tweet; descarta sin `expanded_url` y autorreferenciales (permalink del propio tweet o de su quote); links a TERCEROS tweets se conservan; dedupe (url, expanded_url) preservando orden. **Note tweets**: el texto completo reemplaza al `full_text` truncado.
    - **Política de replies implementada**: `map_tweet` devuelve `MappedTweet` (= `Tweet` + `is_reply` + `conversation_id`); `apply_reply_policy` (por-colección) conserva no-replies y replies cuya raíz (`conversation_id`) sea tweet propio — self-threads sí, replies a conversaciones ajenas no, incluido el self-reply que cuelga de conversación ajena. Aplicarla sobre la colección COMPLETA del job por cuenta (no por página). Limitación conocida: raíz fuera del rango de fechas ⇒ sus replies en-rango se descartan. Reply sin `conversation_id` ⇒ descarte (cerrado por defecto).
    - `account` lo estampa el caller (el handle consultado), no se extrae del payload. Fixtures extendidas en `tests/providers/_fixtures.py` (`url_entity`, params de legacy).
+6. ✅ **`storage/`** (paso 6) — `sqlite_store.py` + `csv_exporter.py`, con los **defaults provisionales** del CSV (instrucción del usuario; las ODQ siguen abiertas, ver abajo):
+   - **`SqliteStore`**: SQLite de DATOS (separado del ledger del gate). Persiste `MappedTweet` (el `Tweet` + `is_reply`/`conversation_id`: la política de replies se aplica AL EXPORTAR, así un job se puede reanudar sin perderla). Dedupe por PK `id` con `INSERT OR IGNORE` (sub-ventanas solapadas); `created_at` como ISO 8601 UTC (orden lexicográfico = cronológico); `links` como JSON. **Checkpointing por sub-ventana** (`mark_window_done`/`is_window_done`, clave normalizada a UTC): un tramo completado no se re-fetchea en un re-run (cada re-fetch gasta presupuesto del gate); marcar SOLO al cerrar el tramo. Mismo patrón de conexión perezosa + context manager async que el gate.
+   - **`csv_exporter`**: `write_csv` en streaming (chunks de 500 filas, escrituras vía `asyncio.to_thread`, nada de I/O bloqueante en el loop), `QUOTE_ALL`, **escritura atómica** (`.tmp` + `os.replace`; un fallo a mitad limpia el tmp y preserva el CSV previo). `export_account(store, account, out_dir)` → `<account>.csv` en orden cronológico aplicando `passes_reply_policy` en streaming (predicado extraído de `apply_reply_policy`, única fuente de la regla) con los `own_ids` persistidos. Cuenta vacía → CSV solo-header. Links múltiples en una celda separados por espacio (no ambiguo en URLs).
+   - **Defaults provisionales aplicados**: UTF-8 sin BOM, delimitador `,`, `QUOTE_ALL`, `created_at` ISO UTC. Todos configurables por parámetro (`encoding`/`delimiter`); columnas: `account, created_at, content, links, quoted_tweet_id, quoted_tweet_url` (sin `id`, según CLAUDE.md).
 
-**Calidad actual:** 132 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main`.
+**Calidad actual:** 158 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main`.
 
 ---
 
-## Próximo paso → `storage/` (paso 6 del orden de CLAUDE.md)
+## Próximo paso → `cli.py` (paso 7, cierra la Fase 1)
 
-SQLite intermedio (dedupe por PK con `INSERT OR IGNORE`, checkpointing) + exportador CSV por cuenta en streaming (`csv` de stdlib, fila por fila). **OJO: las ODQ del CSV siguen abiertas** (encoding/BOM, delimitador, timezone de display, naming) — confirmar con el usuario antes de hardcodear; arrancar con los defaults provisionales de CLAUDE.md.
+El **loop orquestador** + la CLI (Typer — ojo: falta `uv add typer`, hoy no está en las deps):
 
-Después: el **loop orquestador de sub-ventanas** (un `SearchQuery` por tramo de `subwindows()` → `gated.fetch_tweets` → `map_tweet` → storage; `apply_reply_policy` al cierre del job por cuenta) → `cli.py` (paso 7).
+- Por cuenta: un `SearchQuery` por tramo de `subwindows()` (saltando los que `is_window_done`) → `GatedProvider(TwscrapeProvider).fetch_tweets` → `map_tweet` → `store.save` por página → `mark_window_done` al cerrar el tramo → al final del job, `export_account` (la política de replies ya queda aplicada ahí).
+- Wiring real: `build_pool(settings)` + `SlidingWindowGate(settings.audit_db_path, ...)`.
+- Recordar las **verificaciones contra datos vivos** (sección de abajo) antes de confiar el pipeline.
 
 ### Verificaciones contra datos vivos (pendientes hasta tener cookies — NO bloquean lo hecho)
 
@@ -64,7 +70,7 @@ git clone git@github.com:bafif/xport.git    # URL estándar — ver "Nota de acc
 cd xport
 uv sync                                       # crea .venv desde uv.lock (build reproducible)
 cp .env.example .env                          # completar cookies X (NUNCA se commitean)
-uv run pytest -q                              # 132 verdes confirma que el entorno quedó OK
+uv run pytest -q                              # 158 verdes confirma que el entorno quedó OK
 ```
 
 Comandos de calidad: `uv run ruff check . && uv run ruff format .` · `uv run mypy src` · `uv run pytest`.
