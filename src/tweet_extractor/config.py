@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ProviderBackend = Literal["twscrape", "official"]
 
 
 class Settings(BaseSettings):
@@ -28,8 +30,16 @@ class Settings(BaseSettings):
     accounts_db_path: Path = Path("data/accounts.db")  # cuentas/cookies de twscrape (git-ignored)
     page_size: int = 20
     subwindow_days: int = 7  # paso default (días) del troceado de búsqueda
+
+    # Backend de datos: el ÚNICO punto de intercambio scraping ↔ API oficial (la
+    # factory lo lee). Un valor inválido falla la validación de pydantic.
+    provider_backend: ProviderBackend = "twscrape"
+
+    # twscrape (scraping gratis): cookies de una cuenta descartable (.env).
     x_auth_token: str | None = None
     x_ct0: str | None = None
+    # X API v2 oficial (backend `official`, stub de Fase 2): Bearer token.
+    x_api_bearer_token: str | None = None
 
     @property
     def hard_cap(self) -> int:

@@ -10,10 +10,10 @@ import typer
 from tweet_extractor.compliance.gate import ComplianceError, SlidingWindowGate
 from tweet_extractor.compliance.gated_provider import GatedProvider
 from tweet_extractor.config import Settings
-from tweet_extractor.mappers.twscrape_mapper import MapperError
+from tweet_extractor.mappers.base import MapperError
 from tweet_extractor.orchestrator import AccountResult, run_job
 from tweet_extractor.providers.base import ProviderError
-from tweet_extractor.providers.twscrape_provider import TwscrapeProvider, build_pool
+from tweet_extractor.providers.factory import build_backend
 from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCODING
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
@@ -92,21 +92,22 @@ async def _run(
     encoding: str,
     delimiter: str,
 ) -> tuple[list[AccountResult], int, int]:
-    """Wiring real de la Fase 1: pool de twscrape desde `.env`, gate persistente,
-    store de datos, y el provider SIEMPRE envuelto en `GatedProvider` (regla #1)."""
+    """Wiring real: la factory elige el backend (scraping ↔ API oficial) según
+    `PROVIDER_BACKEND`, gate persistente, store de datos, y el provider SIEMPRE
+    envuelto en `GatedProvider` (regla #1: ningún fetch saltea el gate)."""
     settings = Settings()
-    pool = await build_pool(settings)
-    provider = TwscrapeProvider(settings, pool)
+    backend = await build_backend(settings)
     async with (
         SlidingWindowGate(settings.audit_db_path, settings.hard_cap, settings.window_s) as gate,
         SqliteStore(settings.data_db_path) as store,
     ):
-        gated = GatedProvider(provider, gate)
+        gated = GatedProvider(backend.provider, gate)
         results = await run_job(
             accounts,
             since,
             until,
             provider=gated,
+            mapper=backend.mapper,
             store=store,
             out_dir=out_dir,
             subwindow_days=subwindow_days or settings.subwindow_days,

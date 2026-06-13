@@ -8,7 +8,7 @@
 
 ## Qué está hecho
 
-Fase 1 (MVP CLI + scraping), en curso:
+**Fase 1 (MVP CLI + scraping): COMPLETA en código. Fase 2 (modularización + backend oficial stub): COMPLETA en código.**
 
 1. ✅ **Scaffolding** — `uv`, estructura `src/tweet_extractor/`, configs (`pyproject.toml`, `.gitignore`, `.env.example`, etc.).
 2. ✅ **Compliance Gate** — `compliance/gate.py` (`SlidingWindowGate`) + `compliance/gated_provider.py` (`GatedProvider`) + contrato `providers/base.py` (`TweetProvider`, `SearchQuery`, `Page`) + `config.py`. Tests completos.
@@ -33,13 +33,22 @@ Fase 1 (MVP CLI + scraping), en curso:
    - **`cli.py`** (Typer, `tweet-extractor` como script + `python -m tweet_extractor.cli`): `--account/-a` repetible (tolera `@`), `--since/--until` YYYY-MM-DD UTC (validación inclusiva/exclusiva), `--out-dir`, `--subwindow-days`, `--encoding`/`--delimiter` (defaults provisionales). Wiring real en `cli._run`: `build_pool` + `SlidingWindowGate` + `SqliteStore` + `GatedProvider`. Resumen final por cuenta + uso/restante del gate. Errores de dominio (`ProviderError`/`ComplianceError`/`MapperError`) → exit 1 con mensaje; tests mockean `cli._run`.
    - Se agregó **typer** a las deps y `[project.scripts]` en `pyproject.toml`.
 
-**Calidad actual:** 171 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main`.
+8. ✅ **Fase 2 — modularización + backend oficial stub**:
+   - **`mappers/base.py`** (NUEVO): lo agnóstico de backend se movió acá — `MapperError`, `MappedTweet`, `apply_reply_policy`, `passes_reply_policy` y el **Protocol `Mapper`** (`(raw, *, account) -> MappedTweet | None`). `twscrape_mapper` los re-exporta vía `__all__` (back-compat: storage/cli/tests no cambiaron sus imports).
+   - **`providers/official_api.py`** (NUEVO): `OfficialApiProvider`, **stub honesto de la X API v2**. Conforma `TweetProvider` (lo envuelve el `GatedProvider` igual que al de scraping — testeado), helpers de envelope v2 puros y testeados (`extract_tweets_v2` = `data[]`, `extract_next_token` = `meta.next_token`, `count_accessed_v2` = data + `includes.tweets` sobre-contando), `build_params` documenta el request a `/2/users/:id/tweets` (start_time/end_time/max_results/pagination_token, tweet.fields+expansions). El seam de red (`page_fetcher`, inyectable) por default **falla cerrado** (`ProviderError`: no hay credenciales/acceso de pago para verificar). `max_accessed_per_page` = 100 × factor (sobre-estima, fail-closed).
+   - **`mappers/api_v2_mapper.py`** (NUEVO): `map_tweet` **stub que lanza `MapperError`** — NO se implementó mapeo especulativo sin poder verificar contra respuestas v2 reales. La docstring tiene el mapeo v2→dominio completo (referenced_tweets type quoted/retweeted/replied_to, entities.urls, conversation_id) para cuando se implemente.
+   - **`providers/factory.py`** (NUEVO): `build_backend(settings) -> Backend(provider, mapper)` — **único punto de intercambio** scraping ↔ oficial, leyendo `settings.provider_backend` (Literal validado por pydantic). Aparea cada provider con SU mapper. Async (construir twscrape arma el pool).
+   - **Desacople del orquestador**: `run_job` ahora recibe `mapper: Mapper` por parámetro (ya no importa `map_tweet` hardcodeado); `cli._run` usa `build_backend` y pasa `backend.mapper`. El gate se sigue aplicando aparte (GatedProvider en `cli._run`).
+   - **Config**: `provider_backend: Literal["twscrape","official"] = "twscrape"` + `x_api_bearer_token`. `.env.example` actualizado.
+   - Fase 2 ítems 3-4 del plan (storage dedupe/checkpoint; async backoff) ya estaban: storage se hizo en paso 6; el backoff/rate-limit lo maneja twscrape (`QueueClient`).
+
+**Calidad actual:** 193 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main`.
 
 ---
 
-## Próximo paso → verificaciones contra datos vivos, después Fase 2
+## Próximo paso → verificaciones contra datos vivos, después Fase 3
 
-La Fase 1 está completa en código pero **NO verificada contra x.com real**. Con cookies de una cuenta descartable en `.env` (sección de abajo, spec §11): correr `uv run tweet-extractor -a <cuenta> --since ... --until ...` acotado y validar los 4 puntos de la sección "Verificaciones contra datos vivos". Después: Fase 2 (factory `get_provider` + stub `OfficialApiProvider` + mapper API v2) y Fase 3 (FastAPI + Nginx), ver `docs/plan-extractor-tweets.md`.
+Fases 1 y 2 completas en código pero **NO verificadas contra x.com real**. Con cookies de una cuenta descartable en `.env` (sección de abajo, spec §11): correr `uv run tweet-extractor -a <cuenta> --since ... --until ...` acotado y validar los 4 puntos de "Verificaciones contra datos vivos". Después: **Fase 3 (FastAPI + Nginx)** — endpoints `POST /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv` + estado del gate (uso/restante), reverse-proxy Nginx; el `service/` consume el mismo `orchestrator.run_job`. Ver `docs/plan-extractor-tweets.md`. La implementación REAL del backend oficial (llenar el seam de red de `official_api.py` + el `api_v2_mapper`) queda para cuando haya una API key de pago y se pueda verificar contra respuestas v2 reales.
 
 ### Verificaciones contra datos vivos (pendientes hasta tener cookies — NO bloquean lo hecho)
 

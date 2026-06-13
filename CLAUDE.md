@@ -240,9 +240,9 @@ Orden de construcción (Fase 1 MVP, CLI + scraping gratis):
 6. ✅ `storage/csv_exporter.py` (streaming, un CSV por cuenta, defaults provisionales del CSV) + SQLite intermedio (dedupe por PK, checkpointing por sub-ventana).
 7. ✅ `cli.py` (Typer) + `orchestrator.py` (loop de sub-ventanas; lo comparten CLI hoy y FastAPI en Fase 3).
 
-**Fase 1 (MVP CLI) completa en código.** Antes de confiar el pipeline: verificaciones contra datos vivos con cookies reales (ver `docs/ESTADO.md`).
+**Fases 1 (MVP CLI) y 2 (modularización + stub API oficial) completas en código.** Antes de confiar el pipeline: verificaciones contra datos vivos con cookies reales (ver `docs/ESTADO.md`). El intercambio de backend pasa por `providers/factory.py` (`build_backend`, lee `PROVIDER_BACKEND`); el `OfficialApiProvider` y `api_v2_mapper` son stubs (fallan cerrado) hasta tener una API key v2 con qué verificar.
 
-Fases 2-4 (modularización + stub API oficial, FastAPI + Nginx, extensiones Firefox/Chrome): ver `docs/plan-extractor-tweets.md`.
+Fases 3-4 (FastAPI + Nginx, extensiones Firefox/Chrome): ver `docs/plan-extractor-tweets.md`.
 
 ---
 

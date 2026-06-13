@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tests.providers._fixtures import tweet_result
+from tweet_extractor.mappers.twscrape_mapper import map_tweet
 from tweet_extractor.orchestrator import run_job
 from tweet_extractor.providers.base import (
     Page,
@@ -75,7 +76,15 @@ def contenidos(path: Path) -> list[str]:
 
 
 async def correr(provider: TweetProvider, store: SqliteStore, out: Path, accounts=("someuser",)):
-    return await run_job(list(accounts), SINCE, UNTIL, provider=provider, store=store, out_dir=out)
+    return await run_job(
+        list(accounts),
+        SINCE,
+        UNTIL,
+        provider=provider,
+        mapper=map_tweet,
+        store=store,
+        out_dir=out,
+    )
 
 
 async def test_happy_path_dos_tramos(store: SqliteStore, tmp_path: Path):
@@ -184,6 +193,7 @@ async def test_log_recibe_progreso(store: SqliteStore, tmp_path: Path):
         SINCE,
         UNTIL,
         provider=provider,
+        mapper=map_tweet,
         store=store,
         out_dir=tmp_path / "csv",
         log=mensajes.append,
