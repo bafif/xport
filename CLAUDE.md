@@ -126,10 +126,16 @@ uv run pytest                # incluir SIEMPRE los tests del Compliance Gate
 
 ### Extensión (Fase 4)
 
+Vive en `extension/` (WXT, Chrome MV3 + Firefox, código compartido). Patrón (a):
+el popup pega contra el FastAPI local; no scrapea por sí misma.
+
 ```bash
-fnm use                      # lee .node-version
-npm ci
-npm run build                # bundler (Vite/WXT) → dist/chrome y dist/firefox
+cd extension
+fnm use                      # lee .node-version (22)
+npm ci                       # corre `wxt prepare` (genera .wxt/ tipos)
+npm run compile              # tsc --noEmit (typecheck)
+npm run build                # WXT → dist/chrome-mv3 y dist/firefox-mv2
+npm run dev                  # dev con HMR (Chrome); npm run dev:firefox para FF
 ```
 
 `fnm` gestiona la versión de Node solo en la máquina de desarrollo; **en Docker NO se usa fnm**, se fija `node:<ver>-alpine` directamente, alineado con `.node-version`.
@@ -244,7 +250,7 @@ Orden de construcción (Fase 1 MVP, CLI + scraping gratis):
 
 La Fase 3 vive en `src/tweet_extractor/service/` (FastAPI sobre el mismo `orchestrator.run_job`; gate+store SINGLETONS en el lifespan; jobs en background con `JobRegistry`; endpoints `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{account}`, `GET /gate`, `GET /healthz`) y en `deploy/` (Dockerfile Alpine multi-stage + docker-compose con Nginx + ledger del gate en volumen aparte; build Alpine verificado). En dev: `uv run fastapi dev src/tweet_extractor/service/app.py`.
 
-Fase 4 (extensiones Firefox/Chrome): ver `docs/plan-extractor-tweets.md`.
+**Fase 4 (extensiones Chrome/Firefox) completa en código** — `extension/` (WXT, código compartido → `dist/chrome-mv3` + `dist/firefox-mv2`; build verificado). Patrón (a) del plan: el popup pega contra el FastAPI local (no scrapea por sí misma); usa `host_permissions` para evitar CORS. Pendiente: verificación cargándola en un navegador real + iconos. Ver `docs/plan-extractor-tweets.md`.
 
 ---
 

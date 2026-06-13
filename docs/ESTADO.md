@@ -8,7 +8,7 @@
 
 ## Qué está hecho
 
-**Fase 1 (MVP CLI + scraping): COMPLETA en código. Fase 2 (modularización + backend oficial stub): COMPLETA en código. Fase 3 (FastAPI + Nginx): COMPLETA en código.**
+**Fase 1 (MVP CLI + scraping): COMPLETA en código. Fase 2 (modularización + backend oficial stub): COMPLETA en código. Fase 3 (FastAPI + Nginx): COMPLETA en código. Fase 4 (extensiones Chrome/Firefox): COMPLETA en código.**
 
 1. ✅ **Scaffolding** — `uv`, estructura `src/tweet_extractor/`, configs (`pyproject.toml`, `.gitignore`, `.env.example`, etc.).
 2. ✅ **Compliance Gate** — `compliance/gate.py` (`SlidingWindowGate`) + `compliance/gated_provider.py` (`GatedProvider`) + contrato `providers/base.py` (`TweetProvider`, `SearchQuery`, `Page`) + `config.py`. Tests completos.
@@ -51,13 +51,29 @@
    - **Config**: `csv_dir` (raíz de CSV; el service usa un subdir por job para no pisar CSVs entre jobs) + `cors_allow_origins`. `.env.example` actualizado.
    - **14 tests del service** (`tests/service/`, TestClient sobre app con backend fake + DBs tmp): happy path POST→poll→descarga CSV, el gate singleton **cuenta los accesos** del job, **el RT se descarta pero igual cuenta en el gate** (regla #1 vía HTTP), 404/409/422, lista de jobs, job con backend que falla → `error`.
 
-**Calidad actual:** 207 tests verdes · `mypy --strict` limpio (28 archivos) · `ruff` (lint+format) limpio · build Docker Alpine OK. En `main`.
+10. ✅ **Fase 4 — extensiones Chrome/Firefox (`extension/`)**: extensión cliente, **patrón (a)** del plan (la extensión NO scrapea; el popup pega contra el FastAPI local).
+   - **WXT** (Chrome MV3 + Firefox, código compartido) → `npm run build` genera `dist/chrome-mv3` y `dist/firefox-mv2`. WXT resuelve las diferencias cross-browser: Chrome `manifest_version:3` + `background.service_worker` + `action`; Firefox `manifest_version:2` + `background.scripts` + `browser_action` (host perms en `permissions`, otorgados al instalar). El `browser` cross-browser sale de `wxt/browser` (capa polyfill).
+   - **`lib/api.ts`**: `XportClient` tipado, **espejo de los schemas de `service/schemas.py`** (`JobCreate`/`JobResponse`/`AccountResultDTO`/`GateResponse`): `createJob`/`getJob`/`gate`/`csvUrl` + `XportApiError` (extrae el `detail` de FastAPI). Mantener en sync si cambian los schemas.
+   - **`entrypoints/popup/`**: UI vanilla TS (form cuentas+fechas → `POST /jobs` → polling de `GET /jobs/{id}` cada 1 s → muestra estado/log/gate y links de descarga por cuenta). **`entrypoints/background.ts`**: service worker mínimo (listo para Native Messaging futuro). Recuerda la URL base en `browser.storage.local`.
+   - **Sin CORS del servidor**: el popup es una *extension page*; con `host_permissions` (`http://localhost/*`, `http://127.0.0.1/*`) sus fetch cross-origin no quedan sujetos a CORS. `CORS_ALLOW_ORIGINS` del FastAPI solo haría falta para un content script / página web (no este patrón).
+   - **Verificado**: `npm install` + `wxt prepare` + `npm run compile` (tsc estricto, limpio) + `npm run build` (ambos targets OK, manifests inspeccionados). **NO verificado**: cargar la extensión en un navegador real (no automatizable acá); faltan iconos (`public/icon/*.png`, hoy usa el default).
+   - **Toolchain**: Node 22 (`.node-version`), `fnm` en dev. `package-lock.json` commiteado (para `npm ci`). `node_modules/`, `dist/`, `.wxt/` git-ignored.
+
+**Calidad actual:** 207 tests Python verdes · `mypy --strict` limpio (28 archivos) · `ruff` (lint+format) limpio · build Docker Alpine OK · extensión: `tsc` + `wxt build` (chrome+firefox) OK. En `main`.
 
 ---
 
-## Próximo paso → verificaciones contra datos vivos, después Fase 4
+## Próximo paso → verificaciones de runtime (las 4 fases están en código)
 
-Fases 1, 2 y 3 completas en código pero el pipeline de scraping **NO está verificado contra x.com real**. Con cookies de una cuenta descartable en `.env` (sección de abajo, spec §11): correr `uv run tweet-extractor -a <cuenta> --since ... --until ...` acotado (o `uv run fastapi dev src/tweet_extractor/service/app.py` + `POST /jobs`) y validar los 4 puntos de "Verificaciones contra datos vivos". Después: **Fase 4 (extensiones Firefox/Chrome)** — UI MV3 que pega contra esta API local; código compartido entre navegadores; bundler (Vite/WXT) → `dist/chrome` y `dist/firefox`; Node por `fnm` en dev (en Docker se pinea la imagen, NO fnm). Ver `docs/plan-extractor-tweets.md`.
+**Las 4 fases del roadmap están completas en código.** Lo que queda es pasar de "compila y testea offline" a "verificado contra el mundo real", más decisiones abiertas. Nada de esto bloquea lo hecho:
+
+1. **Pipeline de scraping vs x.com real** (requiere cookies de una cuenta descartable en `.env`, spec §11): correr `uv run tweet-extractor -a <cuenta> --since ... --until ...` acotado (o `uv run fastapi dev src/tweet_extractor/service/app.py` + `POST /jobs`) y validar los 4 puntos de "Verificaciones contra datos vivos" (abajo).
+2. **Extensión en un navegador real**: cargar `extension/dist/chrome-mv3` (Chrome: `chrome://extensions` → descomprimida) y `extension/dist/firefox-mv2` (Firefox: `about:debugging`) con el servicio corriendo; confirmar el flujo popup → job → descarga y el estado del gate. Agregar iconos (`public/icon/*.png`).
+3. **ODQ del CSV** (encoding/BOM, delimitador, timezone display, replies/media): siguen como defaults provisionales — confirmar antes de fijar.
+4. **Backend oficial real** (`official_api.py` + `api_v2_mapper`): llenar los seams cuando haya API key v2 de pago con qué verificar.
+5. **Persistencia del estado runtime de los jobs** (hoy `JobRegistry` en memoria; los DATOS sí son durables): evaluar si se quiere sobrevivir reinicios sin re-POST.
+
+Mejoras posibles de la extensión: patrón (b) Native Messaging ("abrir la app" sin server a mano) y patrón (c) captura GraphQL in-page (de menor fricción; **debe** reportar accesos al Compliance Gate). Ver `docs/plan-extractor-tweets.md`.
 
 Pendientes que NO bloquean: (a) **ODQ del CSV** (encoding/BOM, delimitador, timezone display, replies/media) siguen como defaults provisionales — confirmar antes de fijar. (b) La implementación REAL del backend oficial (llenar el seam de red de `official_api.py` + el `api_v2_mapper`) queda para cuando haya una API key de pago y se pueda verificar contra respuestas v2 reales. (c) **Persistencia del estado runtime de los jobs**: hoy `JobRegistry` es en memoria (los DATOS sí son durables); si el server reinicia, los jobs `running` se pierden pero re-enviarlos reanuda desde los checkpoints. Evaluar persistirlo si se quiere sobrevivir reinicios sin re-POST.
 
@@ -100,6 +116,7 @@ Comandos de calidad: `uv run ruff check . && uv run ruff format .` · `uv run my
 
 - **`.env`** (cookies `auth_token`/`ct0`): git-ignored. Copiar de `.env.example` y completar con una cuenta descartable.
 - **`.venv/`**: regenerar con `uv sync`.
+- **`extension/node_modules/`, `extension/dist/`, `extension/.wxt/`**: regenerar con `cd extension && npm ci && npm run build` (el `package-lock.json` SÍ viaja).
 - **Memoria de claude-mem y knowledge base de context-mode**: locales a cada PC; no viajan. El contexto importante vive en este doc + specs/plans + commits.
 - **`.planning/` y `.claude/`**: locales (GSD / settings de Claude Code).
 

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>xport</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <header>
+        <h1>xport</h1>
+        <p class="sub">Tweets → CSV vía el servicio local</p>
+      </header>
+
+      <form id="job-form" autocomplete="off">
+        <label>
+          API base
+          <input id="base" type="url" placeholder="http://localhost:8080" required />
+        </label>
+        <label>
+          Cuentas <small>(coma o espacio)</small>
+          <input id="accounts" type="text" placeholder="nasa, esa" required />
+        </label>
+        <div class="row">
+          <label>Desde<input id="since" type="date" required /></label>
+          <label>Hasta<input id="until" type="date" required /></label>
+        </div>
+        <button id="submit" type="submit">Extraer</button>
+      </form>
+
+      <section id="gate" class="gate" hidden></section>
+      <section id="status" class="status" hidden></section>
+      <p id="error" class="error" hidden></p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
