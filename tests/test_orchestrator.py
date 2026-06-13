@@ -102,6 +102,8 @@ async def test_happy_path_dos_tramos(store: SqliteStore, tmp_path: Path):
     assert result.windows_skipped == 0
     assert result.exported == 2
     assert contenidos(result.csv_path) == ["texto 1", "texto 3"]  # orden cronológico
+    # El nombre incluye el rango pedido (ODQ resuelta): <account>_<since>_<until>.csv
+    assert result.csv_path.name == "someuser_2023-01-01_2023-01-15.csv"
     assert await store.is_window_done("someuser", *W1)
     assert await store.is_window_done("someuser", *W2)
 
@@ -165,7 +167,7 @@ async def test_fallo_a_mitad_no_marca_checkpoint_ni_exporta(store: SqliteStore, 
         await correr(provider, store, tmp_path / "csv")
     assert await store.is_window_done("someuser", *W1)  # lo cerrado queda cerrado
     assert not await store.is_window_done("someuser", *W2)  # el roto se re-corre entero
-    assert not (tmp_path / "csv" / "someuser.csv").exists()
+    assert not (tmp_path / "csv").exists()  # falló antes de exportar: ni el dir se creó
     # Lo guardado del tramo cerrado sobrevive para el re-run:
     assert await store.account_ids("someuser") == {"1"}
 
@@ -179,10 +181,11 @@ async def test_multiples_cuentas_un_csv_cada_una(store: SqliteStore, tmp_path: P
     )
     resultados = await correr(provider, store, tmp_path / "csv", accounts=("ana", "beto"))
     assert [r.account for r in resultados] == ["ana", "beto"]
-    assert (tmp_path / "csv" / "ana.csv").exists()
-    assert (tmp_path / "csv" / "beto.csv").exists()
-    assert contenidos(tmp_path / "csv" / "ana.csv") == ["texto 1"]
-    assert contenidos(tmp_path / "csv" / "beto.csv") == ["texto 2"]
+    por_cuenta = {r.account: r.csv_path for r in resultados}
+    assert por_cuenta["ana"].exists()
+    assert por_cuenta["beto"].exists()
+    assert contenidos(por_cuenta["ana"]) == ["texto 1"]
+    assert contenidos(por_cuenta["beto"]) == ["texto 2"]
 
 
 async def test_log_recibe_progreso(store: SqliteStore, tmp_path: Path):

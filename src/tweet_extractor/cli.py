@@ -49,10 +49,10 @@ def extract(
         typer.Option(min=1, help="Días por sub-ventana de búsqueda (default: Settings)."),
     ] = None,
     encoding: Annotated[
-        str, typer.Option(help="Encoding del CSV (provisional; utf-8-sig agrega BOM p/ Excel).")
+        str, typer.Option(help="Encoding del CSV (default utf-8; utf-8-sig agrega BOM p/ Excel).")
     ] = DEFAULT_ENCODING,
     delimiter: Annotated[
-        str, typer.Option(help="Delimitador del CSV (provisional; ';' p/ Excel-AR).")
+        str, typer.Option(help="Delimitador del CSV (default ','; ';' p/ Excel-AR).")
     ] = DEFAULT_DELIMITER,
 ) -> None:
     """Corre el job de extracción. Todo acceso pasa por el Compliance Gate

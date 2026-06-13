@@ -59,7 +59,7 @@ def test_happy_path_parsea_y_resume(monkeypatch: pytest.MonkeyPatch, tmp_path: P
             [
                 AccountResult(
                     account="someuser",
-                    csv_path=tmp_path / "someuser.csv",
+                    csv_path=tmp_path / "someuser_2023-01-01_2023-01-08.csv",
                     exported=2,
                     saved=2,
                     windows_run=1,

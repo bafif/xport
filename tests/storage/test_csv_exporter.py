@@ -12,6 +12,9 @@ from tweet_extractor.domain.models import Tweet, TweetLink
 from tweet_extractor.storage.csv_exporter import CSV_COLUMNS, export_account, write_csv
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
+SINCE = datetime(2023, 1, 1, tzinfo=UTC)
+UNTIL = datetime(2023, 2, 1, tzinfo=UTC)
+
 
 async def aiter(tweets: Iterable[Tweet]) -> AsyncIterator[Tweet]:
     for tweet in tweets:
@@ -132,8 +135,10 @@ async def test_export_account_aplica_politica_y_un_archivo_por_cuenta(tmp_path: 
                 mapped_tweet("9", account="otra"),  # otra cuenta: no va en este CSV
             ]
         )
-        path, written = await export_account(store, "someuser", tmp_path / "csv")
-    assert path == tmp_path / "csv" / "someuser.csv"
+        path, written = await export_account(
+            store, "someuser", tmp_path / "csv", since=SINCE, until=UNTIL
+        )
+    assert path == tmp_path / "csv" / "someuser_2023-01-01_2023-02-01.csv"
     assert written == 2
     rows = leer(path)
     assert [r[2] for r in rows[1:]] == ["texto 1", "texto 2"]
@@ -142,7 +147,9 @@ async def test_export_account_aplica_politica_y_un_archivo_por_cuenta(tmp_path: 
 
 async def test_export_account_sin_tweets_deja_solo_header(tmp_path: Path):
     async with SqliteStore(tmp_path / "tweets.db") as store:
-        path, written = await export_account(store, "nadie", tmp_path / "csv")
+        path, written = await export_account(
+            store, "nadie", tmp_path / "csv", since=SINCE, until=UNTIL
+        )
     assert written == 0
     assert leer(path) == [list(CSV_COLUMNS)]
 
@@ -150,4 +157,4 @@ async def test_export_account_sin_tweets_deja_solo_header(tmp_path: Path):
 async def test_export_account_rechaza_handle_con_separadores(tmp_path: Path):
     async with SqliteStore(tmp_path / "tweets.db") as store:
         with pytest.raises(ValueError):
-            await export_account(store, "../fuera", tmp_path / "csv")
+            await export_account(store, "../fuera", tmp_path / "csv", since=SINCE, until=UNTIL)
