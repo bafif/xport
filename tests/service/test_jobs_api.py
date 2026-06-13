@@ -62,6 +62,14 @@ def test_post_job_corre_y_exporta_csv(make_client: ClientFactory, wait_done: Wai
         assert "texto 2" in csv.text
 
 
+def test_post_job_limpia_y_dedup_accounts(make_client: ClientFactory) -> None:
+    # " @nasa " -> "nasa" (whitespace ANTES del @); "@nasa" duplicado se colapsa.
+    with make_client() as client:
+        r = client.post("/jobs", json={"accounts": ["  @nasa ", "@nasa", "esa"], **RANGE})
+        assert r.status_code == 201
+        assert r.json()["accounts"] == ["nasa", "esa"]
+
+
 def test_gate_cuenta_los_accesos_del_job(make_client: ClientFactory, wait_done: WaitDone) -> None:
     tweets = [tweet_result("1"), tweet_result("2")]
     with make_client(tweets) as client:
