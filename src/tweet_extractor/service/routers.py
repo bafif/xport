@@ -73,20 +73,21 @@ async def get_job(job_id: str, svc: SvcDep) -> JobResponse:
 @router.get("/jobs/{job_id}/csv/{account}")
 async def download_csv(job_id: str, account: str, svc: SvcDep) -> FileResponse:
     """Descarga el CSV de UNA cuenta del job (un archivo por cuenta, según el
-    spec). El job tiene que estar `done`."""
+    spec). El job tiene que estar `done`. Sirve la ruta REAL escrita por el job
+    (incluye el rango en el nombre), así el endpoint no depende del naming."""
     record = svc.registry.get(job_id)
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"job {job_id!r} no encontrado")
-    if record.status != JobStatus.DONE:
+    if record.status != JobStatus.DONE or record.results is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail=f"el job está '{record.status}': el CSV todavía no está disponible",
         )
-    if account not in record.accounts:
+    result = next((r for r in record.results if r.account == account), None)
+    if result is None:
         raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail=f"la cuenta {account!r} no es parte del job"
+            status.HTTP_404_NOT_FOUND, detail=f"la cuenta {account!r} no tiene CSV en este job"
         )
-    path = svc.settings.csv_dir / record.id / f"{account}.csv"
-    if not path.exists():
+    if not result.csv_path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="CSV no encontrado")
-    return FileResponse(path, media_type="text/csv", filename=f"{account}.csv")
+    return FileResponse(result.csv_path, media_type="text/csv", filename=result.csv_path.name)

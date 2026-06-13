@@ -285,6 +285,8 @@ window.fetch = async function (...args) {
 
 ## Open Design Questions (a decidir antes de codear)
 
+> **Estado (2026-06-13):** las ODQ del CSV están RESUELTAS — #1 (UTF-8 sin BOM, delimitador `,`, `QUOTE_ALL`; encoding/delim configurables para Excel-AR), #2 (UTC, ISO 8601), #8 (`<account>_<since>_<until>.csv`). #4 (solo URLs), #5 (replies = raíz-de-conversación propia), #6 (quotes 1 nivel), #7 (dedup por `id`) se resolvieron al implementar mapper/storage. Ver CLAUDE.md "Defaults del CSV". El resto sigue abierto.
+
 1. **Encoding/delimitador del CSV:** ¿UTF-8 con BOM (para que Excel-es lo abra bien) o sin BOM? ¿Coma o punto y coma (Excel en config regional Argentina suele esperar `;`)? ¿Quoting de todos los campos (`csv.QUOTE_ALL`) para texto con saltos de línea/comas?
 2. **Zona horaria de la columna fecha:** ¿UTC (recomendado, consistente con la API y la deduplicación de X) o America/Argentina/Buenos_Aires? ¿Formato ISO 8601?
 3. **¿Qué cuenta como "link a documento"?** ¿Solo `expanded_url` externos, o también links internos a x.com, media, y "cards"? ¿Filtrás dominios (p.ej. excluir `t.co` ya expandido, o links de media)?

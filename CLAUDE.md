@@ -159,15 +159,18 @@ docker compose -f deploy/docker-compose.yml up --build
 - **CSV en streaming**, fila por fila con el módulo `csv` de la stdlib. No cargar todo en memoria con pandas si el volumen es alto. Un archivo por cuenta.
 - **Type hints estrictos**, `mypy` debe pasar. `ruff` para lint+format.
 
-### Defaults PROVISIONALES del CSV (confirmar con el usuario antes de fijar)
+### Defaults del CSV (ODQ RESUELTAS con el usuario, 2026-06-13)
 
-Estas decisiones siguen abiertas en el plan (ODQ). Usar estos defaults para arrancar, pero **preguntar antes de tratarlas como definitivas**:
+Decididas y fijadas. Encoding y delimitador siguen configurables por parámetro
+(`--encoding`/`--delimiter` en CLI; campos en `POST /jobs`) para el caso Excel-AR,
+pero estos son los defaults definitivos:
 
-- Encoding: UTF-8 (evaluar BOM para Excel-AR).
-- Delimitador: `,` (evaluar `;` por config regional de Excel en Argentina).
-- Quoting: `csv.QUOTE_ALL` (texto con saltos de línea/comas).
-- Zona horaria: **UTC en almacenamiento**; display configurable.
-- Replies / threads, descarga de media, profundidad de recursión de quotes: ver ODQ del plan, **no hardcodear sin confirmar**.
+- **Encoding: UTF-8 SIN BOM** (`utf-8-sig` agrega BOM si hace falta para Excel-AR).
+- **Delimitador: `,`** (`;` para la config regional de Excel en Argentina).
+- **Quoting: `csv.QUOTE_ALL`** (texto con saltos de línea/comas).
+- **Zona horaria: UTC** — en almacenamiento Y en el display de la columna `created_at` (ISO 8601, sin conversión a hora local).
+- **Nombre de archivo: `<account>_<since>_<until>.csv`** (incluye el rango pedido; re-run del mismo rango reescribe, rangos distintos conviven).
+- Ya decididos en fases previas: media = solo URLs (no se descarga); profundidad de quotes = 1 nivel (`quoted_tweet_id`/`url`); replies = raíz-de-conversación propia (self-threads sí, conversaciones ajenas no); dedup por `id` (`INSERT OR IGNORE`, NO aplica al ledger del gate).
 
 ---
 
@@ -243,7 +246,7 @@ Orden de construcción (Fase 1 MVP, CLI + scraping gratis):
 3. ✅ `domain/models.py` (el `Tweet` + `TweetLink`, pydantic, validado).
 4. ✅ `TwscrapeProvider.fetch_tweets()` con búsqueda `from:user since/until` troceada, granularidad de página, reporte de `accessed_count`.
 5. ✅ `mappers/twscrape_mapper.py` (quotes incluidos, retweets excluidos, links, política de replies por raíz de conversación).
-6. ✅ `storage/csv_exporter.py` (streaming, un CSV por cuenta, defaults provisionales del CSV) + SQLite intermedio (dedupe por PK, checkpointing por sub-ventana).
+6. ✅ `storage/csv_exporter.py` (streaming, un CSV por cuenta `<account>_<since>_<until>.csv`, defaults del CSV decididos) + SQLite intermedio (dedupe por PK, checkpointing por sub-ventana).
 7. ✅ `cli.py` (Typer) + `orchestrator.py` (loop de sub-ventanas; lo comparten CLI hoy y FastAPI en Fase 3).
 
 **Fases 1 (MVP CLI), 2 (modularización + stub API oficial) y 3 (FastAPI + Nginx) completas en código.** Antes de confiar el pipeline: verificaciones contra datos vivos con cookies reales (ver `docs/ESTADO.md`). El intercambio de backend pasa por `providers/factory.py` (`build_backend`, lee `PROVIDER_BACKEND`); el `OfficialApiProvider` y `api_v2_mapper` son stubs (fallan cerrado) hasta tener una API key v2 con qué verificar.
@@ -260,6 +263,6 @@ La Fase 3 vive en `src/tweet_extractor/service/` (FastAPI sobre el mismo `orches
 - No commitear cookies/credenciales ni `*.db`.
 - No meter lógica de GraphQL fuera de `mappers/`. No hardcodear `queryId`.
 - No meter Selenium/Playwright/Chromium en la imagen Alpine por defecto.
-- No hardcodear encoding/delimitador/timezone/manejo de replies del CSV sin confirmar (siguen abiertos).
+- CSV: los defaults están DECIDIDOS (UTF-8 sin BOM, `,`, UTC, `<account>_<since>_<until>.csv`); encoding/delimitador quedan configurables por parámetro. No volver a tratarlos como provisionales.
 - No usar pip/poetry directo (es `uv`) ni fnm dentro de Docker (se pinea la imagen Node).
 

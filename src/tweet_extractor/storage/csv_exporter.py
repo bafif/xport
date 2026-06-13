@@ -4,6 +4,7 @@ import asyncio
 import csv
 import os
 from collections.abc import AsyncIterable, AsyncIterator
+from datetime import datetime
 from pathlib import Path
 from typing import IO
 
@@ -11,10 +12,10 @@ from tweet_extractor.domain.models import Tweet
 from tweet_extractor.mappers.twscrape_mapper import passes_reply_policy
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
-# --- Defaults PROVISIONALES del CSV (ODQ abiertas, ver CLAUDE.md) ----------------
-# Configurables por parámetro; NO fijarlos como definitivos sin confirmar con el
-# usuario: encoding (BOM para Excel-AR -> "utf-8-sig"), delimitador (";" por
-# config regional de Excel en Argentina).
+# --- Defaults del CSV (ODQ resueltas con el usuario, ver CLAUDE.md) --------------
+# Decididos: UTF-8 SIN BOM, delimitador coma, display de fechas en UTC. Siguen
+# siendo configurables por parámetro para el caso Excel-AR (encoding="utf-8-sig"
+# agrega BOM; delimiter=";" para la config regional de Excel en Argentina).
 DEFAULT_ENCODING = "utf-8"
 DEFAULT_DELIMITER = ","
 
@@ -37,11 +38,19 @@ LINKS_SEPARATOR = " "
 _CHUNK_ROWS = 500
 
 
+def csv_filename(account: str, since: datetime, until: datetime) -> str:
+    """Nombre del CSV de una cuenta: `<account>_<since>_<until>.csv` (rango pedido,
+    fechas UTC). Incluir el rango deja extracciones de distintos rangos lado a lado
+    sin pisarse; un re-run del MISMO rango reescribe el mismo archivo (idempotente,
+    vía la escritura atómica de `write_csv`)."""
+    return f"{account}_{since:%Y-%m-%d}_{until:%Y-%m-%d}.csv"
+
+
 def tweet_row(tweet: Tweet) -> list[str]:
-    """La fila CSV de un `Tweet`. `created_at` en ISO 8601 UTC (ya normalizado por
-    el modelo; display en otra zona es ODQ abierta). `content` va tal cual —saltos
-    de línea incluidos— porque `QUOTE_ALL` lo mantiene en una sola fila lógica.
-    Quote ausente -> celdas vacías."""
+    """La fila CSV de un `Tweet`. `created_at` en ISO 8601 UTC (decidido: display en
+    UTC, ya normalizado por el modelo). `content` va tal cual —saltos de línea
+    incluidos— porque `QUOTE_ALL` lo mantiene en una sola fila lógica. Quote
+    ausente -> celdas vacías."""
     return [
         tweet.account,
         tweet.created_at.isoformat(),
@@ -94,14 +103,16 @@ async def export_account(
     account: str,
     out_dir: Path,
     *,
+    since: datetime,
+    until: datetime,
     encoding: str = DEFAULT_ENCODING,
     delimiter: str = DEFAULT_DELIMITER,
 ) -> tuple[Path, int]:
-    """UN CSV por cuenta: `<out_dir>/<account>.csv`, en orden cronológico,
-    aplicando la política de replies en streaming (los `own_ids` persistidos +
-    `passes_reply_policy` fila a fila; la colección nunca se materializa).
-    Cuenta sin tweets -> CSV solo-header (señal explícita de "sin resultados").
-    Devuelve (ruta, tweets exportados)."""
+    """UN CSV por cuenta: `<out_dir>/<account>_<since>_<until>.csv`, en orden
+    cronológico, aplicando la política de replies en streaming (los `own_ids`
+    persistidos + `passes_reply_policy` fila a fila; la colección nunca se
+    materializa). Cuenta sin tweets -> CSV solo-header (señal explícita de "sin
+    resultados"). Devuelve (ruta, tweets exportados)."""
     if any(sep in account for sep in ("/", "\\", "..")):
         raise ValueError(f"handle inválido para nombre de archivo: {account!r}")
     own_ids = await store.account_ids(account)
@@ -115,6 +126,6 @@ async def export_account(
             ):
                 yield mapped.tweet
 
-    path = out_dir / f"{account}.csv"
+    path = out_dir / csv_filename(account, since, until)
     written = await write_csv(filtered(), path, encoding=encoding, delimiter=delimiter)
     return path, written

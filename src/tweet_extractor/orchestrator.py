@@ -74,7 +74,13 @@ async def run_job(
             windows_run += 1
             log(f"{tramo}: {saved_tramo} tweets nuevos")
         csv_path, exported = await export_account(
-            store, account, out_dir, encoding=encoding, delimiter=delimiter
+            store,
+            account,
+            out_dir,
+            since=since,
+            until=until,
+            encoding=encoding,
+            delimiter=delimiter,
         )
         results.append(
             AccountResult(
