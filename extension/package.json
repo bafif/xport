@@ -1,0 +1,21 @@
+{
+  "name": "xport-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Extensión Chrome (MV3) + Firefox que dispara extracciones de tweets → CSV contra el servicio local de xport (FastAPI). Código compartido vía WXT.",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build && wxt build -b firefox",
+    "build:chrome": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip && wxt zip -b firefox",
+    "compile": "tsc --noEmit",
+    "postinstall": "wxt prepare"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "wxt": "^0.19.0"
+  }
+}
