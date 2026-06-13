@@ -2,7 +2,7 @@
 
 > **Documento vivo.** Resumen de DÓNDE estamos y CÓMO seguir. Es recuperable con `git pull` desde cualquier máquina — a diferencia de la memoria de claude-mem / context-mode y del historial de chat, que son **locales a cada PC y NO viajan por git**. Si retomás en otra máquina, este archivo + los specs/plans + los mensajes de commit son la fuente de verdad.
 
-**Última actualización:** 2026-06-09.
+**Última actualización:** 2026-06-13.
 
 ---
 
@@ -17,22 +17,22 @@ Fase 1 (MVP CLI + scraping), en curso:
    - Specs/plan: `docs/superpowers/specs/2026-06-08-domain-model-design.md` (incluye §9 y §10 con todas las decisiones y endurecimientos), `docs/superpowers/plans/2026-06-08-domain-model.md`.
 4. ✅ **`TwscrapeProvider`** (paso 4) — primer provider concreto (scraping gratis vía `twscrape`, sin navegador). `fetch_page(query, cursor) -> Page` devuelve dicts crudos de GraphQL; lo envuelve el `GatedProvider` sin saltear el gate. Piezas: `providers/_twscrape_gql.py` (ÚNICA superficie de acoplamiento con twscrape: `OP_SearchTimeline` con queryId auto-actualizado, `QueueClient`, `encode_params`), `providers/twscrape_provider.py` (helpers puros de envelope `extract_tweet_results`/`extract_bottom_cursor`/`count_accessed`, `build_query` por fecha UTC, `build_pool` de una cuenta desde `.env`, DI del `page_fetcher` → tests offline), `providers/subwindows.py` (troceado puro). Ejecutado con subagentes (implementer + revisión spec/calidad por task) + review final → READY TO MERGE.
    - Spec/plan: `docs/superpowers/specs/2026-06-09-twscrape-provider-design.md`, `docs/superpowers/plans/2026-06-09-twscrape-provider.md`.
+5. ✅ **`mappers/twscrape_mapper.py`** (paso 5) — interpreta los dicts crudos del provider y los mapea al `Tweet` de dominio. Decisiones de implementación:
+   - **Quotes sí, retweets no** (`legacy.retweeted_status_result` ⇒ descarte). Desenvuelve `TweetWithVisibilityResults` (incluso anidado). Quote: `quoted_status_result.result` → fallback `legacy.quoted_status_result` → fallback `legacy.quoted_status_id_str` (quote tombstoneado); URL del permalink de X o forma canónica `https://x.com/i/web/status/<id>`.
+   - **Dos canales de descarte**: `None` para descartes ESPERADOS (RT, tombstone/unavailable); `MapperError` fuerte para shape malformado — una rotación del GraphQL se nota como error, no como CSV vacío. El quote embebido malformado se degrada (no tumba al citante).
+   - **Links**: `legacy.entities.urls[]` + `entity_set` del note tweet; descarta sin `expanded_url` y autorreferenciales (permalink del propio tweet o de su quote); links a TERCEROS tweets se conservan; dedupe (url, expanded_url) preservando orden. **Note tweets**: el texto completo reemplaza al `full_text` truncado.
+   - **Política de replies implementada**: `map_tweet` devuelve `MappedTweet` (= `Tweet` + `is_reply` + `conversation_id`); `apply_reply_policy` (por-colección) conserva no-replies y replies cuya raíz (`conversation_id`) sea tweet propio — self-threads sí, replies a conversaciones ajenas no, incluido el self-reply que cuelga de conversación ajena. Aplicarla sobre la colección COMPLETA del job por cuenta (no por página). Limitación conocida: raíz fuera del rango de fechas ⇒ sus replies en-rango se descartan. Reply sin `conversation_id` ⇒ descarte (cerrado por defecto).
+   - `account` lo estampa el caller (el handle consultado), no se extrae del payload. Fixtures extendidas en `tests/providers/_fixtures.py` (`url_entity`, params de legacy).
 
-**Calidad actual:** 100 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main` (mergeado desde `feat/twscrape-provider`).
+**Calidad actual:** 132 tests verdes · `mypy --strict` limpio · `ruff` (lint+format) limpio. En `main`.
 
 ---
 
-## Próximo paso → `mappers/twscrape_mapper.py` (paso 5 del orden de CLAUDE.md)
+## Próximo paso → `storage/` (paso 6 del orden de CLAUDE.md)
 
-Interpreta los dicts crudos de GraphQL que entrega `TwscrapeProvider` y los mapea al `Tweet` de dominio:
+SQLite intermedio (dedupe por PK con `INSERT OR IGNORE`, checkpointing) + exportador CSV por cuenta en streaming (`csv` de stdlib, fila por fila). **OJO: las ODQ del CSV siguen abiertas** (encoding/BOM, delimitador, timezone de display, naming) — confirmar con el usuario antes de hardcodear; arrancar con los defaults provisionales de CLAUDE.md.
 
-- **Quotes sí, retweets no**: descartar los que tengan `retweeted_status_result`; el quote citado sale de `quoted_status_result.result` (y, defensivamente, `legacy.quoted_status_result`).
-- Normalizar `__typename` `Tweet` y `TweetWithVisibilityResults` (en este último el tweet real está bajo `.tweet` — el provider entrega el wrapper crudo, el mapper lo desenvuelve).
-- Extraer `links` de `legacy.entities.urls[]` (`expanded_url`), validando vacíos/autorreferenciales.
-- **Política de replies** (decidida acá, no en el provider): definición *por raíz de conversación* usando `conversationId` — self-threads sí, replies a terceros no; resuelve el caso del self-reply que cuelga de una conversación ajena.
-- Las fixtures de `tests/providers/_fixtures.py` siembran esta fase (ya modelan Tweet/TVR/quote/RT anidados).
-
-Después: `storage/` (SQLite intermedio + CSV streaming) + el **loop orquestador de sub-ventanas** (un `SearchQuery` por tramo de `subwindows()` → `gated.fetch_tweets`) → `cli.py`.
+Después: el **loop orquestador de sub-ventanas** (un `SearchQuery` por tramo de `subwindows()` → `gated.fetch_tweets` → `map_tweet` → storage; `apply_reply_policy` al cierre del job por cuenta) → `cli.py` (paso 7).
 
 ### Verificaciones contra datos vivos (pendientes hasta tener cookies — NO bloquean lo hecho)
 
@@ -64,7 +64,7 @@ git clone git@github.com:bafif/xport.git    # URL estándar — ver "Nota de acc
 cd xport
 uv sync                                       # crea .venv desde uv.lock (build reproducible)
 cp .env.example .env                          # completar cookies X (NUNCA se commitean)
-uv run pytest -q                              # 71 verdes confirma que el entorno quedó OK
+uv run pytest -q                              # 132 verdes confirma que el entorno quedó OK
 ```
 
 Comandos de calidad: `uv run ruff check . && uv run ruff format .` · `uv run mypy src` · `uv run pytest`.

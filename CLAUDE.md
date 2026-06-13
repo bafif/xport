@@ -235,9 +235,9 @@ Orden de construcción (Fase 1 MVP, CLI + scraping gratis):
 1. ✅ `uv init` + dependencias (ver comandos).
 2. ✅ **Compliance Gate** (`compliance/`) + tests, envuelto en `GatedProvider`.
 3. ✅ `domain/models.py` (el `Tweet` + `TweetLink`, pydantic, validado).
-4. **(siguiente)** `TwscrapeProvider.fetch_tweets()` con búsqueda `from:user since/until` troceada, granularidad de página, reporte de `accessed_count`.
-5. `mappers/twscrape_mapper.py` (quotes incluidos, retweets excluidos, links).
-6. `storage/csv_exporter.py` (streaming, un CSV por cuenta) + SQLite intermedio.
+4. ✅ `TwscrapeProvider.fetch_tweets()` con búsqueda `from:user since/until` troceada, granularidad de página, reporte de `accessed_count`.
+5. ✅ `mappers/twscrape_mapper.py` (quotes incluidos, retweets excluidos, links, política de replies por raíz de conversación).
+6. **(siguiente)** `storage/csv_exporter.py` (streaming, un CSV por cuenta) + SQLite intermedio.
 7. `cli.py`.
 
 Fases 2-4 (modularización + stub API oficial, FastAPI + Nginx, extensiones Firefox/Chrome): ver `docs/plan-extractor-tweets.md`.
