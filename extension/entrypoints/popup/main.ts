@@ -1,10 +1,11 @@
 import { browser } from 'wxt/browser';
 
 import { XportClient, type JobResponse } from '../../lib/api';
+import { STORAGE_BASE, STORAGE_CAPTURE, STORAGE_COUNTS } from '../../lib/capture';
 
-const BASE_KEY = 'xport:base';
 const DEFAULT_BASE = 'http://localhost:8080';
 const POLL_MS = 1000;
+const COUNTS_REFRESH_MS = 2000;
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -21,6 +22,13 @@ const submitBtn = el<HTMLButtonElement>('submit');
 const gateEl = el<HTMLElement>('gate');
 const statusEl = el<HTMLElement>('status');
 const errorEl = el<HTMLElement>('error');
+const captureToggle = el<HTMLInputElement>('capture-toggle');
+const countsEl = el<HTMLElement>('counts');
+const expAccount = el<HTMLInputElement>('exp-account');
+const expSince = el<HTMLInputElement>('exp-since');
+const expUntil = el<HTMLInputElement>('exp-until');
+const exportForm = el<HTMLFormElement>('export-form');
+const exportStatus = el<HTMLElement>('export-status');
 
 function currentBase(): string {
   return baseInput.value.trim().replace(/\/+$/, '') || DEFAULT_BASE;
@@ -105,7 +113,7 @@ async function onSubmit(): Promise<void> {
     showError('Ingresá al menos una cuenta.');
     return;
   }
-  await browser.storage.local.set({ [BASE_KEY]: base });
+  await browser.storage.local.set({ [STORAGE_BASE]: base });
   const client = new XportClient(base);
   submitBtn.disabled = true;
   try {
@@ -122,11 +130,57 @@ async function onSubmit(): Promise<void> {
   }
 }
 
+captureToggle.addEventListener('change', () => {
+  void browser.storage.local.set({ [STORAGE_CAPTURE]: captureToggle.checked });
+});
+
+exportForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  void onExport();
+});
+
+async function onExport(): Promise<void> {
+  const account = expAccount.value.trim().replace(/^@+/, '');
+  if (!account) return;
+  const client = new XportClient(currentBase());
+  try {
+    const r = await client.exportCapture({
+      account,
+      since: expSince.value,
+      until: expUntil.value,
+    });
+    const url = client.absolute(r.download_url);
+    exportStatus.hidden = false;
+    exportStatus.innerHTML =
+      `<a href="${url}" target="_blank" rel="noreferrer">${escapeHtml(r.csv)}</a>` +
+      ` <small>${r.exported} tweets</small>`;
+  } catch (err) {
+    exportStatus.hidden = false;
+    exportStatus.innerHTML =
+      `<span class="error">${escapeHtml(err instanceof Error ? err.message : String(err))}</span>`;
+  }
+}
+
+async function renderCounts(): Promise<void> {
+  const stored = await browser.storage.local.get([STORAGE_CAPTURE, STORAGE_COUNTS]);
+  captureToggle.checked = stored[STORAGE_CAPTURE] !== false;
+  const map = (stored[STORAGE_COUNTS] ?? {}) as Record<string, number>;
+  const entries = Object.entries(map);
+  if (entries.length === 0) {
+    countsEl.hidden = true;
+    return;
+  }
+  countsEl.hidden = false;
+  countsEl.textContent = 'Capturado: ' + entries.map(([a, n]) => `${a} (${n})`).join(' · ');
+}
+
 async function init(): Promise<void> {
-  const stored = await browser.storage.local.get(BASE_KEY);
-  const saved = stored[BASE_KEY];
+  const stored = await browser.storage.local.get(STORAGE_BASE);
+  const saved = stored[STORAGE_BASE];
   baseInput.value = typeof saved === 'string' && saved ? saved : DEFAULT_BASE;
   await refreshGate(new XportClient(currentBase()));
+  await renderCounts();
+  setInterval(() => void renderCounts(), COUNTS_REFRESH_MS);
 }
 
 void init();
