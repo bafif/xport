@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     data_db_path: Path = Path("data/tweets.db")
     accounts_db_path: Path = Path("data/accounts.db")  # cuentas/cookies de twscrape (git-ignored)
     csv_dir: Path = Path("data/csv")  # raíz de salida de los CSV (el service usa un subdir por job)
+    captures_dir: Path = Path("data/captures")  # CSV exportados de la captura in-page (patrón C)
     page_size: int = 20
     subwindow_days: int = 7  # paso default (días) del troceado de búsqueda
 

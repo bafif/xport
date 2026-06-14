@@ -87,3 +87,44 @@ def test_ingest_over_cap(tmp_path: Path) -> None:
 
         second = post_ingest(client, [search_response([tweet_entry("3")])])
         assert second.status_code == 429
+
+
+def test_export_tras_ingest(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        page = search_response(
+            [
+                tweet_entry("1"),  # default Jan 04 (en rango)
+                tweet_entry("2"),  # default Jan 04 (en rango)
+                tweet_entry("3", created_at="Sat Mar 04 00:00:00 +0000 2023"),  # fuera de rango
+            ]
+        )
+        post_ingest(client, [page])
+        r = client.post(
+            "/export", json={"account": "@someuser", "since": "2023-01-01", "until": "2023-02-01"}
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["account"] == "someuser"  # handle limpio
+        assert body["exported"] == 2  # el de marzo queda fuera del rango
+        assert body["download_url"] == "/exports/someuser_2023-01-01_2023-02-01.csv"
+
+        csv = client.get(body["download_url"])
+        assert csv.status_code == 200
+        assert csv.headers["content-type"].startswith("text/csv")
+        assert "texto 1" in csv.text
+        assert "texto 2" in csv.text
+        assert "texto 3" not in csv.text
+
+
+def test_export_rango_invertido_422(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        r = client.post(
+            "/export", json={"account": "u", "since": "2023-02-01", "until": "2023-01-01"}
+        )
+        assert r.status_code == 422
+
+
+def test_exports_filename_traversal_404(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        assert client.get("/exports/a..b.csv").status_code == 404  # '..' rechazado por el guard
+        assert client.get("/exports/nada.csv").status_code == 404  # no existe

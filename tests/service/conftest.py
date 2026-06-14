@@ -51,6 +51,7 @@ def make_settings(tmp_path: Path, **over: Any) -> Settings:
         "audit_db_path": tmp_path / "audit" / "ledger.db",
         "data_db_path": tmp_path / "tweets.db",
         "csv_dir": tmp_path / "csv",
+        "captures_dir": tmp_path / "captures",
     }
     params.update(over)
     return Settings(**params)

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import FileResponse
 
 from tweet_extractor.mappers.base import MappedTweet, MapperError
 from tweet_extractor.mappers.twscrape_mapper import map_tweet
 from tweet_extractor.providers.search_envelope import count_accessed, extract_tweet_results
 from tweet_extractor.service.routers import SvcDep
-from tweet_extractor.service.schemas import IngestPayload, IngestResult
+from tweet_extractor.service.schemas import (
+    ExportRequest,
+    ExportResult,
+    IngestPayload,
+    IngestResult,
+)
+from tweet_extractor.storage.csv_exporter import export_account
 
 router = APIRouter()
 
@@ -51,3 +58,35 @@ async def ingest(body: IngestPayload, svc: SvcDep) -> IngestResult:
         gate_remaining=remaining,
         over_cap=remaining < 0,
     )
+
+
+@router.post("/export", response_model=ExportResult)
+async def export(body: ExportRequest, svc: SvcDep) -> ExportResult:
+    """Exporta a CSV lo capturado de una cuenta en `[since, until)`, on-demand
+    (reusa `export_account`: política de replies + filtro de rango). Escribe en
+    `captures_dir` y devuelve la URL de descarga."""
+    path, exported = await export_account(
+        svc.store,
+        body.account,
+        svc.settings.captures_dir,
+        since=body.since_utc(),
+        until=body.until_utc(),
+    )
+    return ExportResult(
+        account=body.account,
+        csv=path.name,
+        download_url=f"/exports/{path.name}",
+        exported=exported,
+    )
+
+
+@router.get("/exports/{filename}")
+async def download_export(filename: str, svc: SvcDep) -> FileResponse:
+    """Descarga un CSV de captura. `filename` es un único segmento; se rechazan
+    separadores/`..` (defensa en profundidad ante path traversal)."""
+    if any(sep in filename for sep in ("/", "\\", "..")):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="archivo no encontrado")
+    path = svc.settings.captures_dir / filename
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="archivo no encontrado")
+    return FileResponse(path, media_type="text/csv", filename=filename)

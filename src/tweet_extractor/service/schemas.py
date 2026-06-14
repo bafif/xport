@@ -160,3 +160,37 @@ class IngestResult(BaseModel):
     gate_usage: int
     gate_remaining: int
     over_cap: bool  # el ledger global cruzó el tope (las próximas ingestas dan 429)
+
+
+class ExportRequest(BaseModel):
+    """Body de `POST /export`: exporta a CSV lo capturado de una cuenta en un rango
+    (`since` inclusiva, `until` exclusiva, UTC). El store acumula varias navegaciones;
+    el filtro de fecha del export acota a lo pedido."""
+
+    account: str
+    since: date
+    until: date
+
+    @field_validator("account")
+    @classmethod
+    def _clean(cls, raw: str) -> str:
+        return _clean_handle(raw)
+
+    @model_validator(mode="after")
+    def _range_ordenado(self) -> ExportRequest:
+        if self.since >= self.until:
+            raise ValueError("since debe ser anterior a until")
+        return self
+
+    def since_utc(self) -> datetime:
+        return datetime(self.since.year, self.since.month, self.since.day, tzinfo=UTC)
+
+    def until_utc(self) -> datetime:
+        return datetime(self.until.year, self.until.month, self.until.day, tzinfo=UTC)
+
+
+class ExportResult(BaseModel):
+    account: str
+    csv: str  # nombre del archivo
+    download_url: str  # GET de descarga (/exports/<file>)
+    exported: int  # filas del CSV (con la política de replies + filtro de rango)
