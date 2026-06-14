@@ -257,6 +257,49 @@ async def test_reconcile_durante_espera_permite_proceder(tmp_path, make_gate, fa
     assert await gate.usage() == 250
 
 
+async def test_record_suma_sin_reservar(tmp_path, make_gate):
+    # Contabilidad record-after (captura in-page): el acceso ya ocurrió en el browser,
+    # se registra sin reservar. Devuelve el uso resultante.
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
+    await gate.setup()
+
+    assert await gate.record(100) == 100
+    assert await gate.usage() == 100
+    assert await gate.remaining() == 900
+
+
+async def test_record_acumula_y_no_deduplica(tmp_path, make_gate):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
+    await gate.setup()
+
+    await gate.record(50)
+    await gate.record(50)  # mismo "acceso" re-capturado: cuenta doble (no dedup)
+
+    assert await gate.usage() == 100
+
+
+async def test_record_no_espera_aunque_supere_cap(tmp_path, make_gate):
+    # record NUNCA bloquea: el acceso ya pasó, no hay nada que reservar. Si supera el
+    # cap, el ledger queda verídico (remaining negativo = señal de over-cap p/ /ingest).
+    async def no_sleep(s: float) -> None:
+        raise AssertionError("record no debe esperar")
+
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=80, sleep=no_sleep)
+    await gate.setup()
+
+    assert await gate.record(100) == 100
+    assert await gate.usage() == 100
+    assert await gate.remaining() == -20
+
+
+async def test_record_rechaza_n_no_positivo(tmp_path, make_gate):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000)
+    await gate.setup()
+
+    with pytest.raises(ValueError):
+        await gate.record(0)
+
+
 async def test_context_manager_hace_setup_y_cierra(tmp_path):
     # `async with` hace setup automático y cierra la conexión de forma determinista
     # (sin ResourceWarning de aiosqlite). Es la forma de uso en la app.
