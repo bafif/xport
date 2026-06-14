@@ -189,3 +189,22 @@ class SlidingWindowGate:
             await db.commit()
         # Puede haber liberado presupuesto: despierta a quien espera en `reserve`.
         self._reconciled.set()
+
+    async def record(self, n: int) -> int:
+        """Registra `n` accesos YA ocurridos (captura in-page del patrón C): inserta
+        en el ledger bajo lock, SIN chequeo de presupuesto ni espera. A diferencia de
+        `reserve` (reserva-antes-y-bloquea), acá el acceso ya pasó en el browser del
+        usuario: no hay nada que reservar, solo se asienta para que el ledger global
+        siga siendo veraz across backends. Devuelve el uso resultante; el caller
+        decide qué hacer si supera el cap (rechazar ingestas siguientes). El ledger
+        NO deduplica (regla #1): sobre-contar es seguro, sub-contar no."""
+        if n <= 0:
+            raise ValueError("n debe ser > 0")
+        async with self._lock:
+            db = await self._db()
+            now = int(self._clock())
+            # Misma poda que `reserve`: acota el ledger a una ventana, nunca re-cuenta.
+            await db.execute("DELETE FROM access_ledger WHERE ts <= ?", (now - self._window_s,))
+            await db.execute("INSERT INTO access_ledger(ts, count) VALUES(?, ?)", (now, n))
+            await db.commit()
+            return await self._usage(db, now)
