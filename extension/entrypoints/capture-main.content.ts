@@ -12,7 +12,9 @@ function urlOf(input: RequestInfo | URL): string {
 }
 
 function emit(op: string, url: string, data: unknown): void {
-  window.postMessage({ source: CAPTURE_SOURCE, op, url, data }, '*');
+  // targetOrigin acotado al propio origen (el bridge está en el mismo documento): no
+  // hace falta difundir a '*'.
+  window.postMessage({ source: CAPTURE_SOURCE, op, url, data }, location.origin);
 }
 
 interface TaggedXHR extends XMLHttpRequest {

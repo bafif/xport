@@ -108,6 +108,18 @@ class SlidingWindowGate:
     async def remaining(self, now: int | None = None) -> int:
         return self._hard_cap - await self.usage(now)
 
+    async def _append(self, db: aiosqlite.Connection, now: int, n: int) -> int:
+        """Núcleo de escritura del ledger, compartido por `reserve` (reserva-antes) y
+        `record` (registra-después): poda lo que cayó fuera de la ventana (nunca se
+        vuelve a contar y acota el ledger a una ventana) e inserta `(now, n)`. Devuelve
+        el id de la fila. DEBE llamarse bajo `self._lock`."""
+        await db.execute("DELETE FROM access_ledger WHERE ts <= ?", (now - self._window_s,))
+        cur = await db.execute("INSERT INTO access_ledger(ts, count) VALUES(?, ?)", (now, n))
+        await db.commit()
+        rid = cur.lastrowid
+        assert rid is not None  # garantizado tras un INSERT exitoso
+        return rid
+
     async def reserve(self, n: int) -> int:
         """Reserva capacidad para hasta `n` accesos ANTES del fetch. Bloquea
         (espera a que eventos viejos salgan de la ventana, o a que un `reconcile`
@@ -122,21 +134,7 @@ class SlidingWindowGate:
                 now = int(self._clock())
                 used = await self._usage(db, now)
                 if used + n <= self._hard_cap:
-                    # Poda lo que ya cayó fuera de la ventana: nunca se vuelve a contar
-                    # (las queries filtran `ts > now - window_s`), y mantiene el ledger
-                    # acotado al tamaño de una ventana en vez de crecer sin fin.
-                    await db.execute(
-                        "DELETE FROM access_ledger WHERE ts <= ?",
-                        (now - self._window_s,),
-                    )
-                    cur = await db.execute(
-                        "INSERT INTO access_ledger(ts, count) VALUES(?, ?)",
-                        (now, n),
-                    )
-                    await db.commit()
-                    rid = cur.lastrowid
-                    assert rid is not None  # garantizado tras un INSERT exitoso
-                    return rid
+                    return await self._append(db, now, n)
                 wait_s = await self._wait_seconds(db, now)
                 # Bajo lock: ningún `reconcile` posterior a este punto se pierde. Para
                 # escribir tiene que tomar el lock, así que setea el evento DESPUÉS de
@@ -203,8 +201,5 @@ class SlidingWindowGate:
         async with self._lock:
             db = await self._db()
             now = int(self._clock())
-            # Misma poda que `reserve`: acota el ledger a una ventana, nunca re-cuenta.
-            await db.execute("DELETE FROM access_ledger WHERE ts <= ?", (now - self._window_s,))
-            await db.execute("INSERT INTO access_ledger(ts, count) VALUES(?, ?)", (now, n))
-            await db.commit()
+            await self._append(db, now, n)  # mismo núcleo de escritura que reserve
             return await self._usage(db, now)

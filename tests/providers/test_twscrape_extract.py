@@ -17,6 +17,16 @@ from tweet_extractor.providers.twscrape_provider import (
 )
 
 
+def test_walk_iterativo_soporta_anidamiento_profundo_sin_recursionerror():
+    # `/ingest` recibe JSON no confiable: el walker debe ser iterativo (no recursivo),
+    # si no un payload muy anidado tiraría RecursionError -> 500.
+    deep: dict = {"leaf": "x"}
+    for _ in range(5000):
+        deep = {"nested": deep}
+    assert count_accessed(deep) == 0  # ningún __typename de tweet; no revienta
+    assert extract_tweet_results(deep) == []
+
+
 def test_extract_tweet_results_devuelve_los_de_nivel_tope():
     raw = search_response([tweet_entry("1"), tweet_entry("2"), cursor_entry("CUR")])
     out = extract_tweet_results(raw)

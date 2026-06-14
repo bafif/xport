@@ -13,15 +13,19 @@ _TWEET_TYPENAMES = frozenset({"Tweet", "TweetWithVisibilityResults"})
 
 
 def _walk(obj: Any) -> Iterator[dict[str, Any]]:
-    """Recorre una estructura JSON anidada (depth-first) y hace yield de cada dict.
-    La profundidad del envelope de SearchTimeline es acotada (decenas de niveles)."""
-    if isinstance(obj, dict):
-        yield obj
-        for value in obj.values():
-            yield from _walk(value)
-    elif isinstance(obj, list):
-        for value in obj:
-            yield from _walk(value)
+    """Recorre una estructura JSON anidada (depth-first, pre-orden) y hace yield de
+    cada dict. ITERATIVO (pila explícita, no recursión): el envelope de SearchTimeline
+    es acotado, pero por `/ingest` llega JSON no confiable y una recursión se pasaría
+    del límite (RecursionError → 500). Se apilan los hijos en reversa para preservar
+    el orden de documento."""
+    stack: list[Any] = [obj]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            yield current
+            stack.extend(reversed(list(current.values())))
+        elif isinstance(current, list):
+            stack.extend(reversed(current))
 
 
 def extract_tweet_results(raw: dict[str, Any]) -> list[dict[str, Any]]:

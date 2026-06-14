@@ -46,6 +46,11 @@ async def ingest(body: IngestPayload, svc: SvcDep) -> IngestResult:
             if m is not None:
                 mapped.append(m)
     saved = await svc.store.save(mapped)
+    # Piso defensivo (mismo criterio que GatedProvider): el ledger nunca debe contar
+    # MENOS que los tweets de nivel-tope efectivamente extraídos. Si `count_accessed`
+    # sub-cuenta (p.ej. un __typename no reconocido que igual mapea), sub-contar es la
+    # dirección INSEGURA del cap (regla #1); nos quedamos con el máximo.
+    accessed = max(accessed, captured)
     # accessed==0 (página vacía/malformada) -> no se registra nada; solo se reporta el uso.
     usage = await svc.gate.record(accessed) if accessed else await svc.gate.usage()
     remaining = svc.gate.hard_cap - usage
@@ -56,7 +61,9 @@ async def ingest(body: IngestPayload, svc: SvcDep) -> IngestResult:
         accessed=accessed,
         gate_usage=usage,
         gate_remaining=remaining,
-        over_cap=remaining < 0,
+        # `<= 0` coherente con el guard de entrada: "exactamente en el tope" ya está
+        # over_cap (la próxima ingesta da 429).
+        over_cap=remaining <= 0,
     )
 
 

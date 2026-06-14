@@ -59,6 +59,30 @@ def test_ingest_pagina_malformada_no_crashea(tmp_path: Path) -> None:
         assert body["gate_usage"] == 0  # accessed=0 -> no se llama record
 
 
+def test_ingest_no_subcuenta_el_gate(tmp_path: Path) -> None:
+    # count_accessed cuenta por __typename; si un result no lo trae pero igual mapea,
+    # el ledger NO debe sub-contar (dirección insegura, regla #1): se pisa al nº de
+    # tweets de nivel-tope extraídos (mismo piso que GatedProvider).
+    result = {
+        "rest_id": "9",
+        "legacy": {
+            "full_text": "sin typename",
+            "created_at": "Wed Jan 04 00:00:00 +0000 2023",
+            "conversation_id_str": "9",
+        },
+    }
+    entry = {
+        "entryId": "tweet-9",
+        "content": {"itemContent": {"tweet_results": {"result": result}}},
+    }
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        body = post_ingest(client, [search_response([entry])]).json()
+        assert body["captured"] == 1
+        assert body["saved"] == 1
+        assert body["accessed"] == 1  # piso: max(count_accessed=0, captured=1)
+        assert body["gate_usage"] == 1
+
+
 def test_ingest_handle_se_limpia(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
         body = post_ingest(client, [search_response([tweet_entry("1")])], account="  @nasa ").json()
