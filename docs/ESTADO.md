@@ -2,7 +2,7 @@
 
 > **Documento vivo.** Resumen de DÓNDE estamos y CÓMO seguir. Es recuperable con `git pull` desde cualquier máquina — a diferencia de la memoria de claude-mem / context-mode y del historial de chat, que son **locales a cada PC y NO viajan por git**. Si retomás en otra máquina, este archivo + los specs/plans + los mensajes de commit son la fuente de verdad.
 
-**Última actualización:** 2026-06-14 04:25 UTC.
+**Última actualización:** 2026-06-14 04:40 UTC.
 
 ---
 
@@ -90,7 +90,7 @@ Se corrió la verificación con cookies reales (cuenta descartable). Resultado: 
 - **(A) resultó GRANDE, no un regex.** x.com migró **todo el web client de webpack a Vite/ESM**: de `abs.twimg.com/responsive-web/client-web/*.js` (manifest `{id:"7hex"}` + chunk `ondemand.s.*.js`) a `abs.twimg.com/x-web/x-web/assets/*.js` (174 chunks con content-hash, `<script type="module">`). El `ondemand.s` que alimenta el algoritmo del transaction-id **ya no existe**. Las libs dedicadas no lo resolvieron: `xclienttransaction` última release 2026-03-18 (pre-migración), `twscrape` 0.18.1 del 2026-05-23 ("as of 2026-05"). Parchear = reverse-engineering del bundle Vite + ciclo de rotura de 2-4 semanas. Alquiler caro y recurrente.
 - **(C) es inmune a esto.** Interceptar el GraphQL in-page sigue siendo el método recomendado en 2026; el navegador calcula el transaction-id nativo; la migración Vite no afecta la API (`/i/api/graphql/<id>/<Op>`) ni el JSON → **los mappers actuales se reusan**. Inmune también a la rotación de doc_id que rompe a (A)/(B).
 
-**DECISIÓN (2026-06-14): se va con (C), captura GraphQL in-page.** Diseño en `docs/superpowers/specs/2026-06-14-inpage-capture-design.md`. (A) descartado por costo/fragilidad; (E) API oficial queda como plan B pago.
+**DECISIÓN (2026-06-14): se va con (C), captura GraphQL in-page.** Diseño en `docs/superpowers/specs/2026-06-14-inpage-capture-design.md`; **plan de implementación** en `docs/superpowers/plans/2026-06-14-inpage-capture.md` (7 tasks TDD: `gate.record` → envelope helpers → export por rango → `POST /ingest` → `POST /export` → content scripts → docs). El `record-after` del gate quedó aprobado por el usuario. (A) descartado por costo/fragilidad; (E) API oficial queda como plan B pago.
 
 ### Verificaciones contra datos vivos (los 4 puntos, pendientes hasta destrabar el transporte)
 
