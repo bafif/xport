@@ -2,7 +2,7 @@
 
 > **Documento vivo.** Resumen de DÓNDE estamos y CÓMO seguir. Es recuperable con `git pull` desde cualquier máquina — a diferencia de la memoria de claude-mem / context-mode y del historial de chat, que son **locales a cada PC y NO viajan por git**. Si retomás en otra máquina, este archivo + los specs/plans + los mensajes de commit son la fuente de verdad.
 
-**Última actualización:** 2026-06-13 21:30 UTC.
+**Última actualización:** 2026-06-14 04:25 UTC.
 
 ---
 
@@ -67,7 +67,7 @@
 
 **Las 4 fases del roadmap están completas en código.** Lo que queda es pasar de "compila y testea offline" a "verificado contra el mundo real", más decisiones abiertas. Nada de esto bloquea lo hecho:
 
-1. **Pipeline de scraping vs x.com real** (requiere cookies de una cuenta descartable en `.env`, spec §11): correr `uv run tweet-extractor -a <cuenta> --since ... --until ...` acotado (o `uv run fastapi dev src/tweet_extractor/service/app.py` + `POST /jobs`) y validar los 4 puntos de "Verificaciones contra datos vivos" (abajo).
+1. **Pipeline de scraping vs x.com real** — ⚠️ **probado el 2026-06-14, BLOQUEADO por twscrape upstream** (ver "Verificación con datos vivos" abajo: x.com cambió el formato que twscrape parsea para el `x-client-transaction-id`; 0.18.1 es la última versión). No es un bug de xport. Decidir entre esperar fix / parche local / API oficial / patrón (c) de la extensión.
 2. **Extensión en un navegador real**: cargar `extension/dist/chrome-mv3` (Chrome: `chrome://extensions` → descomprimida) y `extension/dist/firefox-mv2` (Firefox: `about:debugging`) con el servicio corriendo; confirmar el flujo popup → job → descarga y el estado del gate. Agregar iconos (`public/icon/*.png`).
 3. **Backend oficial real** (`official_api.py` + `api_v2_mapper`): llenar los seams cuando haya API key v2 de pago con qué verificar.
 4. **Persistencia del estado runtime de los jobs** (hoy `JobRegistry` en memoria; los DATOS sí son durables): evaluar si se quiere sobrevivir reinicios sin re-POST.
@@ -76,7 +76,23 @@
 
 Mejoras posibles de la extensión: patrón (b) Native Messaging ("abrir la app" sin server a mano) y patrón (c) captura GraphQL in-page (de menor fricción; **debe** reportar accesos al Compliance Gate). Ver `docs/plan-extractor-tweets.md`.
 
-### Verificaciones contra datos vivos (pendientes hasta tener cookies — NO bloquean lo hecho)
+### ⚠️ Verificación con datos vivos (2026-06-14): BLOQUEADA por upstream (twscrape)
+
+Se corrió la verificación con cookies reales (cuenta descartable). Resultado: el backend de scraping **no puede hablar con x.com hoy**, por un problema **de twscrape, no de xport**:
+
+- twscrape **0.18.1 es la última versión publicada** (no hay upgrade). Su generador del header `x-client-transaction-id` (`twscrape/xclid.py`, `get_scripts_list`) parsea el HTML de x.com buscando el mapa de chunks `{id}:"{7 hex}"`. **x.com cambió ese formato después del código "as of 2026-05" de twscrape**: el regex matchea 0 entradas y `ondemand.s.*.js` ya no aparece → `Exception("Failed to parse scripts")` → sin transaction-id → x.com rechaza el GraphQL → `QueueClient.get` devuelve `None` → `fetch_search_page` lanza `ProviderError`.
+- **No es baneo ni rate-limit ni cookies malas**: la página pública de x.com se obtiene OK (687 KB, perfil real, con `twitter-site-verification` y `loading-x-anim`); el account se agrega `active=True`. Solo falla el cálculo del transaction-id.
+- **xport se comportó bien**: `build_pool` OK, el provider/gate **fallaron cerrado** con un error claro (no enmascararon como "sin resultados"). Los 4 puntos de abajo quedan sin poder verificarse hasta destrabar el transporte.
+
+**Opciones evaluadas:** (a) esperar fix de twscrape upstream; (b) parche local del transaction-id; (c) migrar al `OfficialApiProvider` (API key v2 de pago) — `PROVIDER_BACKEND=official`; (d) **patrón (c)** de la extensión (captura GraphQL in-page): el navegador calcula el transaction-id → esquiva el problema de raíz. Script de verificación usado: `/tmp/verify_live.py` (reutilizable: `uv run python /tmp/verify_live.py <cuenta> <since> <until>`).
+
+**Investigación A (parche) vs C (in-page) — 2026-06-14:**
+- **(A) resultó GRANDE, no un regex.** x.com migró **todo el web client de webpack a Vite/ESM**: de `abs.twimg.com/responsive-web/client-web/*.js` (manifest `{id:"7hex"}` + chunk `ondemand.s.*.js`) a `abs.twimg.com/x-web/x-web/assets/*.js` (174 chunks con content-hash, `<script type="module">`). El `ondemand.s` que alimenta el algoritmo del transaction-id **ya no existe**. Las libs dedicadas no lo resolvieron: `xclienttransaction` última release 2026-03-18 (pre-migración), `twscrape` 0.18.1 del 2026-05-23 ("as of 2026-05"). Parchear = reverse-engineering del bundle Vite + ciclo de rotura de 2-4 semanas. Alquiler caro y recurrente.
+- **(C) es inmune a esto.** Interceptar el GraphQL in-page sigue siendo el método recomendado en 2026; el navegador calcula el transaction-id nativo; la migración Vite no afecta la API (`/i/api/graphql/<id>/<Op>`) ni el JSON → **los mappers actuales se reusan**. Inmune también a la rotación de doc_id que rompe a (A)/(B).
+
+**DECISIÓN (2026-06-14): se va con (C), captura GraphQL in-page.** Diseño en `docs/superpowers/specs/2026-06-14-inpage-capture-design.md`. (A) descartado por costo/fragilidad; (E) API oficial queda como plan B pago.
+
+### Verificaciones contra datos vivos (los 4 puntos, pendientes hasta destrabar el transporte)
 
 Los tests del provider son 100% offline. Antes de confiar el pipeline, con una cuenta descartable real (spec `2026-06-09-twscrape-provider-design.md` §11):
 
