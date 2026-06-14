@@ -118,7 +118,7 @@ async def export_account(
     own_ids = await store.account_ids(account)
 
     async def filtered() -> AsyncIterator[Tweet]:
-        async for mapped in store.iter_account(account):
+        async for mapped in store.iter_account(account, since=since, until=until):
             if passes_reply_policy(
                 is_reply=mapped.is_reply,
                 conversation_id=mapped.conversation_id,
