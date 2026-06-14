@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from tweet_extractor.compliance.gate import SlidingWindowGate
 from tweet_extractor.config import Settings
+from tweet_extractor.service.ingest import router as ingest_router
 from tweet_extractor.service.jobs import (
     BackendBuilder,
     JobRegistry,
@@ -70,6 +71,7 @@ def create_app(
             allow_headers=["*"],
         )
     app.include_router(router)
+    app.include_router(ingest_router)
     return app
 
 
