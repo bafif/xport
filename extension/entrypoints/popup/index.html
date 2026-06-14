@@ -32,6 +32,30 @@
       <section id="gate" class="gate" hidden></section>
       <section id="status" class="status" hidden></section>
       <p id="error" class="error" hidden></p>
+
+      <hr />
+
+      <section class="capture">
+        <h2>Captura in-page</h2>
+        <label class="check">
+          <input id="capture-toggle" type="checkbox" />
+          Capturar de x.com (navegá <code>from:user since: until:</code> y scrolleá)
+        </label>
+        <section id="counts" class="gate" hidden></section>
+
+        <form id="export-form" autocomplete="off">
+          <label>
+            Cuenta a exportar
+            <input id="exp-account" type="text" placeholder="nasa" required />
+          </label>
+          <div class="row">
+            <label>Desde<input id="exp-since" type="date" required /></label>
+            <label>Hasta<input id="exp-until" type="date" required /></label>
+          </div>
+          <button id="export" type="submit">Exportar CSV</button>
+        </form>
+        <section id="export-status" class="status" hidden></section>
+      </section>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>

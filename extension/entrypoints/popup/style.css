@@ -147,3 +147,30 @@ button:disabled {
   color: var(--error);
   font-size: 12px;
 }
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+.capture h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--fg);
+}
+
+.check input {
+  width: auto;
+}
+
+.status a {
+  color: var(--accent);
+}

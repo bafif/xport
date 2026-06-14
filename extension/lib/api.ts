@@ -42,6 +42,19 @@ export interface GateResponse {
   window_s: number;
 }
 
+export interface ExportRequest {
+  account: string;
+  since: string; // YYYY-MM-DD
+  until: string; // YYYY-MM-DD
+}
+
+export interface ExportResult {
+  account: string;
+  csv: string;
+  download_url: string; // relativo a la base (p.ej. /exports/<file>)
+  exported: number;
+}
+
 export class XportApiError extends Error {
   constructor(
     message: string,
@@ -86,6 +99,16 @@ export class XportClient {
 
   gate(): Promise<GateResponse> {
     return this.req<GateResponse>('/gate');
+  }
+
+  /** Exporta a CSV lo capturado in-page de una cuenta en un rango (patrón C). */
+  exportCapture(body: ExportRequest): Promise<ExportResult> {
+    return this.req<ExportResult>('/export', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  /** URL absoluta de descarga a partir del `download_url` relativo del backend. */
+  absolute(path: string): string {
+    return `${this.base}${path}`;
   }
 
   /** URL de descarga del CSV de una cuenta (FileResponse con Content-Disposition). */
