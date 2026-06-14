@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -22,25 +22,16 @@ def _clean_handle(raw: str) -> str:
     return handle
 
 
-class JobCreate(BaseModel):
-    """Body de `POST /jobs`. Las fechas son `YYYY-MM-DD` (UTC, granularidad por
-    día como en la CLI); `since` inclusiva, `until` exclusiva."""
+class _DateRange(BaseModel):
+    """Rango `[since, until)` en `YYYY-MM-DD` (UTC, granularidad por día como en la
+    CLI; `since` inclusiva, `until` exclusiva). Base compartida por los bodies que
+    toman un rango (job + export): la regla del rango vive en UN solo lugar."""
 
-    accounts: list[str] = Field(min_length=1, description="Handles (sin @). Al menos uno.")
     since: date
     until: date
-    subwindow_days: int | None = Field(default=None, ge=1)
-    encoding: str = DEFAULT_ENCODING
-    delimiter: str = DEFAULT_DELIMITER
-
-    @field_validator("accounts")
-    @classmethod
-    def _clean_accounts(cls, raw: list[str]) -> list[str]:
-        # Dedup preservando orden: la misma cuenta dos veces no debe duplicar el CSV.
-        return list(dict.fromkeys(_clean_handle(a) for a in raw))
 
     @model_validator(mode="after")
-    def _range_ordenado(self) -> JobCreate:
+    def _range_ordenado(self) -> Self:
         if self.since >= self.until:
             raise ValueError("since debe ser anterior a until")
         return self
@@ -50,6 +41,21 @@ class JobCreate(BaseModel):
 
     def until_utc(self) -> datetime:
         return datetime(self.until.year, self.until.month, self.until.day, tzinfo=UTC)
+
+
+class JobCreate(_DateRange):
+    """Body de `POST /jobs`."""
+
+    accounts: list[str] = Field(min_length=1, description="Handles (sin @). Al menos uno.")
+    subwindow_days: int | None = Field(default=None, ge=1)
+    encoding: str = DEFAULT_ENCODING
+    delimiter: str = DEFAULT_DELIMITER
+
+    @field_validator("accounts")
+    @classmethod
+    def _clean_accounts(cls, raw: list[str]) -> list[str]:
+        # Dedup preservando orden: la misma cuenta dos veces no debe duplicar el CSV.
+        return list(dict.fromkeys(_clean_handle(a) for a in raw))
 
 
 class AccountResultDTO(BaseModel):
@@ -162,31 +168,16 @@ class IngestResult(BaseModel):
     over_cap: bool  # el ledger global cruzó el tope (las próximas ingestas dan 429)
 
 
-class ExportRequest(BaseModel):
-    """Body de `POST /export`: exporta a CSV lo capturado de una cuenta en un rango
-    (`since` inclusiva, `until` exclusiva, UTC). El store acumula varias navegaciones;
-    el filtro de fecha del export acota a lo pedido."""
+class ExportRequest(_DateRange):
+    """Body de `POST /export`: exporta a CSV lo capturado de una cuenta en un rango.
+    El store acumula varias navegaciones; el filtro de fecha acota a lo pedido."""
 
     account: str
-    since: date
-    until: date
 
     @field_validator("account")
     @classmethod
     def _clean(cls, raw: str) -> str:
         return _clean_handle(raw)
-
-    @model_validator(mode="after")
-    def _range_ordenado(self) -> ExportRequest:
-        if self.since >= self.until:
-            raise ValueError("since debe ser anterior a until")
-        return self
-
-    def since_utc(self) -> datetime:
-        return datetime(self.since.year, self.since.month, self.since.day, tzinfo=UTC)
-
-    def until_utc(self) -> datetime:
-        return datetime(self.until.year, self.until.month, self.until.day, tzinfo=UTC)
 
 
 class ExportResult(BaseModel):

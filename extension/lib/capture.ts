@@ -39,7 +39,10 @@ export function accountFromQuery(rawQuery: string): string | null {
  *  que va por userId) o si la URL no trae la query. */
 export function accountFromUrl(url: string): string | null {
   try {
-    const variables = new URL(url).searchParams.get('variables');
+    // x.com pide el GraphQL con URLs RELATIVAS (`/i/api/graphql/...`): hay que dar una
+    // base, si no `new URL` tira y se perderían todas esas capturas. Solo leemos
+    // searchParams, así que el host de la base no importa.
+    const variables = new URL(url, 'https://x.com').searchParams.get('variables');
     if (!variables) return null;
     const parsed = JSON.parse(variables) as { rawQuery?: unknown };
     return typeof parsed.rawQuery === 'string' ? accountFromQuery(parsed.rawQuery) : null;
