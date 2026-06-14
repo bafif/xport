@@ -145,6 +145,25 @@ async def test_export_account_aplica_politica_y_un_archivo_por_cuenta(tmp_path: 
     assert all(r[0] == "someuser" for r in rows[1:])
 
 
+async def test_export_account_filtra_por_rango(tmp_path: Path):
+    # La captura in-page acumula tweets de varias navegaciones: el export debe traer
+    # SOLO los de [since, until) (since inclusivo, until exclusivo).
+    async with SqliteStore(tmp_path / "tweets.db") as store:
+        await store.save(
+            [
+                mapped_tweet("a", created_at=datetime(2022, 12, 15, tzinfo=UTC)),  # antes: fuera
+                mapped_tweet("b", created_at=datetime(2023, 1, 10, tzinfo=UTC)),  # dentro
+                mapped_tweet("c", created_at=datetime(2023, 1, 20, tzinfo=UTC)),  # dentro
+                mapped_tweet("d", created_at=datetime(2023, 2, 1, tzinfo=UTC)),  # == until: fuera
+            ]
+        )
+        path, written = await export_account(
+            store, "someuser", tmp_path / "csv", since=SINCE, until=UNTIL
+        )
+    assert written == 2
+    assert [r[2] for r in leer(path)[1:]] == ["texto b", "texto c"]  # solo el rango, cronológico
+
+
 async def test_export_account_sin_tweets_deja_solo_header(tmp_path: Path):
     async with SqliteStore(tmp_path / "tweets.db") as store:
         path, written = await export_account(

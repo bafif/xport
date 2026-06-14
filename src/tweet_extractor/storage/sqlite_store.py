@@ -113,17 +113,33 @@ class SqliteStore:
         await db.commit()
         return cur.rowcount
 
-    async def iter_account(self, account: str) -> AsyncIterator[MappedTweet]:
+    async def iter_account(
+        self,
+        account: str,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> AsyncIterator[MappedTweet]:
         """Las filas de una cuenta en orden cronológico (el ISO UTC ordena
         lexicográficamente; empate intra-segundo desempatado por id, determinista).
-        SIN política de replies: storage es tonto, el filtro lo compone el caller
-        con `passes_reply_policy` + `account_ids` (streaming, ver csv_exporter)."""
+        `since`/`until` (UTC tz-aware) filtran `created_at ∈ [since, until)` — lo usa
+        el export por rango (la captura in-page acumula varias navegaciones). SIN
+        política de replies: storage es tonto, el filtro lo compone el caller con
+        `passes_reply_policy` + `account_ids` (streaming, ver csv_exporter)."""
+        clauses = ["account = ?"]
+        params: list[object] = [account]
+        if since is not None:
+            clauses.append("created_at >= ?")
+            params.append(_utc_iso(since))
+        if until is not None:
+            clauses.append("created_at < ?")
+            params.append(_utc_iso(until))
         db = await self._db()
         cur = await db.execute(
-            """SELECT id, account, created_at, content, links,
-                      quoted_tweet_id, quoted_tweet_url, is_reply, conversation_id
-               FROM tweets WHERE account = ? ORDER BY created_at, id""",
-            (account,),
+            f"""SELECT id, account, created_at, content, links,
+                       quoted_tweet_id, quoted_tweet_url, is_reply, conversation_id
+                FROM tweets WHERE {" AND ".join(clauses)} ORDER BY created_at, id""",
+            params,
         )
         async for row in cur:
             yield MappedTweet(
