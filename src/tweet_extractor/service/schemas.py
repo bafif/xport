@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from tweet_extractor.orchestrator import AccountResult
 from tweet_extractor.service.jobs import JobRecord, JobStatus
 from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCODING
+
+
+def _clean_handle(raw: str) -> str:
+    """Normaliza un handle: whitespace PRIMERO, después el `@` (un " @nasa" debe
+    quedar "nasa"). Rechaza vacío y separadores de path (el handle se usa como
+    nombre de archivo del CSV y segmento de URL). Fuente única para job + ingesta."""
+    handle = raw.strip().lstrip("@").strip()
+    if not handle:
+        raise ValueError("el handle no puede ser vacío")
+    if any(sep in handle for sep in ("/", "\\", "..")):
+        raise ValueError("handle inválido (no puede contener '/', '\\' ni '..')")
+    return handle
 
 
 class JobCreate(BaseModel):
@@ -23,17 +36,8 @@ class JobCreate(BaseModel):
     @field_validator("accounts")
     @classmethod
     def _clean_accounts(cls, raw: list[str]) -> list[str]:
-        # Whitespace PRIMERO, después el @ (un " @nasa" debe quedar "nasa", no "@nasa").
-        cleaned = [a.strip().lstrip("@").strip() for a in raw]
-        if any(not a for a in cleaned):
-            raise ValueError("los handles no pueden ser vacíos")
-        # Defensa en profundidad: el handle se usa como nombre de archivo del CSV
-        # (<account>_<since>_<until>.csv) y como segmento de URL de descarga. Rechazar
-        # separadores acá (422 al enviar) en vez de que el job falle recién al exportar.
-        if any(sep in a for a in cleaned for sep in ("/", "\\", "..")):
-            raise ValueError("handle inválido (no puede contener '/', '\\' ni '..')")
         # Dedup preservando orden: la misma cuenta dos veces no debe duplicar el CSV.
-        return list(dict.fromkeys(cleaned))
+        return list(dict.fromkeys(_clean_handle(a) for a in raw))
 
     @model_validator(mode="after")
     def _range_ordenado(self) -> JobCreate:
@@ -132,3 +136,27 @@ class GateResponse(BaseModel):
     remaining: int
     hard_cap: int
     window_s: int
+
+
+class IngestPayload(BaseModel):
+    """Body de `POST /ingest`: páginas GraphQL crudas capturadas in-page (patrón C).
+    La extensión NO parsea; el backend reusa los walkers de envelope + el mapper."""
+
+    account: str
+    op: str = Field(min_length=1, description="Operación capturada (p.ej. SearchTimeline)")
+    pages: list[dict[str, Any]] = Field(min_length=1)
+
+    @field_validator("account")
+    @classmethod
+    def _clean(cls, raw: str) -> str:
+        return _clean_handle(raw)
+
+
+class IngestResult(BaseModel):
+    account: str
+    captured: int  # tweet_results de nivel-tope extraídos de las páginas
+    saved: int  # nuevos persistidos (dedup por id en el store)
+    accessed: int  # objetos-tweet contados para el gate (incluye RT/quotes)
+    gate_usage: int
+    gate_remaining: int
+    over_cap: bool  # el ledger global cruzó el tope (las próximas ingestas dan 429)
