@@ -1,4 +1,8 @@
 :root {
+  /* Hace que los controles nativos (date picker incluido) se rendericen en oscuro y
+     sean usables; sin esto el calendario queda invisible/roto sobre el fondo oscuro. */
+  color-scheme: dark;
+  accent-color: #1d9bf0;
   --bg: #15202b;
   --fg: #e7e9ea;
   --muted: #8b98a5;
