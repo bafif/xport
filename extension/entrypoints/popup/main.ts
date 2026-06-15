@@ -152,9 +152,15 @@ function capAccountValue(): string {
 async function onCapture(): Promise<void> {
   const account = capAccountValue();
   if (!account) return;
-  // Prende la captura y deja el flag que el content script de la pestaña nueva consume
-  // al cargar para arrancar el auto-scroll solo (el popup se cierra al abrir la pestaña).
-  await browser.storage.local.set({ [STORAGE_CAPTURE]: true, [STORAGE_AUTOSTART]: true });
+  // Persistir la base ACÁ es clave: el background (que hace el POST /ingest) la lee de
+  // storage, no del campo del popup. Sin esto ingeriría al default y no al puerto elegido.
+  // Y deja el flag que el content script de la pestaña nueva consume al cargar para
+  // arrancar el auto-scroll solo (el popup se cierra al abrir la pestaña).
+  await browser.storage.local.set({
+    [STORAGE_BASE]: currentBase(),
+    [STORAGE_CAPTURE]: true,
+    [STORAGE_AUTOSTART]: true,
+  });
   captureToggle.checked = true;
   await browser.tabs.create({ url: searchUrl(account, capSince.value, capUntil.value) });
   scrollStatus.hidden = false;
