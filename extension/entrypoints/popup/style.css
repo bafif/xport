@@ -174,3 +174,13 @@ hr {
 .status a {
   color: var(--accent);
 }
+
+.row button {
+  flex: 1;
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+}

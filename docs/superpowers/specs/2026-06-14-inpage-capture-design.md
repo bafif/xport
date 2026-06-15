@@ -165,8 +165,9 @@ reservar. Entonces:
 
 - Captura de timeline de **perfil** (`UserTweets`/`UserTweetsAndReplies`): otro envelope →
   variante del extractor. MVP = solo `SearchTimeline` (rango por la búsqueda).
-- **Auto-scroll dirigido**: MVP depende de que el usuario scrollee. Auto-scroll programático
-  (la extensión scrollea hasta cubrir el rango) = fase siguiente.
+- ~~**Auto-scroll dirigido**~~: **IMPLEMENTADO (2026-06-15)** — `autoscroll.content.ts` +
+  `lib/autoscroll.ts`, botón en el popup; scrollea hasta el fin de resultados (corte por
+  altura estancada) o tope de pasos. El usuario ya no scrollea a mano.
 - **Dedup de capturas** por fingerprint (ODQ §5).
 - **Token de auth** del `/ingest` (hardening §8 / D8).
 - Verificación cargando la extensión en un navegador real (no automatizable acá).

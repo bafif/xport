@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 
 import { XportClient, type JobResponse } from '../../lib/api';
+import { AUTOSCROLL_MSG } from '../../lib/autoscroll';
 import { STORAGE_BASE, STORAGE_CAPTURE, STORAGE_COUNTS } from '../../lib/capture';
 
 const DEFAULT_BASE = 'http://localhost:8080';
@@ -29,6 +30,9 @@ const expSince = el<HTMLInputElement>('exp-since');
 const expUntil = el<HTMLInputElement>('exp-until');
 const exportForm = el<HTMLFormElement>('export-form');
 const exportStatus = el<HTMLElement>('export-status');
+const scrollStart = el<HTMLButtonElement>('scroll-start');
+const scrollStop = el<HTMLButtonElement>('scroll-stop');
+const scrollStatus = el<HTMLElement>('scroll-status');
 
 function currentBase(): string {
   return baseInput.value.trim().replace(/\/+$/, '') || DEFAULT_BASE;
@@ -133,6 +137,25 @@ async function onSubmit(): Promise<void> {
 captureToggle.addEventListener('change', () => {
   void browser.storage.local.set({ [STORAGE_CAPTURE]: captureToggle.checked });
 });
+
+scrollStart.addEventListener('click', () => void autoscroll('start'));
+scrollStop.addEventListener('click', () => void autoscroll('stop'));
+
+async function autoscroll(action: 'start' | 'stop'): Promise<void> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id === undefined) return;
+  scrollStatus.hidden = false;
+  try {
+    await browser.tabs.sendMessage(tab.id, { type: AUTOSCROLL_MSG, action });
+    scrollStatus.textContent =
+      action === 'start'
+        ? 'Auto-scroll en curso… podés cerrar el popup; sigue solo.'
+        : 'Auto-scroll detenido.';
+  } catch {
+    // No hay content script en esa pestaña (no es x.com / no cargó).
+    scrollStatus.textContent = 'Abrí una búsqueda de x.com (from:user since: until:) y reintentá.';
+  }
+}
 
 exportForm.addEventListener('submit', (event) => {
   event.preventDefault();

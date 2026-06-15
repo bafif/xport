@@ -170,7 +170,7 @@
 ## Qué se difiere (de esta fase)
 
 - Captura de timeline de **perfil** (`UserTweets`/`UserTweetsAndReplies`, otro envelope — agregar variante de `extract_tweet_results`).
-- **Auto-scroll dirigido** (MVP depende de que el usuario scrollee la búsqueda).
+- ~~**Auto-scroll dirigido**~~ — IMPLEMENTADO (2026-06-15): `autoscroll.content.ts` + botón en el popup.
 - **Dedup de capturas** por fingerprint (ODQ §5 del spec; default: contar todo).
 - **Token de auth** del `/ingest` (hardening).
 - Verificación cargando la extensión en un navegador real.
