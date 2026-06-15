@@ -75,6 +75,18 @@ async function renderCounts(): Promise<void> {
   countsEl.textContent = 'Capturado: ' + entries.map(([a, n]) => `${a} (${n})`).join(' · ');
 }
 
+// Inserta los guiones de AAAA-MM-DD a medida que se escribe (los inputs son de texto,
+// no `type=date`: el calendario nativo queda tapado por la ventana chica del popup).
+function autoFormatDate(input: HTMLInputElement): void {
+  input.addEventListener('input', () => {
+    const digits = input.value.replace(/\D/g, '').slice(0, 8);
+    const parts = [digits.slice(0, 4), digits.slice(4, 6), digits.slice(6, 8)].filter(Boolean);
+    input.value = parts.join('-');
+  });
+}
+autoFormatDate(sinceInput);
+autoFormatDate(untilInput);
+
 captureForm.addEventListener('submit', (event) => {
   event.preventDefault();
   void onCapture();

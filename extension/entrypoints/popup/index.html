@@ -23,8 +23,28 @@
           <input id="account" type="text" placeholder="nasa" required />
         </label>
         <div class="row">
-          <label>Desde<input id="since" type="date" required /></label>
-          <label>Hasta<input id="until" type="date" required /></label>
+          <label
+            >Desde
+            <input
+              id="since"
+              type="text"
+              inputmode="numeric"
+              placeholder="AAAA-MM-DD"
+              pattern="\d{4}-\d{2}-\d{2}"
+              maxlength="10"
+              required
+          /></label>
+          <label
+            >Hasta
+            <input
+              id="until"
+              type="text"
+              inputmode="numeric"
+              placeholder="AAAA-MM-DD"
+              pattern="\d{4}-\d{2}-\d{2}"
+              maxlength="10"
+              required
+          /></label>
         </div>
         <button id="capture-start" type="submit">Capturar ▶</button>
         <div class="row">
