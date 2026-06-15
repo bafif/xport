@@ -4,6 +4,7 @@ import {
   accountFromUrl,
   CAPTURE_SOURCE,
   type CaptureMsg,
+  DEFAULT_BASE,
   STORAGE_BASE,
   STORAGE_CAPTURE,
   STORAGE_COUNTS,
@@ -15,7 +16,6 @@ import {
 // rechaza con 4xx (429 over-cap, 400), NO reintenta (el acceso ya ocurrió). El buffer
 // está acotado (no crece sin fin en un outage). El service worker queda mínimo.
 
-const DEFAULT_BASE = 'http://localhost:8080';
 const FLUSH_MS = 1500;
 const MAX_PAGES_PER_ACCOUNT = 1000; // cota del buffer ante outage prolongado
 

@@ -2,9 +2,14 @@ import { browser } from 'wxt/browser';
 
 import { XportClient } from '../../lib/api';
 import { AUTOSCROLL_MSG, searchUrl } from '../../lib/autoscroll';
-import { STORAGE_AUTOSTART, STORAGE_BASE, STORAGE_CAPTURE, STORAGE_COUNTS } from '../../lib/capture';
+import {
+  DEFAULT_BASE,
+  STORAGE_AUTOSTART,
+  STORAGE_BASE,
+  STORAGE_CAPTURE,
+  STORAGE_COUNTS,
+} from '../../lib/capture';
 
-const DEFAULT_BASE = 'http://localhost:8000';
 const COUNTS_REFRESH_MS = 2000;
 
 function el<T extends HTMLElement>(id: string): T {
