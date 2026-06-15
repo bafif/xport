@@ -10,57 +10,33 @@
     <main id="app">
       <header>
         <h1>xport</h1>
-        <p class="sub">Tweets → CSV vía el servicio local</p>
+        <p class="sub">Tweets → CSV (captura in-page)</p>
       </header>
 
-      <form id="job-form" autocomplete="off">
+      <form id="capture-form" autocomplete="off">
         <label>
-          API base
-          <input id="base" type="url" placeholder="http://localhost:8080" required />
+          Servicio local
+          <input id="base" type="url" placeholder="http://localhost:8000" required />
         </label>
         <label>
-          Cuentas <small>(coma o espacio)</small>
-          <input id="accounts" type="text" placeholder="nasa, esa" required />
+          Cuenta
+          <input id="account" type="text" placeholder="nasa" required />
         </label>
         <div class="row">
           <label>Desde<input id="since" type="date" required /></label>
           <label>Hasta<input id="until" type="date" required /></label>
         </div>
-        <button id="submit" type="submit">Extraer</button>
+        <button id="capture-start" type="submit">Capturar ▶</button>
+        <div class="row">
+          <button id="capture-stop" type="button" class="secondary">Detener ⏹</button>
+          <button id="export" type="button" class="secondary">Exportar CSV</button>
+        </div>
       </form>
 
       <section id="gate" class="gate" hidden></section>
-      <section id="status" class="status" hidden></section>
-      <p id="error" class="error" hidden></p>
-
-      <hr />
-
-      <section class="capture">
-        <h2>Captura in-page</h2>
-        <label class="check">
-          <input id="capture-toggle" type="checkbox" />
-          Capturar de x.com (ingesta al servicio local)
-        </label>
-        <section id="counts" class="gate" hidden></section>
-
-        <form id="capture-form" autocomplete="off">
-          <label>
-            Cuenta
-            <input id="cap-account" type="text" placeholder="nasa" required />
-          </label>
-          <div class="row">
-            <label>Desde<input id="cap-since" type="date" required /></label>
-            <label>Hasta<input id="cap-until" type="date" required /></label>
-          </div>
-          <div class="row">
-            <button id="capture-start" type="submit">Capturar ▶</button>
-            <button id="capture-stop" type="button" class="secondary">Detener ⏹</button>
-          </div>
-          <button id="export" type="button">Exportar CSV</button>
-        </form>
-        <p id="scroll-status" class="sub" hidden></p>
-        <section id="export-status" class="status" hidden></section>
-      </section>
+      <section id="counts" class="gate" hidden></section>
+      <p id="status" class="sub" hidden></p>
+      <section id="export-status" class="status" hidden></section>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>
