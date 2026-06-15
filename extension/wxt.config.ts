@@ -10,10 +10,12 @@ export default defineConfig({
     name: 'xport — Extractor de tweets',
     description:
       'Dispara extracciones de tweets → CSV contra el servicio local de xport (FastAPI).',
-    // `storage`: recuerda la URL base de la API. `host_permissions`: deja que las
-    // páginas de la extensión (popup) hagan fetch al servicio local sin chocar con
+    // `storage`: recuerda la URL base de la API. `activeTab`: al abrir el popup
+    // (gesto del usuario) habilita mandarle start/stop del auto-scroll al content
+    // script de la pestaña activa de x.com. `host_permissions`: deja que las páginas
+    // de la extensión (popup/background) hagan fetch al servicio local sin chocar con
     // CORS (las extension pages con host_permissions no están sujetas a CORS).
-    permissions: ['storage'],
+    permissions: ['storage', 'activeTab'],
     host_permissions: ['http://localhost/*', 'http://127.0.0.1/*'],
   },
 });
