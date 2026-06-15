@@ -39,26 +39,26 @@
         <h2>Captura in-page</h2>
         <label class="check">
           <input id="capture-toggle" type="checkbox" />
-          Capturar de x.com (navegá <code>from:user since: until:</code> y scrolleá)
+          Capturar de x.com (ingesta al servicio local)
         </label>
-        <div class="row">
-          <button id="scroll-start" type="button">Auto-scroll ▶</button>
-          <button id="scroll-stop" type="button" class="secondary">Detener ⏹</button>
-        </div>
-        <p id="scroll-status" class="sub" hidden></p>
         <section id="counts" class="gate" hidden></section>
 
-        <form id="export-form" autocomplete="off">
+        <form id="capture-form" autocomplete="off">
           <label>
-            Cuenta a exportar
-            <input id="exp-account" type="text" placeholder="nasa" required />
+            Cuenta
+            <input id="cap-account" type="text" placeholder="nasa" required />
           </label>
           <div class="row">
-            <label>Desde<input id="exp-since" type="date" required /></label>
-            <label>Hasta<input id="exp-until" type="date" required /></label>
+            <label>Desde<input id="cap-since" type="date" required /></label>
+            <label>Hasta<input id="cap-until" type="date" required /></label>
           </div>
-          <button id="export" type="submit">Exportar CSV</button>
+          <div class="row">
+            <button id="capture-start" type="submit">Capturar ▶</button>
+            <button id="capture-stop" type="button" class="secondary">Detener ⏹</button>
+          </div>
+          <button id="export" type="button">Exportar CSV</button>
         </form>
+        <p id="scroll-status" class="sub" hidden></p>
         <section id="export-status" class="status" hidden></section>
       </section>
     </main>

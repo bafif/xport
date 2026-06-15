@@ -1,8 +1,8 @@
 import { browser } from 'wxt/browser';
 
 import { XportClient, type JobResponse } from '../../lib/api';
-import { AUTOSCROLL_MSG } from '../../lib/autoscroll';
-import { STORAGE_BASE, STORAGE_CAPTURE, STORAGE_COUNTS } from '../../lib/capture';
+import { AUTOSCROLL_MSG, searchUrl } from '../../lib/autoscroll';
+import { STORAGE_AUTOSTART, STORAGE_BASE, STORAGE_CAPTURE, STORAGE_COUNTS } from '../../lib/capture';
 
 const DEFAULT_BASE = 'http://localhost:8080';
 const POLL_MS = 1000;
@@ -25,13 +25,13 @@ const statusEl = el<HTMLElement>('status');
 const errorEl = el<HTMLElement>('error');
 const captureToggle = el<HTMLInputElement>('capture-toggle');
 const countsEl = el<HTMLElement>('counts');
-const expAccount = el<HTMLInputElement>('exp-account');
-const expSince = el<HTMLInputElement>('exp-since');
-const expUntil = el<HTMLInputElement>('exp-until');
-const exportForm = el<HTMLFormElement>('export-form');
+const capAccount = el<HTMLInputElement>('cap-account');
+const capSince = el<HTMLInputElement>('cap-since');
+const capUntil = el<HTMLInputElement>('cap-until');
+const captureForm = el<HTMLFormElement>('capture-form');
+const captureStop = el<HTMLButtonElement>('capture-stop');
+const exportBtn = el<HTMLButtonElement>('export');
 const exportStatus = el<HTMLElement>('export-status');
-const scrollStart = el<HTMLButtonElement>('scroll-start');
-const scrollStop = el<HTMLButtonElement>('scroll-stop');
 const scrollStatus = el<HTMLElement>('scroll-status');
 
 function currentBase(): string {
@@ -138,39 +138,50 @@ captureToggle.addEventListener('change', () => {
   void browser.storage.local.set({ [STORAGE_CAPTURE]: captureToggle.checked });
 });
 
-scrollStart.addEventListener('click', () => void autoscroll('start'));
-scrollStop.addEventListener('click', () => void autoscroll('stop'));
+captureForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  void onCapture();
+});
+captureStop.addEventListener('click', () => void stopScroll());
+exportBtn.addEventListener('click', () => void onExport());
 
-async function autoscroll(action: 'start' | 'stop'): Promise<void> {
+function capAccountValue(): string {
+  return capAccount.value.trim().replace(/^@+/, '');
+}
+
+async function onCapture(): Promise<void> {
+  const account = capAccountValue();
+  if (!account) return;
+  // Prende la captura y deja el flag que el content script de la pestaña nueva consume
+  // al cargar para arrancar el auto-scroll solo (el popup se cierra al abrir la pestaña).
+  await browser.storage.local.set({ [STORAGE_CAPTURE]: true, [STORAGE_AUTOSTART]: true });
+  captureToggle.checked = true;
+  await browser.tabs.create({ url: searchUrl(account, capSince.value, capUntil.value) });
+  scrollStatus.hidden = false;
+  scrollStatus.textContent = 'Abriendo la búsqueda y scrolleando… (podés cerrar el popup)';
+}
+
+async function stopScroll(): Promise<void> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) return;
   scrollStatus.hidden = false;
   try {
-    await browser.tabs.sendMessage(tab.id, { type: AUTOSCROLL_MSG, action });
-    scrollStatus.textContent =
-      action === 'start'
-        ? 'Auto-scroll en curso… podés cerrar el popup; sigue solo.'
-        : 'Auto-scroll detenido.';
+    await browser.tabs.sendMessage(tab.id, { type: AUTOSCROLL_MSG, action: 'stop' });
+    scrollStatus.textContent = 'Auto-scroll detenido.';
   } catch {
-    // No hay content script en esa pestaña (no es x.com / no cargó).
-    scrollStatus.textContent = 'Abrí una búsqueda de x.com (from:user since: until:) y reintentá.';
+    scrollStatus.textContent = 'No hay una captura activa en esta pestaña.';
   }
 }
 
-exportForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  void onExport();
-});
-
 async function onExport(): Promise<void> {
-  const account = expAccount.value.trim().replace(/^@+/, '');
+  const account = capAccountValue();
   if (!account) return;
   const client = new XportClient(currentBase());
   try {
     const r = await client.exportCapture({
       account,
-      since: expSince.value,
-      until: expUntil.value,
+      since: capSince.value,
+      until: capUntil.value,
     });
     const url = client.absolute(r.download_url);
     exportStatus.hidden = false;
