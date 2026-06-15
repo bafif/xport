@@ -47,6 +47,7 @@ export default defineContentScript({
 
     async function run(): Promise<void> {
       running = true;
+      console.debug('[xport] auto-scroll iniciado');
       let lastHeight = -1;
       let stale = 0;
       let steps = 0;
@@ -59,6 +60,7 @@ export default defineContentScript({
         steps += 1;
       }
       running = false;
+      console.debug('[xport] auto-scroll terminado tras', steps, 'pasos');
     }
   },
 });

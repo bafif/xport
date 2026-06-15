@@ -39,6 +39,7 @@ export default defineBackground(() => {
     if (buf.length >= MAX_PAGES_PER_ACCOUNT) return; // outage: no crecer sin límite
     buf.push(m.data);
     buffers.set(account, buf);
+    console.debug('[xport] captura recibida:', account, '(buffer', buf.length, ')');
     schedule();
   });
 
@@ -74,15 +75,20 @@ export default defineBackground(() => {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ account, op: 'SearchTimeline', pages }),
           });
-        } catch {
+        } catch (err) {
+          console.warn('[xport] servicio no responde en', base, '→ reintento', err);
           requeue(account, pages); // red caída: reintentar
           continue;
         }
         if (res.ok) {
           const reply = (await res.json()) as IngestReply;
           await bumpCount(reply.account, reply.saved);
+          console.debug('[xport] ingest OK', account, '→ saved', reply.saved, 'over_cap', reply.over_cap);
         } else if (res.status >= 500) {
+          console.warn('[xport] ingest', res.status, '(server) → reintento');
           requeue(account, pages); // error transitorio del server: reintentar
+        } else {
+          console.warn('[xport] ingest rechazado', res.status, '(no se reintenta)');
         }
         // 4xx (429 over-cap, 400): el acceso ya ocurrió, no se reintenta (drop).
       }
