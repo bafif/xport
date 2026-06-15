@@ -15,6 +15,14 @@ export interface AutoscrollMsg {
 export const SCROLL_DELAY_MS = 1200; // espera por fetch+render entre scrolls
 export const MAX_STALE = 4; // scrolls consecutivos sin crecer la altura → fin de resultados
 export const MAX_STEPS = 1000; // tope duro (~20 min): no scrollear para siempre
+export const AUTOSTART_SETTLE_MS = 2500; // espera tras abrir la búsqueda antes de scrollear
+
+/** URL de la búsqueda `from:user since: until:` en modo "Latest" (cronológico, `f=live`).
+ *  `account` debe venir ya sin `@`. Puro y testeable. */
+export function searchUrl(account: string, since: string, until: string): string {
+  const query = `from:${account} since:${since} until:${until}`;
+  return `https://x.com/search?q=${encodeURIComponent(query)}&f=live`;
+}
 
 /** Decide si cortar el loop: se acabaron los resultados (altura estancada) o se llegó
  *  al tope de pasos. Puro y testeable. */

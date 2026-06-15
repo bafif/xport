@@ -8,6 +8,8 @@ export const CAPTURE_SOURCE = 'xport-capture' as const;
 export const STORAGE_BASE = 'xport:base'; // URL base del servicio
 export const STORAGE_CAPTURE = 'xport:capture'; // captura on/off (default: on)
 export const STORAGE_COUNTS = 'xport:captured'; // {account: tweets guardados}
+export const STORAGE_AUTOSTART = 'xport:autostart'; // el popup lo prende; el content script
+// de la pestaña de búsqueda recién abierta lo consume al cargar y arranca el auto-scroll solo
 
 // Operaciones que capturamos. MVP: SearchTimeline (rango de fechas vía la búsqueda
 // from:user since: until:). UserTweets* son timeline de perfil (otro envelope) — el
