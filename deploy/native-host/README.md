@@ -64,6 +64,21 @@ pasá `--ext-id=` / `-ExtId`. En **Chrome** el id es el de 32 letras que aparece
 4. A los ~1–2 s, `http://localhost:8000/healthz` responde. Logs del host: `~/.local/state/xport/native-host.log`.
 5. Cerrá Firefox → el host recibe EOF y baja uvicorn (salvo `XPORT_HOST_KEEP_ALIVE=1`).
 
+## Diagnóstico (doctor)
+
+Dos chequeos automáticos, uno por lado del borde WSL:
+
+- **WSL** — que el backend pueda arrancar (+ auto-test real del supervisor si `:8000` está libre):
+  ```bash
+  deploy/native-host/doctor.sh            # --no-live para saltar el auto-test
+  ```
+- **Windows** — registro + manifest + bridge `.bat`→WSL + alcanzabilidad desde Windows:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\bafif\xport\deploy\native-host\doctor.ps1
+  #   -Distro <d>   si no es la default     -Chrome   para el manifest de Chrome
+  ```
+  (También podés correr el de WSL desde PowerShell: `wsl bash /home/bafif/xport/deploy/native-host/doctor.sh`.)
+
 ## Desinstalar
 
 ```bash
