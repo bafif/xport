@@ -97,6 +97,14 @@ powershell -ExecutionPolicy Bypass -File ...\install-windows.ps1 -Uninstall
 
 ## Caveats
 
+- **WSL en modo NAT + `localhost` (IPv4 vs IPv6)**: el forwarding de WSL2 reenvía IPv4
+  `127.0.0.1`; `localhost` en Windows resuelve a `::1` (IPv6) primero. El navegador hace
+  fallback a IPv4 (la extensión anda con `localhost:8000`), pero herramientas estrictas
+  como `Invoke-WebRequest` de PowerShell no — por eso `doctor.ps1` usa `127.0.0.1`. Si
+  Windows **no** alcanza el backend ni por `127.0.0.1` (pero sí responde dentro de WSL),
+  el forwarding está roto: poné `localhostForwarding=true` bajo `[wsl2]` en `%UserProfile%\.wslconfig`
+  y corré `wsl --shutdown`, o pasá a `networkingMode=mirrored`. (La IP de WSL `172.x` sirve
+  de fallback pero **cambia en cada reinicio**, por eso no se hardcodea.)
 - **Chrome MV3**: el service worker se duerme y cerraría el puerto → el host bajaría
   uvicorn. Para ese navegador usá `XPORT_HOST_KEEP_ALIVE=1`. **Firefox MV2** (el target
   primario) tiene background persistente: anda sin tocar nada.
