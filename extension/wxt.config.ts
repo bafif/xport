@@ -12,10 +12,17 @@ export default defineConfig({
       'Dispara extracciones de tweets → CSV contra el servicio local de xport (FastAPI).',
     // `storage`: recuerda la URL base de la API. `activeTab`: al abrir el popup
     // (gesto del usuario) habilita mandarle start/stop del auto-scroll al content
-    // script de la pestaña activa de x.com. `host_permissions`: deja que las páginas
-    // de la extensión (popup/background) hagan fetch al servicio local sin chocar con
-    // CORS (las extension pages con host_permissions no están sujetas a CORS).
-    permissions: ['storage', 'activeTab'],
+    // script de la pestaña activa de x.com. `nativeMessaging`: deja que el background
+    // lance el supervisor local (deploy/native-host) que arranca/baja el FastAPI solo,
+    // así no hace falta correr `uvicorn` a mano. `host_permissions`: deja que las
+    // páginas de la extensión (popup/background) hagan fetch al servicio local sin
+    // chocar con CORS (las extension pages con host_permissions no están sujetas a CORS).
+    permissions: ['storage', 'activeTab', 'nativeMessaging'],
     host_permissions: ['http://localhost/*', 'http://127.0.0.1/*'],
+    // Id estable de Firefox: el manifest del native host lo lista en `allowed_extensions`
+    // (debe coincidir con install-linux.sh / install-windows.ps1, default `xport@local`).
+    browser_specific_settings: {
+      gecko: { id: 'xport@local' },
+    },
   },
 });

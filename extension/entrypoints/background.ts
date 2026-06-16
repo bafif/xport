@@ -26,6 +26,48 @@ interface IngestReply {
 }
 
 export default defineBackground(() => {
+  // Auto-arranque del backend: al cargar, el background abre un puerto de native
+  // messaging que hace que el navegador lance el supervisor local (deploy/native-host),
+  // que a su vez levanta el FastAPI y lo baja cuando se cierra el puerto. Mantener el
+  // puerto abierto = mantener vivo el backend durante la sesión. Si el host no está
+  // instalado, falla silencioso y se cae al server manual: los fetch a /ingest
+  // reintentan igual (ver flush). Detalle: deploy/native-host/README.md.
+  const NATIVE_HOST = 'com.xport.host';
+  const MAX_NATIVE_RETRIES = 5;
+  let nativePort: ReturnType<typeof browser.runtime.connectNative> | null = null;
+  let nativeRetries = 0;
+
+  function ensureBackend(): void {
+    if (nativePort) return;
+    let port: ReturnType<typeof browser.runtime.connectNative>;
+    try {
+      port = browser.runtime.connectNative(NATIVE_HOST);
+    } catch (err) {
+      console.warn('[xport] nativeMessaging no disponible (¿host instalado?)', err);
+      return;
+    }
+    nativePort = port;
+    const openedAt = Date.now();
+    port.onDisconnect.addListener(() => {
+      const msg = browser.runtime.lastError?.message ?? '';
+      nativePort = null;
+      // Conectado un rato → fue una caída real: reseteamos el backoff. Desconexión
+      // instantánea → host ausente/mal configurado: backoff exponencial con tope.
+      if (Date.now() - openedAt > 10_000) nativeRetries = 0;
+      if (nativeRetries >= MAX_NATIVE_RETRIES) {
+        console.warn('[xport] native host no disponible; instalá deploy/native-host o levantá el server a mano', msg);
+        return;
+      }
+      const delay = 2_000 * 2 ** nativeRetries;
+      nativeRetries += 1;
+      console.warn('[xport] native host desconectado, reintento en', delay, 'ms', msg);
+      setTimeout(ensureBackend, delay);
+    });
+    console.debug('[xport] native host conectado: backend local auto-arrancando');
+  }
+
+  ensureBackend();
+
   const buffers = new Map<string, unknown[]>(); // account -> páginas crudas
   let timer: ReturnType<typeof setTimeout> | null = null;
   let flushing = false; // evita flushes solapados (POSTs concurrentes + races de storage)
