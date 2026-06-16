@@ -74,13 +74,30 @@ if ($BatPath -and (Test-Path $BatPath)) {
   Inf "salteo (no hay .bat válido del paso anterior)"
 }
 
-Write-Host "[4] backend alcanzable desde Windows (forwarding WSL2)"
+Write-Host "[4] backend: en WSL + alcanzable desde Windows"
+# OJO (NAT): el forwarding de WSL2 reenvia IPv4 127.0.0.1, pero 'localhost' en Windows
+# resuelve a ::1 (IPv6) primero y PowerShell NO hace fallback -> SIEMPRE 127.0.0.1.
+# Primero confirmamos el backend DENTRO de WSL; asi distinguimos "caido" de "forwarding roto".
+$inWsl = (wsl.exe @WslPre -- bash -c "curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:8000/gate" 2>$null) -join ""
+$wslUp = ($inWsl -match '200')
+if ($wslUp) { Ok "backend vivo dentro de WSL (127.0.0.1:8000 -> 200)" }
+else { Inf "backend no responde dentro de WSL (http='$inWsl') - normal si no cargaste la extension / no hay server" }
+
+$winOk = $false
 try {
-  $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 "http://localhost:8000/gate"
-  if ($r.StatusCode -eq 200 -and $r.Content -match 'hard_cap') { Ok "xport vivo y alcanzable: $($r.Content)" }
-  else { Wn "responde en :8000 pero no parece xport" }
-} catch {
-  Inf "nada en localhost:8000 (normal si Firefox no está abierto; al cargar la extensión debería levantar)"
+  $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 "http://127.0.0.1:8000/gate"
+  if ($r.StatusCode -eq 200 -and $r.Content -match 'hard_cap') { $winOk = $true }
+} catch { }
+if ($winOk) {
+  Ok "alcanzable desde Windows por 127.0.0.1:8000 (asi lo alcanza la extension)"
+} elseif ($wslUp) {
+  No "el backend corre en WSL pero Windows NO lo alcanza por 127.0.0.1:8000 (forwarding NAT)"
+  Wn "fix: en %UserProfile%\.wslconfig -> [wsl2] / localhostForwarding=true, luego 'wsl --shutdown'. O networkingMode=mirrored."
+  $ipraw = (wsl.exe @WslPre -- bash -c "hostname -I" 2>$null) -join " "
+  $ip = ($ipraw.Trim() -split '\s+')[0]
+  if ($ip) { Inf "fallback directo (inestable): http://${ip}:8000  (requiere bind 0.0.0.0; la IP de WSL cambia en cada reinicio)" }
+} else {
+  Inf "nada en :8000 - carga la extension (auto-arranca el backend) o levanta uvicorn a mano y reintenta"
 }
 
 Write-Host ""
