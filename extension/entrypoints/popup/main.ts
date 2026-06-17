@@ -1,13 +1,15 @@
 import { browser } from 'wxt/browser';
 
 import { XportClient } from '../../lib/api';
-import { AUTOSCROLL_MSG, searchUrl } from '../../lib/autoscroll';
+import { AUTOSCROLL_MSG, type CrawlState, isValidDate, searchUrl } from '../../lib/autoscroll';
 import {
   DEFAULT_BASE,
-  STORAGE_AUTOSTART,
   STORAGE_BASE,
   STORAGE_CAPTURE,
   STORAGE_COUNTS,
+  STORAGE_CRAWL,
+  STORAGE_FORM,
+  STORAGE_STATUS,
 } from '../../lib/capture';
 
 const COUNTS_REFRESH_MS = 2000;
@@ -50,6 +52,17 @@ function escapeHtml(s: string): string {
   );
 }
 
+/** Valida cuenta + rango y devuelve un mensaje de error, o `null` si está OK. Fuente
+ *  única para capturar y exportar (antes el campo vacío cortaba en silencio). */
+function validationError(): string | null {
+  if (!account()) return 'Completá la cuenta (sin @).';
+  if (!isValidDate(sinceInput.value) || !isValidDate(untilInput.value)) {
+    return 'Completá las fechas en formato AAAA-MM-DD.';
+  }
+  if (sinceInput.value >= untilInput.value) return '"Desde" debe ser anterior a "Hasta".';
+  return null;
+}
+
 async function refreshGate(): Promise<void> {
   try {
     const g = await new XportClient(currentBase()).gate();
@@ -87,6 +100,19 @@ function autoFormatDate(input: HTMLInputElement): void {
 autoFormatDate(sinceInput);
 autoFormatDate(untilInput);
 
+interface FormState {
+  account: string;
+  since: string;
+  until: string;
+}
+
+async function persistForm(): Promise<void> {
+  // El popup se cierra al abrir la pestaña de captura; sin esto, al reabrirlo para
+  // exportar los campos quedaban vacíos y "Exportar" no hacía nada (bug).
+  const form: FormState = { account: account(), since: sinceInput.value, until: untilInput.value };
+  await browser.storage.local.set({ [STORAGE_FORM]: form });
+}
+
 captureForm.addEventListener('submit', (event) => {
   event.preventDefault();
   void onCapture();
@@ -96,34 +122,54 @@ exportBtn.addEventListener('click', () => void onExport());
 baseInput.addEventListener('change', () => {
   void browser.storage.local.set({ [STORAGE_BASE]: currentBase() });
 });
+for (const input of [accountInput, sinceInput, untilInput]) {
+  input.addEventListener('change', () => void persistForm());
+}
 
 async function onCapture(): Promise<void> {
-  if (!account()) return;
-  // El background lee la base de storage (no del campo), así que la persistimos acá.
-  // El flag de autostart lo consume el content script de la pestaña nueva al cargar
-  // (el popup se cierra al abrir la pestaña, no se puede mensajear el start).
+  const err = validationError();
+  if (err) {
+    setStatus(err);
+    return;
+  }
+  // El crawl adaptativo arranca con el rango COMPLETO; el content script encoge `until`
+  // solo si choca la pared. El background lee la base de storage (no del campo).
+  const crawl: CrawlState = { account: account(), since: sinceInput.value, until: untilInput.value };
+  await browser.storage.local.remove(STORAGE_STATUS); // limpiar avisos viejos
   await browser.storage.local.set({
     [STORAGE_BASE]: currentBase(),
     [STORAGE_CAPTURE]: true,
-    [STORAGE_AUTOSTART]: true,
+    [STORAGE_CRAWL]: crawl,
   });
-  await browser.tabs.create({ url: searchUrl(account(), sinceInput.value, untilInput.value) });
+  await persistForm();
+  await browser.tabs.create({ url: searchUrl(crawl.account, crawl.since, crawl.until) });
   setStatus('Abriendo la búsqueda y scrolleando… (podés cerrar el popup)');
 }
 
 async function stopScroll(): Promise<void> {
+  // Borramos el crawl desde el popup también: si la pestaña activa no es la de captura,
+  // el mensaje no llega, pero igual no debe seguir narrowando ni navegando.
+  await browser.storage.local.remove(STORAGE_CRAWL);
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id === undefined) return;
+  if (tab?.id === undefined) {
+    setStatus('Captura detenida.');
+    return;
+  }
   try {
     await browser.tabs.sendMessage(tab.id, { type: AUTOSCROLL_MSG, action: 'stop' });
     setStatus('Auto-scroll detenido.');
   } catch {
-    setStatus('No hay una captura activa en esta pestaña.');
+    setStatus('Captura detenida (no había scroll activo en esta pestaña).');
   }
 }
 
 async function onExport(): Promise<void> {
-  if (!account()) return;
+  const err = validationError();
+  if (err) {
+    setStatus(err);
+    return;
+  }
+  await persistForm();
   try {
     const client = new XportClient(currentBase());
     const r = await client.exportCapture({
@@ -143,9 +189,21 @@ async function onExport(): Promise<void> {
 }
 
 async function init(): Promise<void> {
-  const stored = await browser.storage.local.get(STORAGE_BASE);
-  const saved = stored[STORAGE_BASE];
-  baseInput.value = typeof saved === 'string' && saved ? saved : DEFAULT_BASE;
+  const stored = await browser.storage.local.get([STORAGE_BASE, STORAGE_FORM, STORAGE_STATUS]);
+  const savedBase = stored[STORAGE_BASE];
+  baseInput.value = typeof savedBase === 'string' && savedBase ? savedBase : DEFAULT_BASE;
+  const form = stored[STORAGE_FORM] as Partial<FormState> | undefined;
+  if (form) {
+    accountInput.value = form.account ?? '';
+    sinceInput.value = form.since ?? '';
+    untilInput.value = form.until ?? '';
+  }
+  // Aviso del crawl (p.ej. se cortó por errores de carga). Lee-y-borra: se muestra una vez.
+  const notice = stored[STORAGE_STATUS];
+  if (typeof notice === 'string' && notice) {
+    setStatus(notice);
+    await browser.storage.local.remove(STORAGE_STATUS);
+  }
   await refreshGate();
   await renderCounts();
   setInterval(() => void renderCounts(), COUNTS_REFRESH_MS);
