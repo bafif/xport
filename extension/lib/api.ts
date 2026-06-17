@@ -55,6 +55,13 @@ export interface ExportResult {
   exported: number;
 }
 
+export interface ProgressResult {
+  account: string;
+  oldest: string | null; // YYYY-MM-DD del tweet más viejo capturado en el rango, o null
+  captured: number; // cuántos tweets hay guardados en el rango
+  oldest_count: number; // cuántos caen en el DÍA del más viejo (alto ⇒ día saturado)
+}
+
 export class XportApiError extends Error {
   constructor(
     message: string,
@@ -104,6 +111,12 @@ export class XportClient {
   /** Exporta a CSV lo capturado in-page de una cuenta en un rango (patrón C). */
   exportCapture(body: ExportRequest): Promise<ExportResult> {
     return this.req<ExportResult>('/export', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  /** Frente de reanudación: hasta dónde (tweet más viejo) se capturó una cuenta en un
+   *  rango. La captura retoma desde ahí en vez de re-pedir desde `until`. */
+  progress(body: ExportRequest): Promise<ProgressResult> {
+    return this.req<ProgressResult>('/progress', { method: 'POST', body: JSON.stringify(body) });
   }
 
   /** URL absoluta de descarga a partir del `download_url` relativo del backend. */

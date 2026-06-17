@@ -1,7 +1,14 @@
 import { browser } from 'wxt/browser';
 
 import { XportClient } from '../../lib/api';
-import { AUTOSCROLL_MSG, type CrawlState, isValidDate, searchUrl } from '../../lib/autoscroll';
+import {
+  AUTOSCROLL_MSG,
+  type CrawlState,
+  dayAfter,
+  isValidDate,
+  SATURATED_DAY,
+  searchUrl,
+} from '../../lib/autoscroll';
 import {
   DEFAULT_BASE,
   STORAGE_BASE,
@@ -132,9 +139,43 @@ async function onCapture(): Promise<void> {
     setStatus(err);
     return;
   }
-  // El crawl adaptativo arranca con el rango COMPLETO; el content script encoge `until`
-  // solo si choca la pared. El background lee la base de storage (no del campo).
-  const crawl: CrawlState = { account: account(), since: sinceInput.value, until: untilInput.value };
+  const acc = account();
+  const since = sinceInput.value;
+  const until = untilInput.value;
+
+  // Reanudar entre sesiones: le preguntamos al backend hasta dónde llegamos en este
+  // rango (el tweet más viejo capturado) y arrancamos AHÍ, no en `until`. x.com frena
+  // la búsqueda a ~1000 y hay que volver más tarde; retomar no debe re-pedir lo bajado.
+  let startUntil = until;
+  let msg = 'Abriendo la búsqueda y scrolleando… (podés cerrar el popup)';
+  try {
+    const prog = await new XportClient(currentBase()).progress({ account: acc, since, until });
+    if (prog.oldest) {
+      if (prog.oldest <= since) {
+        setStatus(`Ya está todo capturado en ese rango (${prog.captured} tuits). Exportá cuando quieras.`);
+        return;
+      }
+      if (prog.oldest_count >= SATURATED_DAY) {
+        // El día más viejo ya está saturado (~tope de X): re-incluirlo dejaría el crawl
+        // trabado ahí. Lo EXCLUIMOS para avanzar (se pierde su cola sub-diaria, inevitable
+        // a granularidad de día). Solo se dispara con conteo ALTO: cargar poco/nada es
+        // error/conexión, no saturación, y eso lo reintenta el crawl (no se saltea acá).
+        startUntil = prog.oldest;
+        msg =
+          `Día ${prog.oldest} saturado (${prog.oldest_count} tuits, ~tope de X): ` +
+          `salteo su resto y sigo más atrás… (podés cerrar el popup)`;
+      } else {
+        startUntil = dayAfter(prog.oldest); // re-incluye el día más viejo (solapa, el store deduplica)
+        msg = `Reanudando desde ${prog.oldest} (ya tenías ${prog.captured} tuits)… (podés cerrar el popup)`;
+      }
+    }
+  } catch {
+    // Servicio caído / sin progreso conocido: arrancamos desde el tope del rango.
+  }
+
+  // El crawl adaptativo encoge `until` solo si choca la pared. El background lee la
+  // base de storage (no del campo).
+  const crawl: CrawlState = { account: acc, since, until: startUntil };
   await browser.storage.local.remove(STORAGE_STATUS); // limpiar avisos viejos
   await browser.storage.local.set({
     [STORAGE_BASE]: currentBase(),
@@ -142,8 +183,8 @@ async function onCapture(): Promise<void> {
     [STORAGE_CRAWL]: crawl,
   });
   await persistForm();
-  await browser.tabs.create({ url: searchUrl(crawl.account, crawl.since, crawl.until) });
-  setStatus('Abriendo la búsqueda y scrolleando… (podés cerrar el popup)');
+  await browser.tabs.create({ url: searchUrl(acc, since, startUntil) });
+  setStatus(msg);
 }
 
 async function stopScroll(): Promise<void> {

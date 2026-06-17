@@ -4,8 +4,8 @@ import {
   AUTOSCROLL_MSG,
   type AutoscrollMsg,
   AUTOSTART_SETTLE_MS,
+  blankBackoff,
   type CrawlState,
-  MAX_BLANK_RELOADS,
   MAX_LOADING_WAITS,
   MAX_RETRIES,
   MAX_STALE,
@@ -158,20 +158,26 @@ export default defineContentScript({
 
       const oldest = oldestRenderedDate();
       if (oldest === null) {
-        // No se renderizó ningún tweet.
+        // No se renderizó NINGÚN tweet.
         if (hasEmptyState()) {
-          await endCrawl(); // rango realmente sin resultados: terminamos en silencio
+          await endCrawl(); // x.com dice "sin resultados": rango realmente vacío → terminamos
           console.debug('[xport] sin resultados para', state.since, '→', state.until);
           return;
         }
-        // Carga en blanco sin "sin resultados" → probable red caída: recargar acotado.
+        // Carga en blanco sin "sin resultados" → error / red caída / rate-limit de x.com.
+        // Reintentamos INDEFINIDAMENTE con backoff (no nos rendimos: "no carga nada" es lo
+        // que hay que aguantar). Esto NO es un día saturado (ese SÍ carga ~1000; se saltea
+        // en la reanudación). Solo "Detener" corta.
         const attempt = (state.attempt ?? 0) + 1;
-        if (attempt <= MAX_BLANK_RELOADS) {
-          await writeCrawl({ ...state, attempt });
-          console.warn('[xport] búsqueda en blanco, recargando (intento', attempt, ')');
+        await writeCrawl({ ...state, attempt });
+        const wait = blankBackoff(attempt);
+        console.warn('[xport] búsqueda en blanco (intento', attempt, ') → recarga en', wait, 'ms');
+        await sleep(wait);
+        // Re-chequeo tras la espera: si "Detener" borró/cambió el crawl mientras esperábamos,
+        // no recargamos.
+        const still = await readCrawl();
+        if (still && still.account === state.account && still.until === state.until) {
           location.reload();
-        } else {
-          await endCrawl('La captura se cortó: la búsqueda no cargó tuits (¿conexión?). Reintentá.');
         }
         return;
       }
