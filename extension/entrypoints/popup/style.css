@@ -178,6 +178,12 @@ hr {
   color: var(--accent);
 }
 
+.muted {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
 .row button {
   flex: 1;
 }

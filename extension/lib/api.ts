@@ -53,6 +53,7 @@ export interface ExportResult {
   csv: string;
   download_url: string; // relativo a la base (p.ej. /exports/<file>)
   exported: number;
+  excluded_replies: number; // capturados en el rango pero fuera del CSV (replies a terceros)
 }
 
 export interface ProgressResult {

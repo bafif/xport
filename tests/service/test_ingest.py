@@ -193,6 +193,24 @@ def test_progress_cuenta_tuits_del_dia_mas_viejo(tmp_path: Path) -> None:
         assert body["oldest_count"] == 3  # a, b, c son del 2023-01-04; d (06) no
 
 
+def test_export_reporta_replies_a_terceros_excluidos(tmp_path: Path) -> None:
+    # El CSV deja self-threads y descarta replies a conversaciones ajenas; `excluded_replies`
+    # reporta esos descartados para aclarar en la UI por qué el CSV trae menos que lo capturado.
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        page = search_response(
+            [
+                tweet_entry("1"),  # propio (no reply) -> exporta
+                tweet_entry("2", in_reply_to="999", conversation_id="999"),  # reply ajeno -> fuera
+            ]
+        )
+        post_ingest(client, [page])
+        body = client.post(
+            "/export", json={"account": "someuser", "since": "2023-01-01", "until": "2023-02-01"}
+        ).json()
+        assert body["exported"] == 1  # solo el tweet propio
+        assert body["excluded_replies"] == 1  # el reply a tercero, capturado pero fuera del CSV
+
+
 def test_export_rango_invertido_422(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
         r = client.post(

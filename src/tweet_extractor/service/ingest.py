@@ -80,11 +80,18 @@ async def export(body: ExportRequest, svc: SvcDep) -> ExportResult:
         since=body.since_utc(),
         until=body.until_utc(),
     )
+    # Capturados en el rango que NO entran al CSV = replies a terceros (la política deja
+    # self-threads y descarta conversaciones ajenas). `total_en_rango - exportados`: el
+    # total cuenta TODO lo guardado en rango; `exported` ya aplicó la política.
+    _, total_in_range, _ = await svc.store.account_extent(
+        body.account, since=body.since_utc(), until=body.until_utc()
+    )
     return ExportResult(
         account=body.account,
         csv=path.name,
         download_url=f"/exports/{path.name}",
         exported=exported,
+        excluded_replies=max(0, total_in_range - exported),
     )
 
 
