@@ -12,6 +12,7 @@ from tweet_extractor.service.schemas import (
     ExportResult,
     IngestPayload,
     IngestResult,
+    ProgressResult,
 )
 from tweet_extractor.storage.csv_exporter import export_account
 
@@ -84,6 +85,24 @@ async def export(body: ExportRequest, svc: SvcDep) -> ExportResult:
         csv=path.name,
         download_url=f"/exports/{path.name}",
         exported=exported,
+    )
+
+
+@router.post("/progress", response_model=ProgressResult)
+async def progress(body: ExportRequest, svc: SvcDep) -> ProgressResult:
+    """Frente de reanudación: el tweet más viejo capturado de una cuenta en
+    `[since, until)` (y cuántos hay). La extensión reanuda la búsqueda desde ese día
+    en vez de re-pedir desde `until`. La captura va del más nuevo al más viejo, así
+    que el más viejo guardado = hasta dónde se llegó; como x.com frena la búsqueda a
+    ~1000 y obliga a volver más tarde, retomar no debe regastar ese cupo."""
+    oldest, captured, oldest_day = await svc.store.account_extent(
+        body.account, since=body.since_utc(), until=body.until_utc()
+    )
+    return ProgressResult(
+        account=body.account,
+        oldest=oldest.date() if oldest else None,
+        captured=captured,
+        oldest_count=oldest_day,
     )
 
 

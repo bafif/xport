@@ -140,6 +140,59 @@ def test_export_tras_ingest(tmp_path: Path) -> None:
         assert "texto 3" not in csv.text
 
 
+def test_progress_sin_datos(tmp_path: Path) -> None:
+    # Sin nada capturado: el frente es None y la captura arrancará desde `until`.
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        r = client.post(
+            "/progress", json={"account": "nasa", "since": "2023-01-01", "until": "2023-02-01"}
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body == {"account": "nasa", "oldest": None, "captured": 0, "oldest_count": 0}
+
+
+def test_progress_devuelve_el_mas_viejo_en_rango(tmp_path: Path) -> None:
+    # El frente de reanudación = MIN(created_at) dentro del rango; lo de marzo (fuera de
+    # rango) no cuenta ni mueve el frente. `oldest_count` = tuits del día del más viejo.
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        page = search_response(
+            [
+                tweet_entry("1", created_at="Tue Jan 10 00:00:00 +0000 2023"),
+                tweet_entry("2", created_at="Wed Jan 04 00:00:00 +0000 2023"),  # más viejo en rango
+                tweet_entry("3", created_at="Sat Mar 04 00:00:00 +0000 2023"),  # fuera de rango
+            ]
+        )
+        post_ingest(client, [page])
+        body = client.post(
+            "/progress", json={"account": "@someuser", "since": "2023-01-01", "until": "2023-02-01"}
+        ).json()
+        assert body["account"] == "someuser"  # handle limpio
+        assert body["oldest"] == "2023-01-04"  # día del más viejo dentro del rango
+        assert body["captured"] == 2  # el de marzo queda afuera
+        assert body["oldest_count"] == 1  # solo el id "2" cae el 2023-01-04
+
+
+def test_progress_cuenta_tuits_del_dia_mas_viejo(tmp_path: Path) -> None:
+    # `oldest_count` detecta un día saturado: cuenta SOLO los del día del más viejo (no
+    # los de días más nuevos), para que la extensión decida si saltear ese día.
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        page = search_response(
+            [
+                tweet_entry("a", created_at="Wed Jan 04 06:00:00 +0000 2023"),  # día del más viejo
+                tweet_entry("b", created_at="Wed Jan 04 09:00:00 +0000 2023"),  # mismo día
+                tweet_entry("c", created_at="Wed Jan 04 18:00:00 +0000 2023"),  # mismo día
+                tweet_entry("d", created_at="Fri Jan 06 09:00:00 +0000 2023"),  # día más nuevo
+            ]
+        )
+        post_ingest(client, [page])
+        body = client.post(
+            "/progress", json={"account": "someuser", "since": "2023-01-01", "until": "2023-02-01"}
+        ).json()
+        assert body["oldest"] == "2023-01-04"
+        assert body["captured"] == 4
+        assert body["oldest_count"] == 3  # a, b, c son del 2023-01-04; d (06) no
+
+
 def test_export_rango_invertido_422(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
         r = client.post(

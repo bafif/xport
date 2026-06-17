@@ -24,7 +24,25 @@ export const AUTOSTART_SETTLE_MS = 2500; // espera tras (re)cargar la búsqueda 
 export const MAX_LOADING_WAITS = 10; // ~12 s tolerando el spinner (conexión lenta) antes de asentar
 export const MAX_RETRIES = 3; // clicks al "Reintentar" de x.com ante un error de paginación
 export const RETRY_WAIT_MS = 2500; // espera tras click en Reintentar
-export const MAX_BLANK_RELOADS = 3; // recargas si la búsqueda carga en blanco (probable red caída)
+// Carga EN BLANCO (ni tuits, ni "sin resultados", ni botón de error): error/red caída/rate-limit.
+// Se recarga INDEFINIDAMENTE con backoff exponencial acotado — no nos rendimos solos (solo
+// "Detener" corta): "no carga nada" es justo lo que hay que aguantar, no descartar. Distinto de
+// un día saturado (sí carga, los mismos ~1000), que se saltea en la reanudación (ver SATURATED_DAY).
+export const BLANK_BACKOFF_BASE_MS = 5_000;
+export const BLANK_BACKOFF_MAX_MS = 60_000;
+
+// Día SATURADO: si en el día del tweet más viejo ya hay >= este nº de tuits, ese día llegó al
+// tope de x.com (no rinde más). Reanudar re-incluyéndolo dejaría el crawl trabado ahí entre
+// sesiones, así que se saltea (se pierde su cola sub-diaria: inevitable a granularidad de día).
+// ALTO a propósito (cerca del tope ~1000): cargar pocos/ningún tuit NO es saturación — es
+// error/conexión, y eso se reintenta, no se saltea.
+export const SATURATED_DAY = 800;
+
+/** Backoff antes de recargar una búsqueda que cargó en blanco: 5s, 10s, 20s, 40s, …, tope 60s.
+ *  Persistente (no se rinde) pero sin martillar. Puro y testeable. */
+export function blankBackoff(attempt: number): number {
+  return Math.min(BLANK_BACKOFF_BASE_MS * 2 ** Math.max(0, attempt - 1), BLANK_BACKOFF_MAX_MS);
+}
 
 const DAY_MS = 86_400_000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

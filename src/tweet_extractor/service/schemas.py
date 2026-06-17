@@ -185,3 +185,14 @@ class ExportResult(BaseModel):
     csv: str  # nombre del archivo
     download_url: str  # GET de descarga (/exports/<file>)
     exported: int  # filas del CSV (con la política de replies + filtro de rango)
+
+
+class ProgressResult(BaseModel):
+    """Frente de reanudación de la captura in-page (patrón C): hasta dónde se llegó
+    en `[since, until)`. La extensión retoma la búsqueda desde `oldest` en vez de
+    re-pedir desde `until` (x.com corta a ~1000 y hay que volver más tarde)."""
+
+    account: str
+    oldest: date | None  # día del tweet más viejo capturado en el rango (None si no hay)
+    captured: int  # cuántos tweets hay guardados en el rango
+    oldest_count: int  # cuántos caen en el DÍA del más viejo (alto ⇒ día saturado, ~tope de X)
