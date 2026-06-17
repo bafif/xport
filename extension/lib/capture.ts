@@ -12,8 +12,13 @@ export const DEFAULT_BASE = 'http://localhost:8000';
 export const STORAGE_BASE = 'xport:base'; // URL base del servicio
 export const STORAGE_CAPTURE = 'xport:capture'; // captura on/off (default: on)
 export const STORAGE_COUNTS = 'xport:captured'; // {account: tweets guardados}
-export const STORAGE_AUTOSTART = 'xport:autostart'; // el popup lo prende; el content script
-// de la pestaña de búsqueda recién abierta lo consume al cargar y arranca el auto-scroll solo
+export const STORAGE_CRAWL = 'xport:crawl'; // estado del crawl adaptativo {account,since,until}:
+// el popup lo escribe al abrir la búsqueda; el content script lo consume, encoge `until` al
+// toparse con la pared y navega, hasta cubrir todo el rango
+export const STORAGE_FORM = 'xport:form'; // últimos valores del form (cuenta/fechas), para
+// restaurarlos al reabrir el popup (que se cierra al abrir la pestaña de captura)
+export const STORAGE_STATUS = 'xport:status'; // último aviso del crawl (p.ej. "se cortó por
+// errores de carga"), que el popup muestra una vez al reabrirse
 
 // Operaciones que capturamos. MVP: SearchTimeline (rango de fechas vía la búsqueda
 // from:user since: until:). UserTweets* son timeline de perfil (otro envelope) — el
