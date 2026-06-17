@@ -219,9 +219,17 @@ async function onExport(): Promise<void> {
       until: untilInput.value,
     });
     exportStatus.hidden = false;
+    // Aclaración: el CSV trae menos que el contador "Capturado" porque deja afuera las
+    // respuestas a otras cuentas (se exportan tweets propios + hilos propios). Solo se
+    // muestra si efectivamente se excluyó algo.
+    const note =
+      r.excluded_replies > 0
+        ? `<small class="muted">No se incluyen ${r.excluded_replies} respuestas a otras ` +
+          `cuentas (el CSV trae tweets propios e hilos propios).</small>`
+        : '';
     exportStatus.innerHTML =
       `<a href="${client.absolute(r.download_url)}" target="_blank" rel="noreferrer">` +
-      `${escapeHtml(r.csv)}</a> <small>${r.exported} tweets</small>`;
+      `${escapeHtml(r.csv)}</a> <small>${r.exported} tweets</small>${note}`;
   } catch (err) {
     exportStatus.hidden = false;
     exportStatus.innerHTML =

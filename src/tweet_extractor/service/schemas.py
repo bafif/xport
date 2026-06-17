@@ -185,6 +185,10 @@ class ExportResult(BaseModel):
     csv: str  # nombre del archivo
     download_url: str  # GET de descarga (/exports/<file>)
     exported: int  # filas del CSV (con la política de replies + filtro de rango)
+    # Capturados en el rango pero NO exportados: respuestas a conversaciones ajenas
+    # (la política deja self-threads, descarta replies a terceros). Explica por qué el
+    # CSV trae menos que el contador de "capturado" — para aclararlo en la UI.
+    excluded_replies: int
 
 
 class ProgressResult(BaseModel):
