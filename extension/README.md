@@ -38,9 +38,16 @@ servicio (`http://localhost/*`, `http://127.0.0.1/*`), sus `fetch` cross-origin
 no quedan sujetos a CORS. El `CORS_ALLOW_ORIGINS` del FastAPI solo hace falta si
 en el futuro un *content script* o una página web llaman a la API.
 
+## Iconos
+
+WXT autodescubre `public/icon/{size}.png` y los cablea solo en los manifests de
+Chrome y Firefox (incluido `action.default_icon`, el de la barra de direcciones).
+Para regenerarlos: guardá el maestro 1024×1024 en `public/icon/master.png` y corré
+`./scripts/make-icons.sh` (detecta ImageMagick / `sips` / Pillow). Detalle en
+`public/icon/README.md`.
+
 ## Pendiente
 
-- Iconos (`public/icon/*.png`): hoy usa el default del navegador.
 - Verificación cargando la extensión en un navegador real (no se pudo automatizar).
 - Patrones (b) Native Messaging y (c) captura GraphQL in-page: reservados; si se
   agrega (c), debe reportar sus accesos al Compliance Gate (invariante 1M/24h global).
