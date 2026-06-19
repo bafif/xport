@@ -13,6 +13,8 @@ from tweet_extractor.service.schemas import (
     IngestPayload,
     IngestResult,
     ProgressResult,
+    ResetRequest,
+    ResetResult,
 )
 from tweet_extractor.storage.csv_exporter import export_account
 
@@ -111,6 +113,18 @@ async def progress(body: ExportRequest, svc: SvcDep) -> ProgressResult:
         captured=captured,
         oldest_count=oldest_day,
     )
+
+
+@router.post("/reset", response_model=ResetResult)
+async def reset(body: ResetRequest, svc: SvcDep) -> ResetResult:
+    """Borra lo capturado de una cuenta (filas de datos + checkpoints) para empezar de
+    cero. Resetea el frente de reanudación de `/progress`: un tweet viejo colado puede
+    dejarlo trabado en el pasado y la captura no vuelve a traer los nuevos.
+
+    NO toca el ledger del Compliance Gate: borrar datos NO borra accesos ya contados
+    (el ledger vive en otra base y sobrevive a que se regenere ésta — regla #1)."""
+    deleted = await svc.store.delete_account(body.account)
+    return ResetResult(account=body.account, deleted=deleted)
 
 
 @router.get("/exports/{filename}")

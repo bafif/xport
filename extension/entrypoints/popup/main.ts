@@ -34,6 +34,7 @@ const untilInput = el<HTMLInputElement>('until');
 const captureForm = el<HTMLFormElement>('capture-form');
 const captureStop = el<HTMLButtonElement>('capture-stop');
 const exportBtn = el<HTMLButtonElement>('export');
+const resetBtn = el<HTMLButtonElement>('reset');
 const gateEl = el<HTMLElement>('gate');
 const countsEl = el<HTMLElement>('counts');
 const statusEl = el<HTMLElement>('status');
@@ -126,6 +127,7 @@ captureForm.addEventListener('submit', (event) => {
 });
 captureStop.addEventListener('click', () => void stopScroll());
 exportBtn.addEventListener('click', () => void onExport());
+resetBtn.addEventListener('click', () => void onReset());
 baseInput.addEventListener('change', () => {
   void browser.storage.local.set({ [STORAGE_BASE]: currentBase() });
 });
@@ -234,6 +236,39 @@ async function onExport(): Promise<void> {
     exportStatus.hidden = false;
     exportStatus.innerHTML =
       `<span class="error">${escapeHtml(err instanceof Error ? err.message : String(err))}</span>`;
+  }
+}
+
+async function onReset(): Promise<void> {
+  // Solo necesita la cuenta (borra todo lo de esa cuenta, sin importar el rango). El
+  // frente de reanudación de /progress se arma con lo guardado: un tweet viejo colado
+  // lo deja trabado en el pasado y la captura no vuelve a traer los nuevos.
+  const acc = account();
+  if (!acc) {
+    setStatus('Completá la cuenta (sin @) para borrar lo capturado.');
+    return;
+  }
+  if (
+    !confirm(
+      `¿Borrar todo lo capturado de @${acc}? Vas a tener que volver a capturar el rango. ` +
+        `(No afecta el gate de 24 h.)`,
+    )
+  ) {
+    return;
+  }
+  try {
+    const r = await new XportClient(currentBase()).resetAccount(acc);
+    // Limpiar el estado local para que la próxima captura arranque desde el tope del
+    // rango (sin frente viejo): el contador de la cuenta y cualquier crawl/aviso en curso.
+    const stored = await browser.storage.local.get(STORAGE_COUNTS);
+    const counts = (stored[STORAGE_COUNTS] ?? {}) as Record<string, number>;
+    delete counts[acc];
+    await browser.storage.local.set({ [STORAGE_COUNTS]: counts });
+    await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_STATUS]);
+    await renderCounts();
+    setStatus(`Borrado: ${r.deleted} tuits de @${acc}. La próxima captura arranca de cero.`);
+  } catch (err) {
+    setStatus(err instanceof Error ? err.message : String(err));
   }
 }
 

@@ -213,6 +213,22 @@ class SqliteStore:
         cur = await db.execute("SELECT DISTINCT account FROM tweets ORDER BY account")
         return [row[0] for row in await cur.fetchall()]
 
+    async def delete_account(self, account: str) -> int:
+        """Borra TODO lo guardado de una cuenta: las filas de `tweets` y sus
+        checkpoints de sub-ventana. Devuelve cuántos tweets se borraron.
+
+        Sirve para resetear la caché de captura cuando un tweet viejo colado deja el
+        frente de reanudación (`account_extent` / `/progress`) trabado en el pasado y
+        la captura no vuelve a traer los nuevos. NO toca el ledger del gate: vive en
+        otra base y NO se resetea — borrar datos no borra accesos ya contados (regla
+        de compliance: el ledger sobrevive a que se regenere esta base)."""
+        db = await self._db()
+        cur = await db.execute("DELETE FROM tweets WHERE account = ?", (account,))
+        deleted = cur.rowcount
+        await db.execute("DELETE FROM window_checkpoints WHERE account = ?", (account,))
+        await db.commit()
+        return deleted
+
     # --- checkpoints de sub-ventanas ----------------------------------------------
 
     async def mark_window_done(self, account: str, since: datetime, until: datetime) -> None:

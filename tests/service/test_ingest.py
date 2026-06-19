@@ -223,3 +223,31 @@ def test_exports_filename_traversal_404(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
         assert client.get("/exports/a..b.csv").status_code == 404  # '..' rechazado por el guard
         assert client.get("/exports/nada.csv").status_code == 404  # no existe
+
+
+def test_reset_borra_datos_pero_no_el_gate(tmp_path: Path) -> None:
+    # "Borrar capturado": vacía los tweets de la cuenta (resetea el frente de /progress)
+    # SIN tocar el ledger del gate (regla #1: borrar datos no borra accesos ya contados).
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        post_ingest(client, [search_response([tweet_entry("1"), tweet_entry("2")])])
+        assert client.get("/gate").json()["usage"] == 2
+
+        rng = {"since": "2023-01-01", "until": "2023-02-01"}
+        prog = client.post("/progress", json={"account": "someuser", **rng}).json()
+        assert prog["captured"] == 2  # hay frente de reanudación
+
+        body = client.post("/reset", json={"account": "@someuser"}).json()
+        assert body == {"account": "someuser", "deleted": 2}  # handle limpio + 2 borrados
+
+        # El frente quedó vacío: la próxima captura arranca desde `until`.
+        prog2 = client.post("/progress", json={"account": "someuser", **rng}).json()
+        assert prog2["captured"] == 0
+        assert prog2["oldest"] is None
+        # El ledger del gate NO se resetea: los accesos ya contados siguen.
+        assert client.get("/gate").json()["usage"] == 2
+
+
+def test_reset_cuenta_sin_datos(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        body = client.post("/reset", json={"account": "nadie"}).json()
+        assert body == {"account": "nadie", "deleted": 0}

@@ -200,3 +200,21 @@ class ProgressResult(BaseModel):
     oldest: date | None  # día del tweet más viejo capturado en el rango (None si no hay)
     captured: int  # cuántos tweets hay guardados en el rango
     oldest_count: int  # cuántos caen en el DÍA del más viejo (alto ⇒ día saturado, ~tope de X)
+
+
+class ResetRequest(BaseModel):
+    """Body de `POST /reset`: borra lo capturado de una cuenta para empezar de cero.
+    Necesario cuando un tweet viejo colado dejó el frente de `/progress` trabado en el
+    pasado y la captura no vuelve a traer los nuevos."""
+
+    account: str
+
+    @field_validator("account")
+    @classmethod
+    def _clean(cls, raw: str) -> str:
+        return _clean_handle(raw)
+
+
+class ResetResult(BaseModel):
+    account: str
+    deleted: int  # tweets borrados de la caché de datos (el ledger del gate NO se toca)

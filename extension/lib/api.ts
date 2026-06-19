@@ -63,6 +63,11 @@ export interface ProgressResult {
   oldest_count: number; // cuántos caen en el DÍA del más viejo (alto ⇒ día saturado)
 }
 
+export interface ResetResult {
+  account: string;
+  deleted: number; // tweets borrados de la caché (el ledger del gate NO se toca)
+}
+
 export class XportApiError extends Error {
   constructor(
     message: string,
@@ -118,6 +123,13 @@ export class XportClient {
    *  rango. La captura retoma desde ahí en vez de re-pedir desde `until`. */
   progress(body: ExportRequest): Promise<ProgressResult> {
     return this.req<ProgressResult>('/progress', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  /** Borra del backend TODO lo capturado de una cuenta: resetea el frente de
+   *  reanudación de `/progress` (un tweet viejo colado lo deja trabado y la captura
+   *  no vuelve a traer los nuevos). NO toca el ledger del gate. */
+  resetAccount(account: string): Promise<ResetResult> {
+    return this.req<ResetResult>('/reset', { method: 'POST', body: JSON.stringify({ account }) });
   }
 
   /** URL absoluta de descarga a partir del `download_url` relativo del backend. */
