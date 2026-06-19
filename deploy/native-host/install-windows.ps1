@@ -3,10 +3,14 @@
   Instala el native-messaging host de xport para Firefox/Chrome corriendo en WINDOWS,
   con el backend (FastAPI) adentro de WSL. El navegador lanza un .bat que hace
   `wsl.exe -- bash xport-host.sh`, y wsl.exe bridgea stdin/stdout (el canal nativo)
-  hasta el supervisor Linux. Resultado: abrir la extensión arranca uvicorn en WSL solo.
+  hasta el supervisor Linux. Resultado: abrir la extension arranca uvicorn en WSL solo.
+
+  NOTA DE ENCODING: este archivo se mantiene 100% ASCII a proposito. Windows PowerShell
+  5.1 lee los .ps1 sin BOM con el codepage ANSI; cualquier acento/simbolo no-ASCII se
+  corrompe y rompe el parser. No metas tildes, flechas ni checkmarks aca.
 
 .NOTES
-  Corré esto desde PowerShell EN WINDOWS (no dentro de WSL). Una sola vez.
+  Corre esto desde PowerShell EN WINDOWS (no dentro de WSL). Una sola vez.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File install-windows.ps1
@@ -17,7 +21,7 @@
 [CmdletBinding()]
 param(
   [string]$RepoPath = "/home/bafif/xport",   # ruta del repo DENTRO de WSL
-  [string]$Distro   = "",                     # distro WSL; vacío = la default
+  [string]$Distro   = "",                     # distro WSL; vacio = la default
   [string]$ExtId    = "xport@local",          # Firefox: gecko id | Chrome: extension id
   [switch]$Chrome,
   [switch]$Uninstall
@@ -45,7 +49,15 @@ New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 # `bash <script>` no necesita +x; el script arregla el PATH para encontrar uv.
 $DistroArg = if ($Distro) { "-d $Distro " } else { "" }
 $Script    = "$RepoPath/deploy/native-host/xport-host.sh"
-$BatBody   = "@echo off`r`nwsl.exe $DistroArg-- bash `"$Script`""
+# Chrome MV3: el service worker es efimero; al dormirse cierra el puerto nativo (EOF)
+# y el host bajaria uvicorn. Con XPORT_HOST_KEEP_ALIVE=1 el host deja uvicorn vivo
+# entre ciclos del SW -> el backend no se cae solo. Firefox MV2 NO lo necesita (su
+# background persiste toda la sesion), asi que su .bat queda exactamente como antes.
+if ($Chrome) {
+  $BatBody = "@echo off`r`nwsl.exe $DistroArg-- bash -c `"XPORT_HOST_KEEP_ALIVE=1 exec bash '$Script'`""
+} else {
+  $BatBody = "@echo off`r`nwsl.exe $DistroArg-- bash `"$Script`""
+}
 Set-Content -Path $Bat -Value $BatBody -Encoding Ascii
 
 # El manifest apunta al .bat. En JSON los backslashes de la ruta Windows van escapados.
@@ -63,15 +75,15 @@ $Json = @"
 "@
 Set-Content -Path $Manifest -Value $Json -Encoding Ascii
 
-# La clave de registro (valor por default) apunta al manifest: así lo encuentra el navegador.
+# La clave de registro (valor por default) apunta al manifest: asi lo encuentra el navegador.
 New-Item -Path $RegKey -Force | Out-Null
 Set-ItemProperty -Path $RegKey -Name "(Default)" -Value $Manifest
 
-Write-Host "✓ instalado ($(if ($Chrome) {'Chrome'} else {'Firefox'})):"
+Write-Host "OK instalado ($(if ($Chrome) {'Chrome'} else {'Firefox'})):"
 Write-Host "    manifest: $Manifest"
 Write-Host "    bat:      $Bat"
 Write-Host "    bridge:   wsl.exe $DistroArg-- bash $Script"
 Write-Host "    registro: $RegKey"
 Write-Host "    ext id:   $ExtId"
 Write-Host ""
-Write-Host "Siguiente: recargá la extension en el navegador. Al abrirla arranca el backend en WSL."
+Write-Host "Siguiente: recarga la extension en el navegador. Al abrirla arranca el backend en WSL."
