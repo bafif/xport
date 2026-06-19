@@ -193,3 +193,9 @@ button.secondary {
   border: 1px solid var(--border);
   color: var(--fg);
 }
+
+/* Acción destructiva (borrar lo capturado): borde/texto rojo sobre el secundario. */
+button.danger {
+  border-color: var(--error);
+  color: var(--error);
+}
