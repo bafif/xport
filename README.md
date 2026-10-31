@@ -1,172 +1,195 @@
-# xport — extractor de tweets de X/Twitter por rango de fechas
+# xport
 
-Extrae los tweets de **una o varias cuentas** de X/Twitter entre dos fechas y genera
-**un CSV por cuenta** con solo las columnas relevantes:
+Export the tweets of one or more X (Twitter) accounts between two dates to **one CSV per
+account**, with a hard, code-enforced cap on how many posts the tool can access in any rolling
+24 hours.
 
-| columna | qué es |
+| Column | Meaning |
 |---|---|
-| `account` | handle de la cuenta |
-| `created_at` | fecha/hora del tweet (UTC en almacenamiento) |
-| `content` | texto del tweet |
-| `links` | URLs externas / a documentos embebidas (`expanded_url`) |
-| `quoted_tweet_id` / `quoted_tweet_url` | vínculo del citante al citado |
+| `account` | account handle |
+| `created_at` | tweet date and time, ISO 8601 in UTC |
+| `content` | tweet text |
+| `links` | external URLs embedded in the tweet (`expanded_url`) |
+| `quoted_tweet_id` / `quoted_tweet_url` | link from a quote tweet to the tweet it quotes |
 
-Se **incluyen** los quote tweets. Se **excluyen** los retweets.
+Quote tweets are **included**; retweets are **excluded**. Replies are kept when they belong to the
+account's own threads, and replies inside other people's conversations are left out (the export
+reports how many were excluded).
 
-El diferencial del proyecto es el **Compliance Gate**: una garantía *por código* de que
-nunca se accede a más de 900 000 objetos-tweet en cualquier ventana móvil de 24 h (colchón
-bajo el tope de ToS de X de 1 000 000/24 h). Ver [Compliance Gate](#compliance-gate).
+## Compliance Gate
 
-> ⚠️ **Estado: en construcción (greenfield).** El núcleo crítico ya está implementado y
-> testeado; el scraping real, el CSV y las interfaces de usuario todavía no. Ver
-> [Roadmap](#roadmap).
+X's terms penalize accessing more than 1,000,000 posts in any 24-hour window. xport makes that
+impossible to cross by construction:
 
----
+- **`hard_cap = 900_000`**, global for the whole app, below X's limit to leave a margin. It is a
+  code constant: it cannot be raised from `.env`.
+- **Rolling 24-hour window**, never a calendar day: `usage(now) = Σ count WHERE ts > now − 86400`.
+- **Accesses are counted, not rows saved**: the quoted tweet embedded in a response and the
+  retweets that get discarded count too. The ledger never deduplicates (over-counting is safe).
+- **Fail closed**: active scraping reserves an upper bound *before* each request and waits if it
+  does not fit; captures that already happened in the browser are recorded *after* the fact, and
+  further captures are rejected with 429 once over the cap.
+- **Durable and atomic**: the ledger lives in its own SQLite audit database, separate from the
+  tweet data, and every read-decide-write cycle runs under a lock.
 
-## Requisitos
+Every data path goes through the same gate, and the tests force both the block and the wait.
 
-- **Python 3.12** (fijado en `.python-version`).
-- **[uv](https://docs.astral.sh/uv/)** como gestor de paquetes/venv (no usar pip/poetry a mano).
-- *(Solo para la futura extensión, Fase 4)* Node 22 vía [fnm](https://github.com/Schniz/fnm).
+## How it works
 
-Instalar uv (una vez):
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+ browser extension ──► local service (FastAPI) ──► mappers ──► SQLite ──► CSV per account
+ (captures X's own          │  POST /ingest
+  GraphQL responses)        └──► Compliance Gate ledger (separate SQLite)
 ```
 
----
+The extension opens X's search for the account and date range, scrolls it by itself and captures
+the GraphQL responses that x.com already loads in the page; the browser computes X's request
+signatures natively, so nothing has to be reverse-engineered. The local service maps them to the
+domain model, stores them deduplicated and records the accesses in the gate. **Exportar CSV**
+then downloads the file.
+
+- **Adaptive crawl**: X's live search stops at around 1,000 results per query, so when the scroll
+  stalls before reaching the start date the extension narrows the range to the oldest day loaded
+  and searches again, until the whole range is covered.
+- **Resumable across sessions**: X also throttles the search endpoint for hours. On the next
+  capture, the service reports how far the stored data already goes and the crawl continues from
+  there instead of starting over.
+- **Optional auto-start**: with the native messaging host (`deploy/native-host/`), opening the
+  extension starts the local service and closing the browser stops it.
+
+Other backends sit behind the same `TweetProvider` interface and the same gate:
+
+- **twscrape** (server-side scraping, used by the CLI and `POST /jobs`): implemented and tested
+  offline, but **blocked upstream** since x.com moved its web client to Vite in mid-2026 and broke
+  the request-signature generator twscrape depends on. It fails closed with a clear error.
+- **Official X API v2**: a stub that fails closed until there is an API key to verify it with.
+
+## Status
+
+Beta. The four planned phases (CLI, swappable backends, local service with nginx, browser
+extension) are in the code, with 230 offline tests, `mypy --strict` and ruff passing. The
+in-browser capture has been used against live x.com, which is where the adaptive crawl and the
+multi-session resume came from. Still pending: a documented end-to-end check of the whole flow,
+the native messaging bridge from Windows browsers to WSL, and the official API backend. Detailed
+handoff (Spanish): [docs/ESTADO.md](docs/ESTADO.md).
+
+## Requirements
+
+- [uv](https://docs.astral.sh/uv/) and Python 3.12 (pinned in `.python-version`).
+- Docker, to run the service with nginx or to build the extension without Node on the host.
+- Chrome or Firefox, logged in to X, ideally with an account you can afford to lose: X may limit
+  accounts that scrape.
 
 ## Setup
 
 ```bash
-git clone git@github.com:bafif/xport.git
+git clone https://github.com/bafif/xport.git
 cd xport
-uv sync                       # crea .venv y resuelve uv.lock (build reproducible)
-cp .env.example .env          # completar las cookies (ver abajo)
+uv sync                     # creates .venv from uv.lock
+cp .env.example .env        # only needed for the twscrape/official backends (see below)
 ```
 
-> Mové el proyecto entre máquinas **con git**, no con un `.zip`: el `.zip` empaqueta el
-> `.venv` (binarios de un SO) y rompe en otro. Con git, `.venv/` está ignorado y cada
-> máquina arma el suyo con `uv sync`.
+## Run the local service
 
-### Configuración (`.env`)
-
-Todo lo sensible va al `.env` (git-ignored); nunca se commitea.
-
-| variable | descripción | default |
-|---|---|---|
-| `X_AUTH_TOKEN` | cookie de sesión de una cuenta de X aparte | *(vacío)* |
-| `X_CT0` | cookie CSRF de la misma sesión | *(vacío)* |
-| `AUDIT_DB_PATH` | SQLite del ledger de auditoría (separado de los datos) | `data/audit/ledger.db` |
-| `DATA_DB_PATH` | SQLite intermedio de tweets | `data/tweets.db` |
-| `PAGE_SIZE` | tamaño de página del backend | `20` |
-
-> El tope (`hard_cap = 900000`) y la ventana (`window_s = 86400`) **no** son configurables
-> por entorno a propósito: son constantes de código (regla de cumplimiento). Setearlas en
-> `.env` no tiene efecto.
-
----
-
-## Uso
-
-### Calidad (lint, tipos, tests)
+Directly (the extension's default address is `http://localhost:8000`):
 
 ```bash
-uv run ruff check . && uv run ruff format .   # lint + formato
-uv run mypy src                               # tipado estricto
-uv run pytest                                 # incluye los tests del Compliance Gate
+uv run fastapi dev src/tweet_extractor/service/app.py
 ```
 
-### El Compliance Gate como librería
+Or in Docker (Alpine, multi-stage) behind nginx on `http://localhost:8080`; the gate ledger and the
+data live in two separate volumes:
 
-Hoy lo usable es el gate. Envuelve *cualquier* fuente de datos: se reserva una cota
-superior **antes** de pedir, se hace el fetch, y se reconcilia al conteo real.
-
-```python
-import asyncio
-from tweet_extractor.compliance.gate import SlidingWindowGate
-from tweet_extractor.config import Settings
-
-
-async def main() -> None:
-    cfg = Settings()
-    # `async with` hace el setup del ledger y cierra la conexión al salir.
-    async with SlidingWindowGate(
-        cfg.audit_db_path, hard_cap=cfg.hard_cap, window_s=cfg.window_s
-    ) as gate:
-        print("restante:", await gate.remaining())
-
-        # Antes de cada request: reservar la cota superior de accesos de la página.
-        rid = await gate.reserve(cfg.max_accessed_per_page)  # bloquea si no entra
-        # ... acá iría el fetch real al backend ...
-        accesos_reales = 17
-        await gate.reconcile(rid, accesos_reales)            # ajusta al conteo real
-
-        print("uso:", await gate.usage())
-
-
-asyncio.run(main())
+```bash
+docker compose -f deploy/docker-compose.yml up --build
 ```
 
-Cuando exista un `TweetProvider` concreto, se lo envuelve con `GatedProvider` y **ningún
-acceso puede saltear el gate**:
+With the compose stack, set the service address in the extension's popup to
+`http://localhost:8080`.
 
-```python
-from tweet_extractor.compliance.gated_provider import GatedProvider
+## Build and load the extension
 
-gated = GatedProvider(inner_provider, gate)        # inner = scraping u API oficial
-async for raw_tweet in gated.fetch_tweets(query):  # paginado y gateado automáticamente
-    ...
+```bash
+docker build -f deploy/extension.Dockerfile -o extension/dist extension
 ```
 
----
+This type-checks and builds both targets inside a pinned Node image. Without Docker,
+`cd extension && npm ci && npm run build` with Node 22 does the same.
 
-## Compliance Gate
+- **Chrome**: `chrome://extensions` → Developer mode → *Load unpacked* → `extension/dist/chrome-mv3`.
+- **Firefox**: `about:debugging` → *This Firefox* → *Load Temporary Add-on* →
+  `extension/dist/firefox-mv2/manifest.json`.
 
-La invariante crítica del repo. Reglas que se garantizan por código:
+Then open the popup (its UI is in Spanish), enter the account and the date range, press
+**Capturar ▶** and, when it is done, **Exportar CSV**. **Detener ⏹** stops a capture. To start the
+service from the browser automatically, see [deploy/native-host/README.md](deploy/native-host/README.md).
 
-- **`hard_cap = 900_000`, global** (un único ledger para toda la app).
-- **Ventana deslizante de 24 h**, nunca día calendario: `uso(now) = Σ count WHERE ts > now − 86400`.
-- **Se cuentan accesos, no lo guardado**: el citante, el quote embebido y los retweets
-  descartados. El ledger **no deduplica** (sobre-contar es seguro).
-- **Reserva-antes-de-pedir, falla cerrado**: si una página no entra en el presupuesto, se
-  **espera** a que eventos viejos salgan de la ventana; tras el fetch se reconcilia al real.
-- **Persistente y atómico**: SQLite de auditoría **separado** del de datos, bajo `asyncio.Lock`.
+## CLI (twscrape backend)
 
----
-
-## Arquitectura (capas, estilo OSI)
-
-Cada capa solo conoce la de abajo. La fuente de datos está detrás de una interfaz abstracta
-para poder cambiar el backend (scraping ↔ API oficial de X) sin tocar el resto.
-
-```
-providers/   contrato TweetProvider (intercambiable)     ✅ contrato listo
-mappers/     normalización GraphQL → dominio             ⬜ pendiente
-domain/      modelo Tweet (pydantic)                     ✅ Tweet + TweetLink (validado)
-compliance/  SlidingWindowGate + GatedProvider           ✅ implementado y testeado
-storage/     SQLite intermedio + exportador CSV          ⬜ pendiente
-service/     FastAPI (jobs + estado del gate)            ⬜ pendiente
-presentation CLI (Typer) y extensión de navegador        ⬜ pendiente
+```bash
+uv run tweet-extractor --account someone --account other --since 2025-01-01 --until 2026-01-01
 ```
 
----
+`--since` is inclusive and `--until` exclusive (UTC days). Other options: `--out-dir`,
+`--subwindow-days`, `--encoding` (`utf-8-sig` adds a BOM for Excel) and `--delimiter` (`;` for
+spreadsheets that use a comma as decimal separator). A re-run skips the sub-windows already
+completed. It needs the session cookies in `.env` and is currently blocked upstream (see above).
 
-## Roadmap
+## HTTP API
 
-1. **Compliance Gate** + tests, envuelto en `GatedProvider`. ✅
-2. **Modelo de dominio** (`Tweet`/`TweetLink`, pydantic, validado). ✅
-3. **(siguiente)** `TwscrapeProvider` (sin API paga vía httpx, sin navegador) → `mappers/` (quotes sí, retweets no, links) → `storage/` (SQLite + CSV en streaming) → `cli.py`.
-4. FastAPI + Nginx (app local) y extensiones de Firefox/Chrome.
+| Endpoint | What it does |
+|---|---|
+| `GET /healthz` | liveness |
+| `GET /gate` | gate usage, remaining budget, cap and window |
+| `POST /ingest` | store GraphQL pages captured by the extension and record their accesses |
+| `POST /progress` | oldest stored tweet for an account and range (the resume point) |
+| `POST /export`, `GET /exports/{file}` | build and download the CSV of a captured range |
+| `POST /reset` | delete what was captured for an account (the gate ledger is never touched) |
+| `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{account}` | server-side extraction jobs (twscrape backend) |
 
-> **Estado detallado y handoff** (para retomar desde otra máquina): [`docs/ESTADO.md`](docs/ESTADO.md).
+## Configuration (`.env`)
 
-El plan completo y el razonamiento de cada decisión están en
-[`docs/plan-extractor-tweets.md`](docs/plan-extractor-tweets.md).
+Secrets live only in `.env`, which is git-ignored. Every variable is listed with comments in
+[`.env.example`](.env.example):
 
----
+| Variable | Purpose | Default |
+|---|---|---|
+| `PROVIDER_BACKEND` | `twscrape` or `official` | `twscrape` |
+| `X_AUTH_TOKEN`, `X_CT0` | session cookies of a separate X account (twscrape) | empty |
+| `X_API_BEARER_TOKEN` | official API v2 token (stub) | empty |
+| `AUDIT_DB_PATH` | gate ledger, separate from the data | `data/audit/ledger.db` |
+| `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets, twscrape accounts | `data/tweets.db`, `data/accounts.db` |
+| `CSV_DIR`, `CAPTURES_DIR` | CSV output of jobs and of captures | `data/csv`, `data/captures` |
+| `CORS_ALLOW_ORIGINS` | JSON list of allowed origins (the extension does not need it) | `[]` |
+| `PAGE_SIZE`, `SUBWINDOW_DAYS` | backend page size, search sub-window in days | `20`, `7` |
 
-## Licencia
+The in-browser capture needs none of these secrets: it uses the session already open in the
+browser.
 
-[MIT](LICENSE) © 2026 Bautista D. Fiori.
+## Development
+
+```bash
+uv run ruff check . && uv run ruff format --check .
+uv run mypy src
+uv run pytest
+```
+
+Layers, from the bottom up; each one only knows the one below:
+
+```
+providers/     swappable data source behind TweetProvider (twscrape, official API stub)
+mappers/       raw GraphQL → domain model (the only place that parses GraphQL)
+domain/        Tweet and TweetLink (pydantic v2)
+compliance/    SlidingWindowGate + GatedProvider
+storage/       SQLite store (dedupe, checkpoints) + streaming CSV exporter
+service/       FastAPI: jobs, ingest, export, gate status
+cli.py         Typer CLI
+extension/     WXT extension for Chrome MV3 and Firefox
+```
+
+Design notes and the reasoning behind each decision (Spanish):
+[docs/plan-extractor-tweets.md](docs/plan-extractor-tweets.md) and `docs/superpowers/`.
+
+## License
+
+[MIT](LICENSE) © 2026 Bautista D. Fiori
