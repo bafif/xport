@@ -1,9 +1,20 @@
 # xport — extensión (Fase 4)
 
 Extensión Chrome (MV3) + Firefox, código compartido vía [WXT](https://wxt.dev).
-Implementa el **patrón (a)** del plan: la extensión es un cliente liviano; el
-popup pega contra el servicio local de xport (FastAPI) para lanzar jobs, ver el
-estado del Compliance Gate y descargar los CSV. No hace scraping por sí misma.
+Es el camino principal para capturar tweets:
+
+- **Captura GraphQL in-page (patrón C):** los content scripts capturan las
+  respuestas GraphQL que x.com ya descarga en la búsqueda y el background las
+  manda a `POST /ingest` del servicio local. La extensión **no parsea GraphQL**:
+  el backend mapea, guarda y registra los accesos en el Compliance Gate.
+- **Crawl adaptativo:** «Capturar» abre la búsqueda de la cuenta y el rango,
+  scrollea sola y, si x.com corta antes de llegar a la fecha inicial, achica el
+  rango y vuelve a buscar. Retoma entre sesiones desde lo ya capturado
+  (`POST /progress`).
+- **Popup de un solo flujo:** cuenta + desde + hasta → Capturar / Detener /
+  Exportar CSV, más el estado del gate.
+- **Auto-arranque (patrón B, opcional):** con el host nativo de
+  `deploy/native-host/`, el navegador levanta y baja el servicio solo.
 
 ## Requisitos
 
@@ -13,6 +24,14 @@ estado del Compliance Gate y descargar los CSV. No hace scraping por sí misma.
   src/tweet_extractor/service/app.py`, o `docker compose -f deploy/docker-compose.yml up`.
 
 ## Comandos
+
+Sin Node en la máquina, desde la raíz del repo:
+
+```bash
+docker build -f deploy/extension.Dockerfile -o extension/dist extension
+```
+
+Con Node local:
 
 ```bash
 fnm use            # fija Node a la versión de .node-version
@@ -48,6 +67,5 @@ Para regenerarlos: guardá el maestro 1024×1024 en `public/icon/master.png` y c
 
 ## Pendiente
 
-- Verificación cargando la extensión en un navegador real (no se pudo automatizar).
-- Patrones (b) Native Messaging y (c) captura GraphQL in-page: reservados; si se
-  agrega (c), debe reportar sus accesos al Compliance Gate (invariante 1M/24h global).
+- Una verificación end-to-end documentada del flujo completo en un navegador real.
+- El puente de native messaging desde un navegador en Windows hacia WSL.
