@@ -1,25 +1,25 @@
-# xport — extensión (Fase 4)
+# xport: la extensión
 
 Extensión Chrome (MV3) + Firefox, código compartido vía [WXT](https://wxt.dev).
 Es el camino principal para capturar tweets:
 
-- **Captura GraphQL in-page (patrón C):** los content scripts capturan las
+- **Captura in-page:** los content scripts capturan las
   respuestas GraphQL que x.com ya descarga en la búsqueda y el background las
   manda a `POST /ingest` del servicio local. La extensión **no parsea GraphQL**:
   el backend mapea, guarda y registra los accesos en el Compliance Gate.
 - **Crawl adaptativo:** «Capturar» abre la búsqueda de la cuenta y el rango,
   scrollea sola y, si x.com corta antes de llegar a la fecha inicial, achica el
-  rango y vuelve a buscar. Retoma entre sesiones desde lo ya capturado
-  (`POST /progress`).
+  rango y vuelve a buscar. Si X frena la búsqueda, la próxima captura retoma
+  desde lo ya guardado (`POST /progress`).
 - **Popup de un solo flujo:** cuenta + desde + hasta → Capturar / Detener /
   Exportar CSV, más el estado del gate.
-- **Auto-arranque (patrón B, opcional):** con el host nativo de
+- **Auto-arranque (opcional):** con el host nativo de
   `deploy/native-host/`, el navegador levanta y baja el servicio solo.
 
 ## Requisitos
 
-- Node (ver `.node-version` → 22). En dev se gestiona con `fnm`; en Docker NO se
-  usa fnm (se pinea la imagen Node).
+- Node (ver `.node-version` → 22). En desarrollo la manejo con `fnm`; en Docker no
+  hace falta, porque la imagen de Node está fijada.
 - El servicio de xport corriendo (ver raíz del repo): `uv run fastapi dev
   src/tweet_extractor/service/app.py`, o `docker compose -f deploy/docker-compose.yml up`.
 
@@ -61,9 +61,9 @@ en el futuro un *content script* o una página web llaman a la API.
 
 WXT autodescubre `public/icon/{size}.png` y los cablea solo en los manifests de
 Chrome y Firefox (incluido `action.default_icon`, el de la barra de direcciones).
-Para regenerarlos: guardá el maestro 1024×1024 en `public/icon/master.png` y corré
+Para regenerarlos: guardá el maestro 1024×1024 en `scripts/icon-master.png` y corré
 `./scripts/make-icons.sh` (detecta ImageMagick / `sips` / Pillow). Detalle en
-`public/icon/README.md`.
+`scripts/README.md`.
 
 ## Pendiente
 

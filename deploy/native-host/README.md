@@ -10,7 +10,7 @@ el `storage/` quedan donde están, server-side. Esto solo automatiza el *arranqu
 
 ```
 navegador --connectNative--> host nativo --lanza--> uvicorn (FastAPI)
-   (mantiene el puerto abierto = backend vivo durante la sesión)
+   (mientras el puerto siga abierto, el backend sigue vivo)
    (cierra el puerto = EOF = el host baja uvicorn)
 ```
 
@@ -30,9 +30,9 @@ navegador --connectNative--> host nativo --lanza--> uvicorn (FastAPI)
 Desde **PowerShell en Windows**, una sola vez:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\bafif\xport\deploy\native-host\install-windows.ps1
+powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<usuario>\xport\deploy\native-host\install-windows.ps1
 # si tu distro no es la default o el repo está en otro lado:
-#   -Distro Ubuntu  -RepoPath /home/bafif/xport
+#   -Distro Ubuntu  -RepoPath /home/<usuario>/xport
 ```
 
 Escribe `%LOCALAPPDATA%\xport\xport-host.bat` + el manifest, y la clave de registro
@@ -74,10 +74,10 @@ Dos chequeos automáticos, uno por lado del borde WSL:
   ```
 - **Windows** — registro + manifest + bridge `.bat`→WSL + alcanzabilidad desde Windows:
   ```powershell
-  powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\bafif\xport\deploy\native-host\doctor.ps1
+  powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<usuario>\xport\deploy\native-host\doctor.ps1
   #   -Distro <d>   si no es la default     -Chrome   para el manifest de Chrome
   ```
-  (También podés correr el de WSL desde PowerShell: `wsl bash /home/bafif/xport/deploy/native-host/doctor.sh`.)
+  (También podés correr el de WSL desde PowerShell: `wsl bash /home/<usuario>/xport/deploy/native-host/doctor.sh`.)
 
 ## Desinstalar
 
