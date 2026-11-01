@@ -46,7 +46,7 @@ class Mapper(Protocol):
 
 
 def apply_reply_policy(mapped: Iterable[MappedTweet]) -> list[Tweet]:
-    """Política de replies POR RAÍZ DE CONVERSACIÓN (decisión en ESTADO.md):
+    """Política de replies POR RAÍZ DE CONVERSACIÓN (decisión en docs/PLAN.md):
     self-threads sí, replies a conversaciones ajenas no. Un reply se conserva
     sólo si su `conversation_id` (la raíz) es un tweet de la propia cuenta —
     eso excluye también al self-reply que cuelga de una conversación ajena,

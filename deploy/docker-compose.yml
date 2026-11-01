@@ -10,7 +10,7 @@ services:
     env_file: ../.env
     environment:
       # El ledger del gate va en SU PROPIO volumen, separado del SQLite de datos
-      # (regla #1 de docs/ESTADO.md: sobrevive a que se borre/regenere la base de tweets).
+      # (regla 1 de docs/PLAN.md: sobrevive a que se borre/regenere la base de tweets).
       AUDIT_DB_PATH: /data/audit/ledger.db
       DATA_DB_PATH: /data/app/tweets.db
       CSV_DIR: /data/app/csv

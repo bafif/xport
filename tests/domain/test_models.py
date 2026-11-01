@@ -220,11 +220,11 @@ def test_tweet_trimea_quoted_tweet_id_y_url():
     assert t.is_quote is True
 
 
-# --- Hardening post code-review ---
+# --- Validaciones más estrictas ---
 
 
 def test_tweet_rechaza_created_at_epoch_int():
-    # fail-fast (D2): un epoch crudo (seg) del mapper no debe aceptarse silenciosamente.
+    # fail-fast: un epoch crudo (seg) del mapper no debe aceptarse silenciosamente.
     with pytest.raises(ValidationError):
         Tweet(id="1", account="u", created_at=1685620800, content="x")
 
@@ -328,8 +328,8 @@ def test_tweetlink_es_inmutable():
 
 
 def test_tweet_created_at_fuera_de_rango_es_validation_error():
-    # astimezone() cerca de año 9999 con offset negativo desbordaría: el contrato §5
-    # exige que se manifieste como ValidationError, no como OverflowError crudo.
+    # astimezone() cerca de año 9999 con offset negativo desbordaría: tiene que
+    # manifestarse como ValidationError, no como OverflowError crudo.
     with pytest.raises(ValidationError):
         Tweet(
             id="1",

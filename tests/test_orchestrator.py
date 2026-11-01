@@ -102,7 +102,7 @@ async def test_happy_path_dos_tramos(store: SqliteStore, tmp_path: Path):
     assert result.windows_skipped == 0
     assert result.exported == 2
     assert contenidos(result.csv_path) == ["texto 1", "texto 3"]  # orden cronológico
-    # El nombre incluye el rango pedido (ODQ resuelta): <account>_<since>_<until>.csv
+    # El nombre incluye el rango pedido (default decidido): <account>_<since>_<until>.csv
     assert result.csv_path.name == "someuser_2023-01-01_2023-01-15.csv"
     assert await store.is_window_done("someuser", *W1)
     assert await store.is_window_done("someuser", *W2)

@@ -7,7 +7,7 @@ from tweet_extractor.mappers.base import Mapper, MapperError
 
 
 def test_map_tweet_es_stub_que_falla_fuerte():
-    # Stub de Fase 2: no se implementa mapeo especulativo sin verificar contra
+    # Stub: no se implementa mapeo especulativo sin verificar contra
     # respuestas v2 reales. Invocarlo lanza MapperError (no descarta en silencio).
     with pytest.raises(MapperError):
         api_v2_mapper.map_tweet({"id": "1", "text": "hola"}, account="someuser")

@@ -6,7 +6,7 @@ from typing import Any
 from tweet_extractor.config import Settings
 from tweet_extractor.providers.base import Page, ProviderError, SearchQuery, TweetProvider
 
-# Endpoint del timeline de usuario en la X API v2 (ver docs/plan §2). Soporta
+# Endpoint del timeline de usuario en la X API v2. Soporta
 # `start_time`/`end_time` (ISO 8601, `end_time` exclusivo), `max_results` ≤ 100 y
 # paginación por `pagination_token`. El `:id` se resuelve antes vía
 # `GET /2/users/by/username/:username`.
@@ -69,13 +69,13 @@ def count_accessed_v2(raw: dict[str, Any]) -> int:
 async def fetch_user_tweets_page(
     settings: Settings, query: SearchQuery, cursor: str | None
 ) -> dict[str, Any]:
-    """Seam de red del backend oficial. STUB de Fase 2: falla cerrado. La
+    """Seam de red del backend oficial. STUB: falla cerrado. La
     implementación real resolverá `username -> user_id`, llamará
     `GET {USER_TWEETS_ENDPOINT}` con `build_params(...)` y el Bearer token, y
     respetará `x-rate-limit-reset`. No se implementa con lógica sin verificar
     contra la API de pago real."""
     raise ProviderError(
-        f"OfficialApiProvider es un stub de Fase 2: el fetch a {USER_TWEETS_ENDPOINT} "
+        f"OfficialApiProvider es un stub: el fetch a {USER_TWEETS_ENDPOINT} "
         "no está implementado. Usá el backend twscrape (PROVIDER_BACKEND=twscrape)."
     )
 
@@ -84,7 +84,7 @@ PageFetcher = Callable[[Settings, SearchQuery, "str | None"], Awaitable[dict[str
 
 
 class OfficialApiProvider(TweetProvider):
-    """Backend de la X API v2 oficial (stub de Fase 2). Conforma `TweetProvider`
+    """Backend de la X API v2 oficial (stub). Conforma `TweetProvider`
     para que el `GatedProvider` lo envuelva igual que al de scraping —el gate es
     agnóstico del backend— y para que la factory pueda intercambiarlos sin tocar
     el orquestador. El seam de red (`page_fetcher`) se inyecta: hoy el default

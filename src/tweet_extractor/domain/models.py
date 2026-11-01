@@ -52,7 +52,7 @@ class TweetLink(BaseModel):
 
 
 class Tweet(BaseModel):
-    """El tweet normalizado: única fuente de verdad del shape (ver docs/ESTADO.md).
+    """El tweet normalizado: única fuente de verdad del shape (ver docs/PLAN.md).
 
     Value object inmutable. Valida invariantes de *forma* — no parsing de
     GraphQL, que vive solo en `mappers/`: `created_at` es un `datetime`
@@ -93,7 +93,7 @@ class Tweet(BaseModel):
     @classmethod
     def _quote_no_vacio(cls, v: str | None) -> str | None:
         # None = no hay quote. Si está presente, no puede ser vacío (quote degenerado):
-        # se rechaza (fail-fast, D2) en vez de silenciarlo dejando is_quote en True.
+        # se rechaza (fail-fast) en vez de silenciarlo dejando is_quote en True.
         if v is None:
             return None
         s = _limpiar(v)
@@ -104,7 +104,7 @@ class Tweet(BaseModel):
     @field_validator("created_at", mode="before")
     @classmethod
     def _es_datetime(cls, v: object) -> object:
-        # fail-fast (D2): el mapper debe pasar un datetime ya parseado. Un epoch crudo
+        # fail-fast: el mapper debe pasar un datetime ya parseado. Un epoch crudo
         # (int seg o ms) o un string se coercionarían en silencio a una fecha plausible
         # —un mixup seg/ms daría un timestamp errado sin señal—; se rechazan.
         if not isinstance(v, datetime):
@@ -122,8 +122,8 @@ class Tweet(BaseModel):
             return v.astimezone(UTC)
         except (OverflowError, TypeError) as e:
             # astimezone desborda cerca de año 1/9999 con offset, o falla con un tzinfo
-            # roto: lo re-lanzamos como ValueError para honrar el contrato §5 (toda
-            # violación se manifiesta como ValidationError, no como excepción cruda).
+            # roto: lo re-lanzamos como ValueError para que toda violación se manifieste
+            # como ValidationError y nunca como una excepción cruda.
             raise ValueError("created_at fuera de rango representable en UTC") from e
 
     @model_validator(mode="after")

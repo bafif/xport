@@ -45,12 +45,12 @@ async def run_job(
     delimiter: str = DEFAULT_DELIMITER,
     log: Callable[[str], None] = lambda _msg: None,
 ) -> list[AccountResult]:
-    """El loop orquestador de la Fase 1: por cuenta, un `SearchQuery` por tramo de
+    """El loop orquestador: por cuenta, un `SearchQuery` por tramo de
     `subwindows()` -> `provider.fetch_tweets` -> `map_tweet` -> `store.save` por
     tandas -> checkpoint al CERRAR el tramo -> `export_account` al final (ahí se
     aplica la política de replies, que necesita el job completo de la cuenta).
 
-    `provider` DEBE ser el `GatedProvider` (regla #1 de docs/ESTADO.md): run_job no
+    `provider` DEBE ser el `GatedProvider` (regla 1 de docs/PLAN.md): run_job no
     hace ningún fetch por fuera de él, así que todo acceso pasa por el gate. Los
     tramos ya checkpointeados se saltean SIN tocar al provider (cero presupuesto).
     Un fallo a mitad de tramo propaga sin marcar el checkpoint: el re-run repite

@@ -83,7 +83,7 @@ def test_gate_cuenta_los_accesos_del_job(make_client: ClientFactory, wait_done: 
 def test_rt_se_descarta_pero_cuenta_en_el_gate(
     make_client: ClientFactory, wait_done: WaitDone
 ) -> None:
-    # Regla #1 de docs/ESTADO.md: el RT no se exporta, pero su ACCESO igual cuenta.
+    # Regla 1 de docs/PLAN.md: el RT no se exporta, pero su ACCESO igual cuenta.
     tweets = [tweet_result("1"), tweet_result("2", retweeted=tweet_result("rt"))]
     with make_client(tweets) as client:
         job_id = client.post("/jobs", json={"accounts": ["someuser"], **RANGE}).json()["id"]

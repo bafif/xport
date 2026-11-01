@@ -27,7 +27,7 @@ async def ingest(body: IngestPayload, svc: SvcDep) -> IngestResult:
     pipeline existente: extract (envelope) -> map (RT fuera, quotes sí) -> store.save
     (dedup por id) -> gate.record (record-after: el acceso ya ocurrió en el browser).
 
-    Contabilidad record-after (ver spec §5): si el ledger global YA está en el tope,
+    Contabilidad record-after (regla 1 de docs/PLAN.md): si el ledger global YA está en el tope,
     se rechaza (429) — no aceptamos más. Pero la ingesta que CRUZA el tope SÍ se
     procesa y registra (el acceso ya pasó; el ledger debe quedar verídico) y se marca
     `over_cap`; las siguientes caen en el 429. El ledger NO deduplica."""

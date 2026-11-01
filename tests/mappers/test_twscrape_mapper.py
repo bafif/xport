@@ -269,7 +269,7 @@ def test_policy_descarta_reply_a_conversacion_ajena():
 
 
 def test_policy_descarta_self_reply_que_cuelga_de_conversacion_ajena():
-    # El caso que motivó la definición por raíz (ESTADO.md): "4" responde a un tweet
+    # El caso que motivó la definición por raíz (docs/PLAN.md): "4" responde a un tweet
     # PROPIO ("3"), pero la conversación la arrancó un tercero ("900") -> fuera.
     propio = mapear(tweet_result("3", in_reply_to="900", conversation_id="900"))
     self_reply = mapear(tweet_result("4", in_reply_to="3", conversation_id="900"))

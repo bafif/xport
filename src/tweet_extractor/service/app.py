@@ -61,7 +61,7 @@ def create_app(
         summary="Extrae tweets por rango de fechas → un CSV por cuenta, bajo el Compliance Gate.",
         lifespan=lifespan,
     )
-    # CORS lo maneja FastAPI, NUNCA Nginx (regla de docs/ESTADO.md: no duplicar headers).
+    # CORS lo maneja FastAPI, NUNCA Nginx (regla 6 de docs/PLAN.md: no duplicar headers).
     # Sin orígenes configurados no se monta el middleware (default seguro).
     if cfg.cors_allow_origins:
         app.add_middleware(

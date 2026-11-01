@@ -3,7 +3,7 @@ from __future__ import annotations
 from tweet_extractor.mappers.base import MappedTweet, MapperError
 from tweet_extractor.providers.base import RawTweet
 
-# Stub de Fase 2: el mapper de la X API v2 oficial. El `OfficialApiProvider` es
+# Stub: el mapper de la X API v2 oficial. El `OfficialApiProvider` es
 # también un stub (no hay credenciales ni acceso de pago para verificar contra
 # respuestas reales), así que este mapper NO se implementa con lógica especulativa
 # sin testear: lanza fuerte si se lo invoca. Cuando se implemente el backend
@@ -33,6 +33,6 @@ def map_tweet(raw: RawTweet, *, account: str) -> MappedTweet | None:
     `MapperError` porque el backend oficial todavía no está implementado y mapear
     sin poder verificar contra respuestas v2 reales sería código especulativo."""
     raise MapperError(
-        "api_v2_mapper es un stub de Fase 2: el backend oficial no está implementado. "
+        "api_v2_mapper es un stub: el backend oficial no está implementado. "
         "Usá el backend twscrape (PROVIDER_BACKEND=twscrape)."
     )

@@ -1,6 +1,6 @@
 # Build reproducible en Alpine/musl (requisito del repo). Sin navegador en la
 # imagen por defecto: el backend inicial es twscrape (httpx), así la imagen queda
-# chica y se evita Chromium-sobre-musl. Ver docs/ESTADO.md (sección Docker).
+# chica y se evita Chromium-sobre-musl. Ver la regla 5 de docs/PLAN.md.
 
 # ---- build ----
 # Tag pineado (uv 0.11.19) para reproducibilidad; alineado con uv_build del pyproject.

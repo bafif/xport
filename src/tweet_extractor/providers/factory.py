@@ -23,7 +23,7 @@ class Backend:
 
 
 async def build_backend(settings: Settings) -> Backend:
-    """El ÚNICO punto donde se decide scraping ↔ API oficial (regla de docs/ESTADO.md).
+    """El ÚNICO punto donde se decide scraping ↔ API oficial (ver docs/PLAN.md).
     Async porque construir el backend de twscrape arma el `AccountsPool` (I/O).
     `provider_backend` ya está validado por pydantic a un literal conocido; el
     `else` es defensivo ante una extensión futura del Literal sin actualizar acá."""

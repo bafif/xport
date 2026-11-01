@@ -13,11 +13,11 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # --- Constantes de cumplimiento (regla #1 de docs/ESTADO.md) ---------------------
+    # --- Constantes de cumplimiento (regla 1 de docs/PLAN.md) ------------------------
     # Son ClassVar a propósito: NO son campos pydantic, así que NINGÚN env var ni
     # `.env` puede subir el cap, encoger la ventana ni bajar la cota de accesos.
     # Debilitar el gate exige cambiar el código (y revisión), nunca el entorno.
-    HARD_CAP: ClassVar[int] = 900_000  # NO subir sin instrucción explícita del usuario
+    HARD_CAP: ClassVar[int] = 900_000  # margen bajo el millón de los términos de X; no se sube
     WINDOW_S: ClassVar[int] = 86_400
     # Cota SUPERIOR de objetos accedidos por tweet de una página: el citante más
     # quotes embebidos que la respuesta puede hidratar (citante + 2 niveles). Tiene
@@ -33,9 +33,9 @@ class Settings(BaseSettings):
     page_size: int = 20
     subwindow_days: int = 7  # paso default (días) del troceado de búsqueda
 
-    # CORS del FastAPI: orígenes permitidos para la extensión de navegador (Fase 4).
+    # CORS del FastAPI: orígenes permitidos para la extensión de navegador.
     # Vacío por default (sin middleware CORS) = seguro. El CORS lo maneja FastAPI,
-    # NUNCA Nginx (regla de docs/ESTADO.md: no duplicar headers CORS entre ambos).
+    # NUNCA Nginx (regla 6 de docs/PLAN.md: no duplicar headers CORS entre ambos).
     cors_allow_origins: list[str] = []
 
     # Backend de datos: el ÚNICO punto de intercambio scraping ↔ API oficial (la
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # twscrape (sin API paga): cookies de una cuenta aparte (.env).
     x_auth_token: str | None = None
     x_ct0: str | None = None
-    # X API v2 oficial (backend `official`, stub de Fase 2): Bearer token.
+    # X API v2 oficial (backend `official`, todavía un stub): Bearer token.
     x_api_bearer_token: str | None = None
 
     @property

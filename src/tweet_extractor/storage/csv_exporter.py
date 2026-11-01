@@ -12,7 +12,7 @@ from tweet_extractor.domain.models import Tweet
 from tweet_extractor.mappers.twscrape_mapper import passes_reply_policy
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
-# --- Defaults del CSV (ODQ resueltas con el usuario, ver docs/ESTADO.md) --------------
+# --- Defaults del CSV (decididos el 2026-06-13, ver docs/PLAN.md) ---------------------
 # Decididos: UTF-8 SIN BOM, delimitador coma, display de fechas en UTC. Siguen
 # siendo configurables por parámetro para el caso Excel-AR (encoding="utf-8-sig"
 # agrega BOM; delimiter=";" para la config regional de Excel en Argentina).

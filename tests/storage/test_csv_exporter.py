@@ -88,7 +88,7 @@ async def test_delimitador_configurable(tmp_path: Path):
 
 
 async def test_encoding_configurable_bom(tmp_path: Path):
-    # El candidato para Excel-AR (ODQ abierta): utf-8-sig antepone el BOM.
+    # Para Excel en español: utf-8-sig antepone el BOM.
     path = tmp_path / "out.csv"
     await write_csv(aiter([un_tweet(tweet_id="1")]), path, encoding="utf-8-sig")
     assert path.read_bytes().startswith(b"\xef\xbb\xbf")

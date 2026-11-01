@@ -72,8 +72,8 @@ async def get_job(job_id: str, svc: SvcDep) -> JobResponse:
 
 @router.get("/jobs/{job_id}/csv/{account}")
 async def download_csv(job_id: str, account: str, svc: SvcDep) -> FileResponse:
-    """Descarga el CSV de UNA cuenta del job (un archivo por cuenta, según el
-    spec). El job tiene que estar `done`. Sirve la ruta REAL escrita por el job
+    """Descarga el CSV de UNA cuenta del job (siempre es un archivo por
+    cuenta). El job tiene que estar `done`. Sirve la ruta REAL escrita por el job
     (incluye el rango en el nombre), así el endpoint no depende del naming."""
     record = svc.registry.get(job_id)
     if record is None:
