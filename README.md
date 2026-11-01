@@ -51,7 +51,7 @@ then downloads the file.
 - **Adaptive crawl**: X's live search stops at around 1,000 results per query, so when the scroll
   stalls before reaching the start date the extension narrows the range to the oldest day loaded
   and searches again, until the whole range is covered.
-- **Resumable across sessions**: X also throttles the search endpoint for hours. On the next
+- **Picks up where it left off**: X also throttles the search endpoint for hours. On the next
   capture, the service reports how far the stored data already goes and the crawl continues from
   there instead of starting over.
 - **Optional auto-start**: with the native messaging host (`deploy/native-host/`), opening the
@@ -67,11 +67,11 @@ Other backends sit behind the same `TweetProvider` interface and the same gate:
 ## Status
 
 Beta. The four planned phases (CLI, swappable backends, local service with nginx, browser
-extension) are in the code, with 230 offline tests, `mypy --strict` and ruff passing. The
-in-browser capture has been used against live x.com, which is where the adaptive crawl and the
-multi-session resume came from. Still pending: a documented end-to-end check of the whole flow,
-the native messaging bridge from Windows browsers to WSL, and the official API backend. Detailed
-handoff (Spanish): [docs/ESTADO.md](docs/ESTADO.md).
+extension) are in the code; the tests run offline, and `mypy --strict` and ruff pass. I have used
+the in-browser capture against live x.com, and that is where the adaptive crawl and the resume
+came from. Still pending: a documented end-to-end check of the whole flow, the native messaging
+bridge from Windows browsers to WSL, and the official API backend. The plan, the reasoning behind
+each decision and the current status are in [docs/PLAN.md](docs/PLAN.md) (Spanish).
 
 ## Requirements
 
@@ -187,8 +187,7 @@ cli.py         Typer CLI
 extension/     WXT extension for Chrome MV3 and Firefox
 ```
 
-Design notes and the reasoning behind each decision (Spanish):
-[docs/plan-extractor-tweets.md](docs/plan-extractor-tweets.md) and `docs/superpowers/`.
+Design notes and the reasoning behind each decision (Spanish): [docs/PLAN.md](docs/PLAN.md).
 
 ## License
 
