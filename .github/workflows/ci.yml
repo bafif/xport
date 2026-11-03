@@ -1,4 +1,4 @@
-# Lint, types and tests for the Python service; Docker builds of the service
+# Lint, types and tests for the Python service; Podman builds of the service
 # image (Alpine) and of the browser extension. GitHub-hosted runners only.
 name: ci
 
@@ -22,12 +22,14 @@ jobs:
       - run: uv run mypy src
       - run: uv run pytest
 
-  docker:
+  images:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: service image (Alpine)
-        run: docker build -f deploy/Dockerfile -t xport:ci .
+        run: podman build -f deploy/Containerfile -t xport:ci .
       - name: extension (Chrome MV3 + Firefox MV2)
-        run: docker build -f deploy/extension.Dockerfile -o extension/dist extension
+        run: >-
+          podman build -f deploy/extension.Containerfile --ignorefile deploy/extension.containerignore
+          -o extension/dist extension
       - run: ls extension/dist/chrome-mv3/manifest.json extension/dist/firefox-mv2/manifest.json

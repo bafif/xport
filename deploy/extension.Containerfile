@@ -2,11 +2,13 @@
 # Node on the host. Node is pinned here, aligned with .node-version (22); fnm is
 # only for local development.
 #
-#   docker build -f deploy/extension.Dockerfile -o extension/dist extension
+#   podman build -f deploy/extension.Containerfile --ignorefile deploy/extension.containerignore \
+#     -o extension/dist extension
 #
-# leaves extension/dist/chrome-mv3 and extension/dist/firefox-mv2 on the host.
+# leaves extension/dist/chrome-mv3 and extension/dist/firefox-mv2 on the host (the
+# last stage is exported with --output; no container mounts the repository).
 
-FROM node:22.23.4-alpine AS build
+FROM docker.io/library/node:22.23.4-alpine AS build
 WORKDIR /ext
 # Config and sources first: `npm ci` runs `wxt prepare` (postinstall), which reads them.
 COPY . .

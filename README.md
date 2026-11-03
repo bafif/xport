@@ -76,7 +76,8 @@ each decision and the current status are in [docs/PLAN.md](docs/PLAN.md) (Spanis
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) and Python 3.12 (pinned in `.python-version`).
-- Docker, to run the service with nginx or to build the extension without Node on the host.
+- Podman (rootless is enough, with podman-compose), to run the service with nginx or to build the
+  extension without Node on the host.
 - Chrome or Firefox, logged in to X, ideally with an account you can afford to lose: X may limit
   accounts that scrape.
 
@@ -97,23 +98,27 @@ Directly (the extension's default address is `http://localhost:8000`):
 uv run fastapi dev src/tweet_extractor/service/app.py
 ```
 
-Or in Docker (Alpine, multi-stage) behind nginx on `http://localhost:8080`; the gate ledger and the
-data live in two separate volumes:
+Or in rootless Podman containers (Alpine, multi-stage) behind nginx on `http://localhost:8080`, which
+listens on 127.0.0.1 only; the gate ledger and the data live in two separate volumes:
 
 ```bash
-docker compose -f deploy/docker-compose.yml up --build
+podman compose -f deploy/compose.yaml up --build
 ```
 
 With the compose stack, set the service address in the extension's popup to
-`http://localhost:8080`.
+`http://localhost:8080`. The services have `restart: unless-stopped`; with Podman that brings them
+back after a reboot only if `podman-restart.service` is enabled
+(`systemctl --user enable podman-restart.service`).
 
 ## Build and load the extension
 
 ```bash
-docker build -f deploy/extension.Dockerfile -o extension/dist extension
+podman build -f deploy/extension.Containerfile --ignorefile deploy/extension.containerignore \
+  -o extension/dist extension
 ```
 
-This type-checks and builds both targets inside a pinned Node image. Without Docker,
+This type-checks and builds both targets inside a pinned Node image, and the last stage is exported to
+`extension/dist` (no container mounts the repository). Without Podman,
 `cd extension && npm ci && npm run build` with Node 22 does the same.
 
 - **Chrome**: `chrome://extensions` → Developer mode → *Load unpacked* → `extension/dist/chrome-mv3`.

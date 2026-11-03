@@ -5,7 +5,7 @@
 export const CAPTURE_SOURCE = 'xport-capture' as const;
 
 // URL base del servicio por default (un solo lugar para popup + background, así no
-// divergen). `fastapi dev` sirve en :8000; para Docker/Nginx (:8080) se edita en el popup.
+// divergen). `fastapi dev` sirve en :8000; para el compose con Nginx (:8080) se edita en el popup.
 export const DEFAULT_BASE = 'http://localhost:8000';
 
 // Claves de browser.storage.local compartidas entre popup y background.

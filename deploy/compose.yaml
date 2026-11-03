@@ -1,8 +1,11 @@
+# Podman sin root: `podman compose -f deploy/compose.yaml up --build`, en http://localhost:8080.
+# `restart: unless-stopped` vuelve a levantar los contenedores después de un reinicio solo si está
+# habilitado `podman-restart.service` (systemctl --user enable podman-restart.service).
 services:
   app:
     build:
       context: ..
-      dockerfile: deploy/Dockerfile
+      dockerfile: deploy/Containerfile
     expose: ["8000"]
     # Las cookies (X_AUTH_TOKEN/X_CT0) y el resto de secretos vienen del .env local
     # (git-ignored). Los paths se fijan acá a rutas ABSOLUTAS del contenedor; como
@@ -21,8 +24,8 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: nginx:alpine
-    ports: ["8080:80"]
+    image: docker.io/library/nginx:1.30-alpine
+    ports: ["127.0.0.1:8080:80"]
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on: [app]

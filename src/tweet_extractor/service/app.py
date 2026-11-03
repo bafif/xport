@@ -75,5 +75,5 @@ def create_app(
     return app
 
 
-# Entry-point para uvicorn (`tweet_extractor.service.app:app`, ver Dockerfile).
+# Entry-point para uvicorn (`tweet_extractor.service.app:app`, ver deploy/Containerfile).
 app = create_app()

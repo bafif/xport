@@ -79,7 +79,7 @@ Varias partes del código remiten a estas reglas por número.
    cuenta).
 4. **El GraphQL se interpreta solo en `mappers/`.** Ni los proveedores ni la extensión parsean
    tweets; los `queryId` rotan con cada deploy de x.com, así que se busca la operación por nombre.
-5. **Sin navegador en la imagen Docker.** La imagen es Alpine y Chromium sobre musl no vale la pena.
+5. **Sin navegador en la imagen del servicio.** La imagen es Alpine y Chromium sobre musl no vale la pena.
    Si alguna vez hace falta un proveedor con navegador, va en otra imagen.
 6. **CORS en un solo lugar.** Lo maneja FastAPI; nginx no agrega encabezados de CORS.
 
@@ -190,7 +190,7 @@ mantiene vivo el service worker de Chrome.
 
 **31 de octubre: puesta al día.** nginx aceptaba como mucho 1 MB y devolvía 413 a los lotes grandes
 de `/ingest`, que la extensión descartaba sin registrarlos en el tope; ahora acepta lotes grandes.
-Sumé el build de la extensión en Docker (no hace falta Node en la máquina), el README en inglés y la
+Sumé el build de la extensión en un contenedor (no hace falta Node en la máquina), el README en inglés y la
 integración continua con ruff, mypy, los tests y los dos builds.
 
 **1 de noviembre.** Este documento reemplazó al plan inicial, a las especificaciones de cada parte y
@@ -236,5 +236,5 @@ uv run pytest -q
 ```
 
 No viajan por git y se regeneran: el `.env` (con las cookies de una cuenta aparte), el `.venv`
-(`uv sync`) y `extension/node_modules`, `extension/dist` y `extension/.wxt` (el build de Docker o
+(`uv sync`) y `extension/node_modules`, `extension/dist` y `extension/.wxt` (el build con Podman o
 `npm ci && npm run build` dentro de `extension/`).

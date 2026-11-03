@@ -18,7 +18,7 @@ COPY . .
 RUN uv sync --frozen --no-dev
 
 # ---- runtime ----
-FROM python:3.12-alpine AS runtime
+FROM docker.io/library/python:3.12-alpine AS runtime
 WORKDIR /app
 # Usuario sin privilegios + dirs de datos con su ownership: los volúmenes nombrados
 # heredan este ownership al crearse, así el proceso (no-root) puede escribirlos.

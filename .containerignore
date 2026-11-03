@@ -1,12 +1,12 @@
-# Higiene del build context (deploy/Dockerfile; el contexto es la raíz del repo).
+# Higiene del build context (deploy/Containerfile; el contexto es la raíz del repo).
 # El runtime solo copia .venv + src, pero `COPY . .` del build stage manda TODO el
-# contexto al daemon: mantener afuera secretos, datos, venvs, node_modules y caches.
+# contexto al build: mantener afuera secretos, datos, venvs, node_modules y caches.
 # NO excluir lo que el build necesita: src/, pyproject.toml, uv.lock, README.md,
 # LICENSE, .python-version.
 
 .git
 .gitignore
-.dockerignore
+.containerignore
 
 # Secretos y datos (NUNCA al build context / cache de capas)
 .env

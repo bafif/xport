@@ -18,17 +18,18 @@ Es el camino principal para capturar tweets:
 
 ## Requisitos
 
-- Node (ver `.node-version` → 22). En desarrollo la manejo con `fnm`; en Docker no
-  hace falta, porque la imagen de Node está fijada.
+- Node (ver `.node-version` → 22). En desarrollo la manejo con `fnm`; en un contenedor
+  no hace falta, porque la imagen de Node está fijada.
 - El servicio de xport corriendo (ver raíz del repo): `uv run fastapi dev
-  src/tweet_extractor/service/app.py`, o `docker compose -f deploy/docker-compose.yml up`.
+  src/tweet_extractor/service/app.py`, o `podman compose -f deploy/compose.yaml up`.
 
 ## Comandos
 
-Sin Node en la máquina, desde la raíz del repo:
+Sin Node en la máquina, desde la raíz del repo (Podman):
 
 ```bash
-docker build -f deploy/extension.Dockerfile -o extension/dist extension
+podman build -f deploy/extension.Containerfile --ignorefile deploy/extension.containerignore \
+  -o extension/dist extension
 ```
 
 Con Node local:
