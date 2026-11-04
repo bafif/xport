@@ -28,8 +28,7 @@ Es el camino principal para capturar tweets:
 Sin Node en la máquina, desde la raíz del repo (Podman):
 
 ```bash
-podman build -f deploy/extension.Containerfile --ignorefile deploy/extension.containerignore \
-  -o extension/dist extension
+bash deploy/extension-build.sh
 ```
 
 Con Node local:

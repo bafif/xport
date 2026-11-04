@@ -113,11 +113,10 @@ back after a reboot only if `podman-restart.service` is enabled
 ## Build and load the extension
 
 ```bash
-podman build -f deploy/extension.Containerfile --ignorefile deploy/extension.containerignore \
-  -o extension/dist extension
+bash deploy/extension-build.sh
 ```
 
-This type-checks and builds both targets inside a pinned Node image, and the last stage is exported to
+This type-checks and builds both targets inside a pinned Node image, and the result is copied out to
 `extension/dist` (no container mounts the repository). Without Podman,
 `cd extension && npm ci && npm run build` with Node 22 does the same.
 

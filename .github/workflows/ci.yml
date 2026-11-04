@@ -30,6 +30,5 @@ jobs:
         run: podman build -f deploy/Containerfile -t xport:ci .
       - name: extension (Chrome MV3 + Firefox MV2)
         run: >-
-          podman build -f deploy/extension.Containerfile --ignorefile deploy/extension.containerignore
-          -o extension/dist extension
+          bash deploy/extension-build.sh
       - run: ls extension/dist/chrome-mv3/manifest.json extension/dist/firefox-mv2/manifest.json
