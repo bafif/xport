@@ -245,6 +245,12 @@ Después de revisar el informe decidí cuatro cosas más, y quedaron hechas el m
 - **Tests de la extensión:** vitest, con las funciones puras de `extension/lib/`, entre ellas la que
   decide cuándo cortar el crawl. Corren dentro del build de la extensión, así que también en CI.
 
+**6 de noviembre, a la tarde: GitHub.** El repo ya era público. Revisé el historial entero buscando cookies,
+tokens y claves, y no había ninguna. Lo único personal era la ruta de mi home en el instalador de Windows, que pasó a
+pedirse por parámetro. Sumé imágenes al README (dos diagramas que salen de `docs/img/generar.py` y una captura del
+popup real con datos de ejemplo) y una página del proyecto en `docs/index.html`, que GitHub Pages publica desde la
+carpeta `docs/` de `main`.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: la captura desde el navegador, con el crawl adaptativo, la

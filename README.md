@@ -10,6 +10,10 @@ período de 24 horas, así que xport cuenta cada post que el navegador ve, tambi
 descarta, y frena en 900.000 dentro de cualquier ventana de 24 horas. Si el servicio no puede contar lo que se captura,
 la captura no arranca o se corta.
 
+![Cómo funciona: la extensión copia lo que x.com ya descargó y lo pasa al servicio local, que guarda sin repetir y
+arma un CSV por cuenta. El tope de 24 horas cuenta cada post visto y, si no lo puede contar, la captura se
+corta.](docs/img/flujo.es.svg)
+
 ## Estado
 
 La captura desde el navegador anda contra x.com: abre la búsqueda de la cuenta, la scrollea sola, sigue cuando X la
@@ -35,6 +39,9 @@ captura que se sumaron el 6 de noviembre de 2026 todavía no se probaron en un n
 ## Uso diario: el popup
 
 Una vez instalado (ver [Instalar](#instalar)), todo se hace desde el popup de la extensión:
+
+<img align="right" width="260" src="docs/img/popup.png" alt="El popup de xport con una cuenta de ejemplo, el rango de
+fechas, el uso del tope y el enlace al CSV exportado.">
 
 1. **Abrir el popup:** hacé clic en el ícono de xport. Arriba muestra cuántos accesos lleva el tope en las últimas
    24 horas y cuántos quedan.
@@ -208,6 +215,13 @@ decisiones:
   uno, va en otra imagen.
 - El CORS lo maneja solo FastAPI; nginx no agrega encabezados, para no duplicarlos.
 - La extensión está hecha con [WXT](https://wxt.dev): un solo código para Chrome (MV3) y Firefox (MV2).
+- Los diagramas salen de `docs/img/generar.py` (`python3 docs/img/generar.py`), en castellano y en inglés, así se
+  corrigen en el código y no en un programa de dibujo. `docs/img/popup.png` es el popup real con datos de ejemplo.
+- La página del proyecto (`docs/index.html` y `docs/en/`) la publica GitHub Pages desde la carpeta `docs/` de `main`,
+  sin ningún paso de armado.
+
+![El tope: una línea de tiempo de 48 horas donde solo cuentan los accesos de las últimas 24; su suma se compara con el
+tope de 900.000 de xport, debajo del millón de los términos de X.](docs/img/tope.es.svg)
 
 El código va en capas, y cada una conoce solo la de abajo:
 

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xport: tweets de cuentas de X a CSV</title>
+  <meta name="description" content="Baja los tweets de una o varias cuentas de X entre dos fechas y arma un CSV por cuenta, sin pasar el tope de los términos de X.">
+  <link rel="alternate" hreflang="en" href="en/">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <span class="marca">xport</span>
+    <a href="en/" lang="en">English</a>
+  </header>
+
+  <main>
+    <h1>Los tweets de una cuenta de X, entre dos fechas, en un CSV.</h1>
+    <p>Una extensión de Chrome o Firefox scrollea por vos la búsqueda de X, y un servicio que corre en tu computadora
+      arma un CSV por cuenta: la fecha, el texto completo, los links y el tweet citado. Entran los quote tweets; los
+      retweets, no.</p>
+    <p class="promesa"><strong>No puede pasar el tope de los términos de X.</strong> Cuenta cada post que el navegador
+      ve, también los citados y los retweets que después descarta, y frena en 900.000 dentro de cualquier ventana de 24
+      horas. Si el servicio no puede contar lo que se captura, la captura no arranca o se corta.</p>
+    <div class="acciones">
+      <a class="boton principal repo" data-ruta="#instalar" href="https://github.com/">Cómo instalarlo</a>
+      <a class="boton repo" data-ruta="/blob/main/docs/PLAN.md" href="https://github.com/">Las decisiones y el estado</a>
+    </div>
+
+    <figure class="figura">
+      <img src="img/flujo.es.svg" width="900" height="340"
+        alt="La extensión copia lo que x.com ya descargó y lo pasa al servicio local, que guarda sin repetir y arma un CSV por cuenta. El tope de 24 horas cuenta cada post visto; si no lo puede contar, la captura se corta.">
+    </figure>
+
+    <h2>Desde el popup</h2>
+    <div class="popup">
+      <img src="img/popup.png" width="360" height="616" loading="lazy"
+        alt="El popup de xport con una cuenta de ejemplo, el rango de fechas, el uso del tope y el enlace al CSV exportado.">
+      <ol>
+        <li><strong>Completás</strong> la cuenta sin @ y las fechas «Desde» y «Hasta».</li>
+        <li><strong>«Capturar ▶»</strong> abre la búsqueda en una pestaña y la scrollea sola. X corta cada búsqueda en
+          unos mil resultados; la extensión achica el rango y sigue hasta cubrirlo.</li>
+        <li><strong>«Exportar CSV»</strong> arma el archivo y dice cuántas respuestas a otras cuentas dejó afuera.</li>
+        <li><strong>Si X frena la búsqueda,</strong> volvés más tarde y sigue desde el tweet más viejo que ya tenías.</li>
+      </ol>
+    </div>
+
+    <h2>El tope</h2>
+    <figure class="figura">
+      <img src="img/tope.es.svg" width="960" height="310" loading="lazy"
+        alt="Una línea de tiempo de 48 horas: solo cuentan los accesos de las últimas 24. Su suma se compara con el tope de 900.000 de xport, debajo del millón de los términos de X.">
+    </figure>
+    <p>El tope es 900.000 y no un millón, para dejar margen. La ventana es deslizante: un contador por día dejaría pasar
+      casi dos millones entre las 23 y la 1. El registro del tope vive en una base aparte, así sobrevive a que borres los
+      tweets, y ninguna variable de configuración lo cambia.</p>
+
+    <h2>Es privado</h2>
+    <p>Usa la sesión de X que ya tenés abierta: tus cookies no salen del navegador. El servicio escucha solo en tu
+      computadora, responde solo a pedidos dirigidos a ella, y lo capturado queda en una carpeta tuya. No se manda a
+      ningún otro lado.</p>
+
+    <h2>Estado</h2>
+    <ul class="estado">
+      <li>La captura desde el navegador anda contra x.com, con la reanudación y el export.</li>
+      <li>Los cortes de la captura que se sumaron en noviembre de 2026 todavía no se probaron en un navegador.</li>
+      <li>Con la API oficial de X, que es paga, está implementado pero no se probó contra la API real.</li>
+      <li>Bajar sin navegador con una cuenta común está bloqueado desde junio de 2026, cuando x.com cambió cómo firma
+        los pedidos.</li>
+    </ul>
+  </main>
+
+  <footer>
+    <p>Código abierto, con licencia MIT. <a class="repo" data-ruta="" href="https://github.com/">Ver en GitHub</a>.</p>
+  </footer>
+
+  <script>
+    // El repo sale de la dirección de la página (<dueño>.github.io/<repo>/), así anda también en un fork.
+    const [dueno] = location.hostname.split(".");
+    const [repo] = location.pathname.split("/").filter(Boolean);
+    if (location.hostname.endsWith(".github.io") && repo) {
+      for (const a of document.querySelectorAll("a.repo")) {
+        a.href = `https://github.com/${dueno}/${repo}${a.dataset.ruta}`;
+      }
+    }
+  </script>
+</body>
+</html>

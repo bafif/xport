@@ -10,6 +10,10 @@ period, so xport counts every post the browser sees, including quoted tweets and
 at 900,000 within any 24-hour window. If the service cannot count what is being captured, the capture does not start,
 or it stops.
 
+![How it works: the extension copies what x.com already downloaded and hands it to the local service, which stores it
+without repeats and writes one CSV per account. The 24-hour cap counts every post seen and, if it cannot count it, the
+capture stops.](docs/img/flujo.en.svg)
+
 ## Status
 
 In-browser capture works against x.com: it opens the account's search, scrolls it by itself, carries on when X cuts it
@@ -35,6 +39,9 @@ responses. The capture cut-offs added on 6 November 2026 have not been tried in 
 ## Everyday use: the popup
 
 Once it is installed (see [Install](#install)), everything happens in the extension's popup:
+
+<img align="right" width="260" src="docs/img/popup.png" alt="The xport popup, in Spanish, with an example account, the
+date range, the cap usage and the link to the exported CSV.">
 
 1. **Open the popup:** click the xport icon. At the top it shows how many accesses the cap has counted in the last 24
    hours and how many are left.
@@ -210,6 +217,13 @@ decisions:
   in a separate image.
 - Only FastAPI handles CORS; nginx adds no headers, so they are never duplicated.
 - The extension is built with [WXT](https://wxt.dev): one codebase for Chrome (MV3) and Firefox (MV2).
+- The diagrams come from `docs/img/generar.py` (`python3 docs/img/generar.py`), in Spanish and English, so they are
+  fixed in code and not in a drawing program. `docs/img/popup.png` is the real popup with example data.
+- The project page (`docs/index.html` and `docs/en/`) is published by GitHub Pages from the `docs/` folder of `main`,
+  with no build step.
+
+![The cap: a 48-hour timeline where only the accesses of the last 24 count; their sum is compared with xport's cap of
+900,000, below the million in X's terms.](docs/img/tope.en.svg)
 
 The code is layered, and each layer only knows the one below:
 

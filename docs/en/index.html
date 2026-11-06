@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xport: X accounts' tweets to CSV</title>
+  <meta name="description" content="Downloads the tweets of one or more X accounts between two dates into one CSV per account, without crossing the limit in X's terms.">
+  <link rel="alternate" hreflang="es" href="../">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header>
+    <span class="marca">xport</span>
+    <a href="../" lang="es">Español</a>
+  </header>
+
+  <main>
+    <h1>The tweets of an X account, between two dates, in a CSV.</h1>
+    <p>A Chrome or Firefox extension scrolls X's search for you, and a service running on your computer writes one CSV
+      per account: the date, the full text, the links and the quoted tweet. Quote tweets are in; retweets are not.</p>
+    <p class="promesa"><strong>It cannot cross the limit in X's terms.</strong> It counts every post the browser sees,
+      including quoted tweets and the retweets it later drops, and stops at 900,000 within any 24-hour window. If the
+      service cannot count what is being captured, the capture does not start, or it stops.</p>
+    <div class="acciones">
+      <a class="boton principal repo" data-ruta="/blob/main/README.en.md#install" href="https://github.com/">How to install it</a>
+      <a class="boton repo" data-ruta="/blob/main/docs/PLAN.md" href="https://github.com/">Decisions and status (Spanish)</a>
+    </div>
+
+    <figure class="figura">
+      <img src="../img/flujo.en.svg" width="900" height="340"
+        alt="The extension copies what x.com already downloaded and hands it to the local service, which stores it without repeats and writes one CSV per account. The 24-hour cap counts every post seen; if it cannot count it, the capture stops.">
+    </figure>
+
+    <h2>From the popup</h2>
+    <div class="popup">
+      <img src="../img/popup.png" width="360" height="616" loading="lazy"
+        alt="The xport popup with an example account, the date range, the cap usage and the link to the exported CSV. Its interface is in Spanish.">
+      <ol>
+        <li><strong>Fill in</strong> the account without @ and the «Desde» (from) and «Hasta» (to) dates. The popup is
+          in Spanish.</li>
+        <li><strong>«Capturar ▶»</strong> opens the search in a tab and scrolls it by itself. X cuts each search at about
+          a thousand results; the extension narrows the range and carries on until it is covered.</li>
+        <li><strong>«Exportar CSV»</strong> writes the file and says how many replies to other accounts it left out.</li>
+        <li><strong>If X throttles the search,</strong> come back later and it continues from the oldest tweet you
+          already have.</li>
+      </ol>
+    </div>
+
+    <h2>The cap</h2>
+    <figure class="figura">
+      <img src="../img/tope.en.svg" width="960" height="310" loading="lazy"
+        alt="A 48-hour timeline: only the accesses of the last 24 hours count. Their sum is compared with xport's cap of 900,000, below the million in X's terms.">
+    </figure>
+    <p>The cap is 900,000 and not a million, to leave a margin. The window is rolling: a per-day counter would let almost
+      two million through between 11 pm and 1 am. The cap's ledger lives in a separate database, so it survives deleting
+      the tweets, and no configuration variable changes it.</p>
+
+    <h2>It is private</h2>
+    <p>It uses the X session you already have open: your cookies never leave the browser. The service only listens on
+      your computer, only answers requests addressed to it, and what it captures stays in a folder of yours. It is not
+      sent anywhere else.</p>
+
+    <h2>Status</h2>
+    <ul class="estado">
+      <li>In-browser capture works against x.com, with resume and export.</li>
+      <li>The capture cut-offs added in November 2026 have not been tried in a browser yet.</li>
+      <li>With the official X API, which is paid, it is implemented but has not been tried against the real API.</li>
+      <li>Downloading without a browser with a regular account has been blocked since June 2026, when x.com changed how
+        it signs requests.</li>
+    </ul>
+  </main>
+
+  <footer>
+    <p>Open source, MIT licensed. <a class="repo" data-ruta="" href="https://github.com/">See it on GitHub</a>.</p>
+  </footer>
+
+  <script>
+    // The repository comes from the page address (<owner>.github.io/<repo>/), so it also works in a fork.
+    const [owner] = location.hostname.split(".");
+    const [repo] = location.pathname.split("/").filter(Boolean);
+    if (location.hostname.endsWith(".github.io") && repo) {
+      for (const a of document.querySelectorAll("a.repo")) {
+        a.href = `https://github.com/${owner}/${repo}${a.dataset.ruta}`;
+      }
+    }
+  </script>
+</body>
+</html>
