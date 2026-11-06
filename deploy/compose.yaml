@@ -17,6 +17,10 @@ services:
       AUDIT_DB_PATH: /data/audit/ledger.db
       DATA_DB_PATH: /data/app/tweets.db
       CSV_DIR: /data/app/csv
+      # Los CSV de la captura (POST /export). Sin esto quedaba el relativo del .env,
+      # /app/data/captures: /app es de root y el proceso corre como `app`, así que el
+      # export fallaba con 500 (y lo escrito se perdía al recrear el contenedor).
+      CAPTURES_DIR: /data/app/captures
       ACCOUNTS_DB_PATH: /data/app/accounts.db
     volumes:
       - audit-ledger:/data/audit
