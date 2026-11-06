@@ -24,11 +24,13 @@ short and picks up where it left off. The CSV has these columns:
 | `quoted_tweet_id`, `quoted_tweet_url` | the quoted tweet, if any |
 
 Quote tweets and the account's own threads are in. Retweets and the account's replies inside other people's
-conversations are left out; the export says how many replies it left out.
+conversations are left out; the export says how many replies it left out. If a tweet was edited and you capture it
+again, the latest version is kept.
 
-What does not work yet: downloading tweets from the server, without a browser, has been blocked since June 2026 (x.com
-changed how it signs requests and twscrape can no longer do it), and the official X API is a skeleton that does
-nothing. The capture cut-offs added on 6 November 2026 have not been tried in a browser yet.
+Without a browser there are two ways. With a regular X account it has been blocked since June 2026: x.com changed how
+it signs requests and twscrape can no longer do it. With the [official X API](#with-the-official-api), which is paid,
+it is implemented but **has not been tried against the real API**: it was built from X's documentation and made-up
+responses. The capture cut-offs added on 6 November 2026 have not been tried in a browser yet.
 
 ## Everyday use: the popup
 
@@ -105,11 +107,23 @@ uv run tweet-extractor --account <account> --since 2025-01-01 --until 2026-01-01
   computer. In the popup, put that address in the service field. It needs the `.env`, even if it is the empty copy of
   `.env.example`. The data and the cap's ledger live in two separate volumes. After a reboot it comes back by itself
   only if `podman-restart.service` is enabled (`systemctl --user enable podman-restart.service`).
-- `tweet-extractor` downloads tweets from the server, without a browser, with the cookies of an X account in `.env`.
-  It has been blocked since June 2026: it fails with an error that says so. `--since` is included and `--until` is not
-  (UTC days). Also: `--out-dir`, `--subwindow-days`, `--encoding` (`utf-8-sig` adds the BOM Excel expects) and
-  `--delimiter` (`;` for an Excel set to a locale that uses the comma as decimal separator). If it stops, running it
-  again skips the stretches it already finished.
+- `tweet-extractor` downloads tweets from the server, without a browser: with the official API (see below) or with the
+  cookies of an X account, which has been blocked since June 2026 and fails with an error that says so. `--since` is
+  included and `--until` is not (UTC days). Also: `--out-dir`, `--subwindow-days`, `--encoding` (`utf-8-sig` adds the
+  BOM Excel expects) and `--delimiter` (`;` for an Excel set to a locale that uses the comma as decimal separator). If
+  it stops, running it again skips the stretches it already finished.
+
+### With the official API
+
+If you have an X app with paid API access, set `PROVIDER_BACKEND=official` and the Bearer token in
+`X_API_BEARER_TOKEN` in `.env`, and use `tweet-extractor` or `POST /jobs`. It uses full-archive search, which has no
+ceiling like the ~3,200 tweets of an account's timeline, and asks for no retweets and no expansions, so you do not pay
+for what gets dropped. It makes at most one request per second and, if X says the limit was hit, waits as long as X
+says.
+
+Every tweet read is billed: in November 2026, X listed 0.005 dollars per post (5 dollars per thousand) and a cap of
+3 million a month. If your plan does not include full-archive search, X answers 403 and xport says so. **It has not
+been tried against the real API**: if something fails, the error carries what X answered.
 
 The service answers these requests:
 
@@ -130,11 +144,12 @@ In-browser capture needs none of them: it uses the browser's session.
 |---|---|---|
 | `PROVIDER_BACKEND` | where the server downloads from: `twscrape` or `official` | `twscrape` |
 | `X_AUTH_TOKEN`, `X_CT0` | cookies of a separate X account (twscrape) | empty |
-| `X_API_BEARER_TOKEN` | official API token (skeleton) | empty |
+| `X_API_BEARER_TOKEN` | Bearer token for the official API (paid) | empty |
 | `AUDIT_DB_PATH` | the cap's ledger, separate from the data | `data/audit/ledger.db` |
 | `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; twscrape accounts | `data/tweets.db`, `data/accounts.db` |
 | `CSV_DIR`, `CAPTURES_DIR` | CSVs of server-side downloads and of captures | `data/csv`, `data/captures` |
 | `CORS_ALLOW_ORIGINS` | JSON list of allowed origins (the extension does not need it) | `[]` |
+| `ALLOWED_HOSTS` | hosts the service answers to (guards against DNS rebinding) | `["localhost","127.0.0.1"]` |
 | `PAGE_SIZE`, `SUBWINDOW_DAYS` | page size and days per search stretch (server) | `20`, `7` |
 
 The cap (900,000) and the window (24 hours) are deliberately not in this list: they are constants in the code and no
@@ -153,13 +168,14 @@ uv run mypy src
 ```
 
 They run offline, with made-up X responses. The cap's tests force the two things that matter: that it blocks when
-there is no room and that it waits until the oldest access leaves the window. **Never commit `.env` or the `data/`
-folder:** they hold session cookies and what was captured.
+there is no room and that it waits until the oldest access leaves the window. The extension's tests (vitest) run inside
+`bash deploy/extension-build.sh`, between the type check and the build; among other things they cover when the crawl
+is cut. **Never commit `.env` or the `data/` folder:** they hold session cookies and what was captured.
 
 ## How it is built
 
 Continuous integration (`.github/workflows/ci.yml`) runs ruff, mypy and the tests, and builds the service image and
-both versions of the extension with Podman. By hand:
+both versions of the extension, with its tests, with Podman. By hand:
 
 ```sh
 podman build -f deploy/Containerfile -t xport .
@@ -181,6 +197,11 @@ decisions:
   afterwards, and that is why the extension cuts the crawl when the service cannot record it.
 - The cap's ledger is a separate SQLite file, so it survives deleting the tweets. Each check and its write run in a
   `BEGIN IMMEDIATE` transaction, so two processes sharing the ledger cannot both get through.
+- The official API uses full-archive search and not the account's timeline, which only reaches the latest ~3,200
+  tweets and would leave an old range out. It asks for no expansions: the quoted tweet's id already comes in the
+  response, and X bills expansions from 22 November 2026.
+- The service only answers requests addressed to `localhost` or `127.0.0.1`. It only listens on your computer, but a
+  web page using DNS rebinding could reach it under its own domain.
 - Only `mappers/` interprets X's responses; the extension does not read them. When x.com changes the shape, it is fixed
   in one place, and a change the mapper does not understand gives an error, not an empty CSV.
 - The CSV defaults (UTF-8 without BOM, comma, everything quoted, UTC, `<account>_<from>_<to>.csv`) have been settled

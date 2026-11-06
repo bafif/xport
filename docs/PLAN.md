@@ -19,6 +19,8 @@ va el razonamiento.
 | `links` | las URLs externas del tweet (`expanded_url`), separadas por espacio |
 | `quoted_tweet_id`, `quoted_tweet_url` | el tweet citado, si lo hay |
 
+Si un tweet se editó y lo vuelvo a capturar, queda la última versión.
+
 De las respuestas me quedo con los hilos propios de la cuenta y dejo afuera las respuestas que la
 cuenta escribió dentro de conversaciones ajenas. El export avisa cuántas quedaron afuera, para que
 la diferencia entre lo capturado y lo exportado no parezca una pérdida de datos.
@@ -230,6 +232,19 @@ cumplía el tope en la captura del navegador, y lo arreglé junto con otros cuat
 
 El README pasó al castellano, con un espejo en inglés (`README.en.md`).
 
+Después de revisar el informe decidí cuatro cosas más, y quedaron hechas el mismo día:
+
+- **Tweets editados:** queda la última versión capturada, no la primera.
+- **API oficial:** twscrape queda dormido, pero la API oficial paga pasó a estar implementada para quien
+  tenga una clave. Usa la búsqueda de archivo completo (el timeline de usuario no pasa de los ~3.200
+  posts más recientes), sin retweets y sin expansions, que X cobra desde el 22 de noviembre de 2026.
+  Está armada con la documentación de X y probada con respuestas fabricadas: no la pude probar contra
+  la API real porque no tengo una clave paga. Las docs de X hoy se contradicen en los nombres
+  (`tweet.fields` en las guías, `post.fields` en las páginas generadas); uso los de siempre.
+- **Servicio local:** solo atiende pedidos dirigidos a `localhost` o `127.0.0.1`, contra DNS rebinding.
+- **Tests de la extensión:** vitest, con las funciones puras de `extension/lib/`, entre ellas la que
+  decide cuándo cortar el crawl. Corren dentro del build de la extensión, así que también en CI.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: la captura desde el navegador, con el crawl adaptativo, la
@@ -238,17 +253,18 @@ Alpine y la extensión se construyen en CI. Los cortes del crawl del 6 de noviem
 typecheckeados y la extensión se construye, pero todavía no los probé en un navegador.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue
-bloqueado por el cambio de x.com: falla cerrado con un error claro. La API oficial sigue siendo un
-esqueleto que falla cerrado.
+bloqueado por el cambio de x.com: falla cerrado con un error claro. La API oficial está implementada
+para quien tenga una clave paga, pero nunca se probó contra la API real.
 
 ## Qué falta
 
 1. Una verificación documentada de punta a punta: cargar la extensión, levantar el servicio, capturar
    un rango, ver que suba el tope y bajar el CSV. Incluye probar los cortes del 6 de noviembre: bajar
    el servicio a mitad de una captura y ver que el crawl se corte, y que el popup no arranque sin él.
-2. Probar el native messaging desde un navegador de Windows hacia WSL; el ciclo de vida del host está
-   probado, el saludo real con el navegador no.
-3. La API oficial, cuando tenga una clave con qué verificar el mapeo.
+2. Probar la API oficial contra la API real, con una clave paga (no tengo una): que `tweet.fields`
+   siga andando, que los posts largos traigan `note_tweet` y que el rate limit sea el documentado.
+3. El soporte para un navegador de Windows con el servicio en WSL, de cuando lo usaba así, queda como
+   está y sin probar con un navegador real: ya no es mi caso.
 4. Decidir si el estado de los trabajos del servicio tiene que sobrevivir a un reinicio. Hoy los
    datos sí sobreviven y reenviar un trabajo retoma desde los checkpoints, pero la lista de trabajos
    vive en memoria.
@@ -261,24 +277,17 @@ Preguntas que siguen abiertas: qué cuenta como "link a un documento" (hoy entra
 externas), cómo reportar una cuenta borrada o protegida sin cortar el trabajo entero y cuántas
 cuentas en paralelo admitir.
 
+Cada forma de levantar el servicio tiene su propio registro del tope: a mano o por native messaging
+usa `data/audit/ledger.db`, y el compose, un volumen de Podman. Por eso el README pide usar siempre
+la misma.
+
 Decisiones que salieron de la auditoría del 6 de noviembre y esperan mi criterio:
 
-- **Tweets editados.** `INSERT OR IGNORE` se queda con la primera versión que se capturó, y una
-  captura posterior no la actualiza. ¿Primera versión o última?
-- **Un registro por instalación.** El servicio a mano o por native messaging usa
-  `data/audit/ledger.db`, y el compose, su propio volumen: si se usan los dos, el tope deja de ser
-  uno solo. ¿Me quedo con una sola forma de levantarlo, o sigo con las dos y lo dejo escrito?
-- **Historia del registro.** Cada escritura borra lo que salió de la ventana, así que el "registro
-  de auditoría" no guarda historia: sirve para el tope, no para probar después qué se accedió. ¿Hace
-  falta guardarla?
-- **Días saturados.** El export no dice qué días se saltearon por saturados (más de 800 tweets), así
-  que el CSV puede tener huecos sin aviso. ¿Lo informo en `/export` y en el popup?
-- **twscrape y la API oficial.** El camino del servidor (CLI, `/jobs`, twscrape) está bloqueado desde
-  junio y la API oficial es un esqueleto. ¿Los mantengo así, dormidos, o los saco?
-- **Servicio sin autenticación.** Escucha solo en 127.0.0.1, pero una página con DNS rebinding podría
-  llamarlo. Un `TrustedHostMiddleware` que acepte solo `localhost` y `127.0.0.1` lo cierra.
-- **Tests de la extensión.** Las funciones puras de `extension/lib/` no tienen tests; sumarlos pide
-  una dependencia de desarrollo (vitest).
+- **Historia del registro.** Cada escritura borra lo que salió de la ventana de 24 horas, así que no
+  queda forma de saber después cuántos tweets se vieron, por ejemplo, la semana pasada. ¿Hace falta?
+- **Días saturados.** Cuando un solo día tiene más tweets de los que la búsqueda de X muestra, la
+  extensión se queda con lo que vio y sigue con el día anterior; el resto de ese día no entra al CSV, y
+  hoy nada lo avisa. ¿El export tiene que decir qué días pueden estar incompletos?
 
 ## Cómo retomarlo en otra máquina
 

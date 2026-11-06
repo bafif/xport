@@ -24,11 +24,13 @@ corta y retoma donde quedó. El CSV tiene estas columnas:
 | `quoted_tweet_id`, `quoted_tweet_url` | el tweet citado, si lo hay |
 
 Entran los quote tweets y los hilos propios de la cuenta. Quedan afuera los retweets y las respuestas que la cuenta
-escribió en conversaciones ajenas; el export dice cuántas respuestas dejó afuera.
+escribió en conversaciones ajenas; el export dice cuántas respuestas dejó afuera. Si un tweet se editó y lo volvés a
+capturar, queda la última versión.
 
-Lo que todavía no anda: bajar tweets desde el servidor, sin navegador, está bloqueado desde junio de 2026 (x.com cambió
-cómo firma los pedidos y twscrape dejó de poder hacerlo), y la API oficial de X es un esqueleto que no hace nada. Los
-cortes de la captura que se sumaron el 6 de noviembre de 2026 todavía no se probaron en un navegador.
+Sin navegador hay dos caminos. Con una cuenta de X común está bloqueado desde junio de 2026: x.com cambió cómo firma los
+pedidos y twscrape dejó de poder hacerlo. Con la [API oficial de X](#con-la-api-oficial), que es paga, está implementado
+pero **no se probó contra la API real**: se armó con la documentación de X y respuestas fabricadas. Los cortes de la
+captura que se sumaron el 6 de noviembre de 2026 todavía no se probaron en un navegador.
 
 ## Uso diario: el popup
 
@@ -104,10 +106,22 @@ uv run tweet-extractor --account <cuenta> --since 2025-01-01 --until 2026-01-01
   vacía de `.env.example`. Los datos y el registro del tope van en dos volúmenes separados. Después de reiniciar la
   computadora se levanta solo únicamente si está prendido `podman-restart.service`
   (`systemctl --user enable podman-restart.service`).
-- `tweet-extractor` baja tweets desde el servidor, sin navegador, con las cookies de una cuenta de X en el `.env`. Está
-  bloqueado desde junio de 2026: falla con un error que lo explica. `--since` entra y `--until` no (días UTC). Además:
-  `--out-dir`, `--subwindow-days`, `--encoding` (`utf-8-sig` le agrega el BOM que Excel espera) y `--delimiter` (`;`
-  para un Excel configurado en castellano). Si se corta, correrlo de nuevo saltea los tramos que ya terminó.
+- `tweet-extractor` baja tweets desde el servidor, sin navegador: con la API oficial (ver abajo) o con las cookies de
+  una cuenta de X, que está bloqueado desde junio de 2026 y falla con un error que lo explica. `--since` entra y
+  `--until` no (días UTC). Además: `--out-dir`, `--subwindow-days`, `--encoding` (`utf-8-sig` le agrega el BOM que Excel
+  espera) y `--delimiter` (`;` para un Excel configurado en castellano). Si se corta, correrlo de nuevo saltea los
+  tramos que ya terminó.
+
+### Con la API oficial
+
+Si tenés una app de X con acceso pago a la API, poné en el `.env` `PROVIDER_BACKEND=official` y el Bearer token en
+`X_API_BEARER_TOKEN`, y usá `tweet-extractor` o `POST /jobs`. Usa la búsqueda de archivo completo, que no tiene el techo
+de unos 3.200 tweets del timeline de una cuenta, y no pide retweets ni expansions, para no pagar lo que después se
+descarta. Pide como mucho un pedido por segundo y, si X dice que se pasó del límite, espera lo que X indica.
+
+Cada tweet leído se paga: en noviembre de 2026, X publicaba 0,005 dólares por post (5 dólares cada mil) y un máximo de
+3 millones por mes. Si tu plan no incluye la búsqueda de archivo completo, X responde 403 y xport lo dice. **No se
+probó contra la API real**: si algo falla, el error trae lo que respondió X.
 
 El servicio responde a estos pedidos:
 
@@ -128,11 +142,12 @@ La captura desde el navegador no necesita ninguna: usa la sesión del navegador.
 |---|---|---|
 | `PROVIDER_BACKEND` | de dónde baja el servidor: `twscrape` o `official` | `twscrape` |
 | `X_AUTH_TOKEN`, `X_CT0` | cookies de una cuenta de X aparte (twscrape) | vacías |
-| `X_API_BEARER_TOKEN` | token de la API oficial (esqueleto) | vacío |
+| `X_API_BEARER_TOKEN` | Bearer token de la API oficial (paga) | vacío |
 | `AUDIT_DB_PATH` | registro del tope, aparte de los datos | `data/audit/ledger.db` |
 | `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; cuentas de twscrape | `data/tweets.db`, `data/accounts.db` |
 | `CSV_DIR`, `CAPTURES_DIR` | CSV de las bajadas del servidor y de las capturas | `data/csv`, `data/captures` |
 | `CORS_ALLOW_ORIGINS` | lista JSON de orígenes permitidos (la extensión no lo necesita) | `[]` |
+| `ALLOWED_HOSTS` | hosts a los que el servicio responde (protege contra DNS rebinding) | `["localhost","127.0.0.1"]` |
 | `PAGE_SIZE`, `SUBWINDOW_DAYS` | tamaño de página y días por tramo de búsqueda (servidor) | `20`, `7` |
 
 El tope (900.000) y la ventana (24 horas) no están en esta lista a propósito: son constantes del código y ninguna
@@ -151,13 +166,14 @@ uv run mypy src
 ```
 
 Corren sin red, con respuestas de X fabricadas. Las del tope fuerzan las dos cosas que importan: que bloquee cuando no
-hay lugar y que espere hasta que el acceso más viejo salga de la ventana. **Nunca subas el `.env` ni la carpeta
-`data/`:** tienen cookies de sesión y lo capturado.
+hay lugar y que espere hasta que el acceso más viejo salga de la ventana. Los de la extensión (vitest) corren dentro de
+`bash deploy/extension-build.sh`, entre el chequeo de tipos y el armado; cubren, entre otras cosas, cuándo se corta el
+crawl. **Nunca subas el `.env` ni la carpeta `data/`:** tienen cookies de sesión y lo capturado.
 
 ## Cómo se arma
 
 La integración continua (`.github/workflows/ci.yml`) corre ruff, mypy y los tests, y arma con Podman la imagen del
-servicio y las dos versiones de la extensión. A mano:
+servicio y las dos versiones de la extensión, con sus tests. A mano:
 
 ```sh
 podman build -f deploy/Containerfile -t xport .
@@ -179,6 +195,11 @@ decisiones:
   por eso la extensión corta el crawl cuando el servicio no puede registrarlo.
 - El registro del tope está en un SQLite aparte, así sobrevive a que se borren los tweets. Cada chequeo y su escritura
   van en una transacción `BEGIN IMMEDIATE`, así dos procesos con el mismo registro no pasan juntos.
+- La API oficial usa la búsqueda de archivo completo y no el timeline de la cuenta, que solo llega a los ~3.200 tweets
+  más recientes y dejaría afuera un rango viejo. No pide expansions: el id del citado ya viene en la respuesta, y X las
+  cobra desde el 22 de noviembre de 2026.
+- El servicio responde solo a pedidos dirigidos a `localhost` o `127.0.0.1`. Escucha solo en tu computadora, pero una
+  página web con DNS rebinding podría llegar a él con su propio dominio.
 - Solo `mappers/` interpreta las respuestas de X; la extensión no las lee. Cuando x.com cambie la forma, se arregla en
   un solo lugar, y un cambio que el mapper no entiende da un error y no un CSV vacío.
 - Los defaults del CSV (UTF-8 sin BOM, coma, todo entre comillas, UTC, `<cuenta>_<desde>_<hasta>.csv`) están cerrados

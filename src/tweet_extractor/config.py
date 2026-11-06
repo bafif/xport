@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # twscrape (sin API paga): cookies de una cuenta aparte (.env).
     x_auth_token: str | None = None
     x_ct0: str | None = None
-    # X API v2 oficial (backend `official`, todavía un stub): Bearer token.
+    # X API v2 oficial (backend `official`, paga; sin probar contra la API real): Bearer token.
     x_api_bearer_token: str | None = None
 
     @property
