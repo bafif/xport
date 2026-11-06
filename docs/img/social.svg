@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="Liberation Sans, DejaVu Sans, Arial, sans-serif" role="img" aria-label="xport">
+<title>xport</title>
+<defs><marker id="flecha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#71767b"/></marker><pattern id="grilla" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#16181c" stroke-width="2"/></pattern></defs>
+<rect x="0.5" y="0.5" width="1279" height="639" rx="16" fill="#000000" stroke="#2f3336"/>
+<rect width="1280" height="640" fill="#000000"/>
+<rect width="1280" height="640" fill="url(#grilla)"/>
+<path d="M1160,0 H1280 V120 Z" fill="#1d9bf0"/>
+<rect x="95" y="95" width="162" height="162" rx="36" fill="none" stroke="#2f3336" stroke-width="2"/>
+<rect x="96" y="96" width="160" height="160" rx="35" fill="#000"/>
+<polygon transform="translate(116 116) scale(5)" points="1,1 9,1 9,5 12,8 15.25,4.75 12.5,2 12.5,1 23,1 23,11.5 22,11.5 19.25,8.75 16,12 19,15 23,15 23,23 15,23 15,19 12,16 9,19 9,23 1,23 1,15 5,15 8,12 5,9 1,9" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+<text x="296" y="214" font-size="128" fill="#e7e9ea" text-anchor="start" font-weight="bold">xport</text>
+<text x="96" y="384" font-size="54" fill="#e7e9ea" text-anchor="start" font-weight="bold">Los tweets de una cuenta de X,</text>
+<text x="96" y="450" font-size="54" fill="#e7e9ea" text-anchor="start" font-weight="bold">entre dos fechas, en un CSV.</text>
+<text x="96" y="560" font-size="30" font-family="DejaVu Sans Mono, Liberation Mono, monospace" fill="#71767b">from:cuenta  2026-01-01 → 2026-06-30<tspan fill="#1d9bf0" dx="24">↗ cuenta.csv</tspan></text>
+</svg>

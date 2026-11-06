@@ -1,12 +1,16 @@
+/* La estética de xport: la de X en «Lights out» y lo propio, que sale del logo (ver docs/img/generar.py):
+   la esquina-flecha azul arriba a la derecha marca lo que sale, la letra monoespaciada va en los datos y la grilla
+   de arriba son las celdas de un CSV. */
 :root {
   color-scheme: dark;
-  --bg: #0e1217;
-  --card: #161d26;
-  --border: #38444d;
+  --bg: #000;
+  --card: #16181c;
+  --border: #2f3336;
   --text: #e7e9ea;
-  --muted: #8b98a5;
+  --muted: #71767b;
   --blue: #1d9bf0;
   --amber: #ffd400;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -18,38 +22,92 @@ body {
   font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+body::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 620px;
+  z-index: -1;
+  background-image: linear-gradient(var(--card) 1px, transparent 1px),
+    linear-gradient(90deg, var(--card) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(#000 40%, transparent);
+}
+
 main, header, footer { max-width: 960px; margin: 0 auto; padding: 0 24px; }
 
 header { display: flex; justify-content: space-between; align-items: center; padding-top: 24px; }
-header .marca { font-weight: 700; font-size: 20px; }
+.marca {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-weight: 800; font-size: 22px; letter-spacing: -0.02em; color: var(--text); text-decoration: none;
+}
+.marca img { width: 34px; height: 34px; border-radius: 8px; box-shadow: 0 0 0 1px var(--border); }
 
 a { color: var(--blue); }
 a:hover { text-decoration-thickness: 2px; }
 
-h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.15; margin: 56px 0 16px; }
-h2 { font-size: 26px; margin: 64px 0 12px; }
-p, li { color: var(--muted); }
-strong { color: var(--text); }
+h1 { font-size: clamp(32px, 5.4vw, 52px); line-height: 1.1; letter-spacing: -0.025em; margin: 12px 0 18px; }
+h2 { font-size: 28px; letter-spacing: -0.015em; margin: 72px 0 14px; }
+main { counter-reset: seccion; }
+h2::before {
+  counter-increment: seccion;
+  content: "↗ " counter(seccion, decimal-leading-zero);
+  display: block;
+  font: 13px/1 var(--mono);
+  letter-spacing: 0.08em;
+  color: var(--blue);
+  margin-bottom: 10px;
+}
+li { color: var(--text); }
+p { color: var(--text); }
+.secundario, .estado li { color: var(--muted); }
 
-.promesa { border-left: 3px solid var(--amber); padding: 4px 0 4px 16px; }
+.consulta { margin: 64px 0 0; font: 15px/1.5 var(--mono); color: var(--muted); }
+.consulta span { color: var(--blue); }
+
+.promesa {
+  background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--amber);
+  border-radius: 4px 16px 16px 4px; padding: 14px 18px;
+}
 
 .acciones { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 8px; }
 .boton {
-  display: inline-block; padding: 10px 20px; border-radius: 999px;
-  border: 1px solid var(--border); color: var(--text); text-decoration: none; font-weight: 600;
+  display: inline-block; padding: 10px 22px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text); text-decoration: none; font-weight: 700;
 }
-.boton.principal { background: var(--blue); border-color: var(--blue); color: #fff; }
+.boton:hover { background: var(--card); }
+.boton.principal { background: var(--text); border-color: var(--text); color: #000; }
+.boton.principal:hover { background: #d7dbdc; }
 
 img { max-width: 100%; height: auto; display: block; }
-.figura { margin: 32px 0; }
+.figura { margin: 36px 0; }
+
+/* La esquina-flecha: la punta de la flecha del logo, arriba a la derecha de lo que sale. */
+.esquina { position: relative; overflow: hidden; }
+.esquina::after {
+  content: "";
+  position: absolute; top: 0; right: 0;
+  width: 26px; height: 26px;
+  background: var(--blue);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
 
 .popup { display: grid; grid-template-columns: minmax(0, 300px) 1fr; gap: 40px; align-items: start; }
-.popup img { border-radius: 14px; border: 1px solid var(--border); }
+.popup .marco { border-radius: 16px; border: 1px solid var(--border); }
 .popup ol { padding-left: 20px; margin: 0; }
 .popup li { margin-bottom: 14px; }
 @media (max-width: 720px) { .popup { grid-template-columns: 1fr; } }
 
+.csv { background: var(--card); border: 1px solid var(--border); border-radius: 16px; }
+.csv p { margin: 0; padding: 12px 18px; border-bottom: 1px solid var(--border); font: 14px var(--mono); }
+.csv pre { margin: 0; padding: 14px 18px; overflow-x: auto; font: 13px/1.7 var(--mono); color: var(--muted); }
+.csv pre b { color: var(--text); font-weight: 600; }
+
 .estado li { margin-bottom: 8px; }
 
-footer { margin-top: 80px; padding-bottom: 40px; border-top: 1px solid var(--border); padding-top: 20px; }
-footer p { font-size: 15px; }
+footer {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 96px; padding-bottom: 40px; border-top: 1px solid var(--border); padding-top: 20px;
+}
+footer img { width: 22px; height: 22px; border-radius: 5px; box-shadow: 0 0 0 1px var(--border); }
+footer p { font-size: 15px; color: var(--muted); margin: 0; }

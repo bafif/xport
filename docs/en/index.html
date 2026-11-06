@@ -6,15 +6,23 @@
   <title>xport: X accounts' tweets to CSV</title>
   <meta name="description" content="Downloads the tweets of one or more X accounts between two dates into one CSV per account, without crossing the limit in X's terms.">
   <link rel="alternate" hreflang="es" href="../">
+  <link rel="icon" href="../img/logo.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#000000">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="xport: X accounts' tweets to CSV">
+  <meta property="og:description" content="The tweets of an X account, between two dates, in a CSV. Without going over the cap in X's terms.">
+  <meta property="og:image" content="https://bafif.github.io/xport/img/social.png">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
   <header>
-    <span class="marca">xport</span>
+    <a class="marca" href="./"><img src="../img/logo.svg" alt="" width="34" height="34">xport</a>
     <a href="../" lang="es">Español</a>
   </header>
 
   <main>
+    <p class="consulta">from:account 2026-01-01 → 2026-06-30 <span>↗ account_2026-01-01_2026-06-30.csv</span></p>
     <h1>The tweets of an X account, between two dates, in a CSV.</h1>
     <p>A Chrome or Firefox extension scrolls X's search for you, and a service running on your computer writes one CSV
       per account: the date, the full text, the links and the quoted tweet. Quote tweets are in; retweets are not.</p>
@@ -33,8 +41,8 @@
 
     <h2>From the popup</h2>
     <div class="popup">
-      <img src="../img/popup.png" width="360" height="616" loading="lazy"
-        alt="The xport popup with an example account, the date range, the cap usage and the link to the exported CSV. Its interface is in Spanish.">
+      <div class="marco esquina"><img src="../img/popup.png" width="360" height="616" loading="lazy"
+        alt="The xport popup with an example account, the date range, the cap usage and the link to the exported CSV. Its interface is in Spanish."></div>
       <ol>
         <li><strong>Fill in</strong> the account without @ and the «Desde» (from) and «Hasta» (to) dates. The popup is
           in Spanish.</li>
@@ -44,6 +52,16 @@
         <li><strong>If X throttles the search,</strong> come back later and it continues from the oldest tweet you
           already have.</li>
       </ol>
+    </div>
+
+    <h2>The CSV</h2>
+    <p>One per account and date range, in UTF-8 and comma separated. Links go in one cell, separated by spaces; if the
+      tweet quotes another, the quoted tweet's id and link are included.</p>
+    <div class="csv esquina">
+      <p>account_2026-01-01_2026-06-30.csv</p>
+      <pre><b>account,created_at,content,links,quoted_tweet_id,quoted_tweet_url</b>
+account,2026-03-14T18:02:11+00:00,"The full report is out today.",https://example.org/report,,
+account,2026-03-12T09:40:57+00:00,"This, yes.",,1899412345678901234,https://x.com/other/status/1899412345678901234</pre>
     </div>
 
     <h2>The cap</h2>
@@ -71,6 +89,7 @@
   </main>
 
   <footer>
+    <img src="../img/logo.svg" alt="" width="22" height="22">
     <p>Open source, MIT licensed. <a class="repo" data-ruta="" href="https://github.com/">See it on GitHub</a>.</p>
   </footer>
 

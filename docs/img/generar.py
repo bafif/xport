@@ -1,10 +1,19 @@
-"""Genera los diagramas del README y de la página: `flujo` (cómo funciona) y `tope` (la
-ventana de 24 horas), en castellano e inglés. SVG a mano, sin dependencias, con la
-paleta oscura del popup y fondo propio, así se leen igual en el tema claro y el oscuro.
+"""Genera las imágenes del README y de la página, todas en SVG a mano y sin dependencias:
+
+- `logo.svg`: el logo de xport, la X de bloques con la flecha que sale, redibujado en vector.
+- `flujo` (cómo funciona) y `tope` (la ventana de 24 horas), en castellano e inglés.
+- `social.svg`: la tarjeta que muestran GitHub y las redes cuando se comparte el link.
 
     python3 docs/img/generar.py
+    rsvg-convert -w 1280 docs/img/social.svg -o docs/img/social.png
+    rsvg-convert -w 1024 -h 1024 docs/img/logo.svg -o extension/scripts/icon-master.png
+    extension/scripts/make-icons.sh
 
-`popup.png` no sale de acá: es el popup real, renderizado con datos de ejemplo.
+La estética es la de X en modo «Lights out» (fondo negro, azul para lo que se toca, botones
+redondeados) con un toque propio que sale del logo: la esquina-flecha, un triángulo azul arriba a
+la derecha como la punta de la flecha, marca lo que sale (el CSV), y la letra monoespaciada va en
+los datos. Cada imagen trae su fondo, así se lee igual en el tema claro y el oscuro. `popup.png`
+no sale de acá: es el popup real, renderizado con datos de ejemplo.
 """
 
 from __future__ import annotations
@@ -14,9 +23,27 @@ from xml.sax.saxutils import escape
 
 DIR = Path(__file__).parent
 FONT = "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
-BG, CARD, BORDER = "#161d26", "#1e2732", "#38444d"
-TEXT, MUTED = "#e7e9ea", "#8b98a5"
+MONO = "ui-monospace, SF Mono, Cascadia Mono, JetBrains Mono, Menlo, Consolas, monospace"
+# La tarjeta para redes se pasa a PNG con rsvg-convert: ahí `system-ui` no existe y van las fuentes
+# instaladas.
+FONT_PNG, MONO_PNG = (
+    "Liberation Sans, DejaVu Sans, Arial, sans-serif",
+    "DejaVu Sans Mono, Liberation Mono, monospace",
+)
+# Los colores de X en «Lights out».
+BG, CARD, BORDER = "#000000", "#16181c", "#2f3336"
+TEXT, MUTED = "#e7e9ea", "#71767b"
 BLUE, AMBER, RED = "#1d9bf0", "#ffd400", "#f4212e"
+
+# La X de bloques en una grilla de 24: cuatro pies cuadrados unidos por diagonales a 45°, y el de
+# arriba a la derecha cambiado por la punta de una flecha, simétrica sobre su diagonal. El trazo
+# redondeado (1,2) suaviza las esquinas de afuera.
+MARCA = [
+    (1, 1), (9, 1), (9, 5), (12, 8), (15.25, 4.75), (12.5, 2), (12.5, 1), (23, 1), (23, 11.5),
+    (22, 11.5),
+    (19.25, 8.75), (16, 12), (19, 15), (23, 15), (23, 23), (15, 23), (15, 19), (12, 16), (9, 19),
+    (9, 23), (1, 23), (1, 15), (5, 15), (8, 12), (5, 9), (1, 9),
+]  # fmt: skip
 
 TEXTOS = {
     "es": {
@@ -41,6 +68,8 @@ TEXTOS = {
             "Cada acceso se anota con su hora y sale de la cuenta a las 24 horas. "
             "Si no entra, el servidor espera y la extensión corta."
         ),
+        "social": ["Los tweets de una cuenta de X,", "entre dos fechas, en un CSV."],
+        "social_datos": ("from:cuenta  2026-01-01 → 2026-06-30", "cuenta.csv"),
     },
     "en": {
         "flujo_titulo": "How it works",
@@ -77,35 +106,90 @@ def texto(
     color: str = TEXT,
     anchor: str = "start",
     weight: str = "normal",
+    font: str | None = None,
 ) -> str:
+    familia = f' font-family="{font}"' if font else ""
     return (
         f'<text x="{x}" y="{y}" font-size="{size}" fill="{color}" text-anchor="{anchor}" '
-        f'font-weight="{weight}">{escape(s)}</text>'
+        f'font-weight="{weight}"{familia}>{escape(s)}</text>'
     )
 
 
-def caja(x: float, y: float, w: float, h: float, titulo: str, lineas: list[str], borde: str) -> str:
+def marca(x: float, y: float, lado: float, color: str = TEXT) -> str:
+    """La X con la flecha, sin cuadrado de fondo, en un cuadrado de `lado` desde (x, y)."""
+    puntos = " ".join(f"{px:g},{py:g}" for px, py in MARCA)
+    return (
+        f'<polygon transform="translate({x:g} {y:g}) scale({lado / 24:g})" points="{puntos}" '
+        f'fill="{color}" '
+        f'stroke="{color}" stroke-width="1.2" stroke-linejoin="round"/>'
+    )
+
+
+def icono(x: float, y: float, lado: float) -> str:
+    """El logo completo: la marca blanca sobre el cuadrado negro redondeado."""
+    return "\n".join(
+        [
+            f'<rect x="{x:g}" y="{y:g}" width="{lado:g}" height="{lado:g}" '
+            f'rx="{lado * 7 / 32:g}" fill="#000"/>',
+            marca(x + lado / 8, y + lado / 8, lado * 3 / 4, "#fff"),
+        ]
+    )
+
+
+def esquina(x: float, y: float, w: float, rx: float, lado: float = 26) -> str:
+    """La esquina-flecha: un triángulo azul arriba a la derecha de una caja de esquinas `rx`."""
+    d = f"M{x + w - lado},{y} H{x + w - rx} A{rx},{rx} 0 0 1 {x + w},{y + rx} V{y + lado} Z"
+    return f'<path d="{d}" fill="{BLUE}"/>'
+
+
+def caja(
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    titulo: str,
+    lineas: list[str],
+    borde: str,
+    *,
+    logo: bool = False,
+) -> str:
     partes = [
         f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" fill="{CARD}" '
         f'stroke="{borde}" stroke-width="1.5"/>',
         texto(x + 16, y + 30, titulo, size=15, weight="bold"),
     ]
     partes += [texto(x + 16, y + 54 + 19 * i, linea, color=MUTED) for i, linea in enumerate(lineas)]
+    if logo:  # las partes que son de xport llevan el logo
+        partes.append(icono(x + w - 36, y + 14, 22))
     return "\n".join(partes)
 
 
-def svg(w: int, h: int, cuerpo: list[str], titulo: str) -> str:
+def svg(w: int, h: int, cuerpo: list[str], titulo: str, *, font: str = FONT, defs: str = "") -> str:
     return "\n".join(
         [
             f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
-            f'viewBox="0 0 {w} {h}" font-family="{FONT}" role="img" '
+            f'viewBox="0 0 {w} {h}" font-family="{font}" role="img" '
             f'aria-label="{escape(titulo)}">',
             f"<title>{escape(titulo)}</title>",
             '<defs><marker id="flecha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
             'markerHeight="7" orient="auto-start-reverse">'
-            f'<path d="M0,0 L10,5 L0,10 z" fill="{MUTED}"/></marker></defs>',
-            f'<rect width="{w}" height="{h}" rx="16" fill="{BG}"/>',
+            f'<path d="M0,0 L10,5 L0,10 z" fill="{MUTED}"/></marker>{defs}</defs>',
+            f'<rect x="0.5" y="0.5" width="{w - 1}" height="{h - 1}" rx="16" fill="{BG}" '
+            f'stroke="{BORDER}"/>',
             *cuerpo,
+            "</svg>",
+            "",
+        ]
+    )
+
+
+def logo() -> str:
+    return "\n".join(
+        [
+            '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 32 32" '
+            'role="img" aria-label="xport">',
+            "<title>xport</title>",
+            icono(0, 0, 32),
             "</svg>",
             "",
         ]
@@ -115,8 +199,13 @@ def svg(w: int, h: int, cuerpo: list[str], titulo: str) -> str:
 def flujo(t: dict) -> str:
     cuerpo = [texto(24, 38, t["flujo_titulo"], size=18, weight="bold")]
     xs, ws = [24, 254, 504, 724], [190, 210, 180, 152]
-    for (titulo, lineas), x, w in zip(t["cajas"], xs, ws, strict=True):
-        cuerpo.append(caja(x, 62, w, 124, titulo, lineas, BLUE if titulo == "x.com" else BORDER))
+    for i, ((titulo, lineas), x, w) in enumerate(zip(t["cajas"], xs, ws, strict=True)):
+        es_csv = i == len(xs) - 1
+        cuerpo.append(
+            caja(x, 62, w, 124, titulo, lineas, BLUE if es_csv else BORDER, logo=i in (1, 2))
+        )
+        if es_csv:
+            cuerpo.append(esquina(x, 62, w, 12))
     for x, w, siguiente in zip(xs, ws, xs[1:], strict=False):
         cuerpo.append(
             f'<line x1="{x + w + 4}" y1="124" x2="{siguiente - 6}" y2="124" stroke="{MUTED}" '
@@ -154,22 +243,9 @@ def tope(t: dict) -> str:
     cuerpo.append(texto(ventana + 10, 74, t["ventana"], color=BLUE))
     cuerpo.append(texto(x0 + 4, 74, t["afuera"], color=MUTED))
     barras = [
-        (-46, 30),
-        (-43, 55),
-        (-41, 20),
-        (-37, 70),
-        (-33, 40),
-        (-30, 25),
-        (-27, 60),
-        (-22, 35),
-        (-19, 80),
-        (-16, 50),
-        (-12, 65),
-        (-9, 30),
-        (-7, 90),
-        (-4, 45),
-        (-2, 60),
-    ]
+        (-46, 30), (-43, 55), (-41, 20), (-37, 70), (-33, 40), (-30, 25), (-27, 60), (-22, 35),
+        (-19, 80), (-16, 50), (-12, 65), (-9, 30), (-7, 90), (-4, 45), (-2, 60),
+    ]  # fmt: skip
     for h, alto in barras:
         adentro = h > -24
         cuerpo.append(
@@ -182,7 +258,7 @@ def tope(t: dict) -> str:
     for x, etiqueta, anchor in zip(
         (x0, ventana, x1), t["ejes"], ("start", "middle", "end"), strict=True
     ):
-        cuerpo.append(texto(x, base + 22, etiqueta, color=MUTED, anchor=anchor))
+        cuerpo.append(texto(x, base + 22, etiqueta, color=MUTED, anchor=anchor, font=MONO))
     # El medidor: arriba 1.000.000 (términos), la línea de 900.000 (tope) y el uso actual.
     mx, top, abajo = 700, 58, base
 
@@ -211,13 +287,42 @@ def tope(t: dict) -> str:
             f'<line x1="{mx - 6}" y1="{y}" x2="{mx + 46}" y2="{y}" '
             f'stroke="{color}" stroke-width="2"/>'
         )
-        cuerpo.append(texto(mx + 56, y + dy, etiqueta, color=color))
+        cuerpo.append(texto(mx + 56, y + dy, etiqueta, color=color, font=MONO))
     cuerpo.append(texto(mx + 56, y_uso(0.35) + 5, t["uso"], color=BLUE))
     cuerpo.append(texto(24, 288, t["pie"], color=MUTED))
     return svg(960, 310, cuerpo, t["tope_titulo"])
 
 
+def social(t: dict) -> str:
+    """La tarjeta para redes, 1280x640: el logo, el nombre, la promesa y una búsqueda de ejemplo."""
+    grilla = (
+        '<pattern id="grilla" width="40" height="40" patternUnits="userSpaceOnUse">'
+        f'<path d="M40 0H0V40" fill="none" stroke="{CARD}" stroke-width="2"/></pattern>'
+    )
+    busqueda, archivo = t["social_datos"]
+    cuerpo = [
+        # Sin esquinas redondeadas: la tarjeta va entera.
+        f'<rect width="1280" height="640" fill="{BG}"/>',
+        '<rect width="1280" height="640" fill="url(#grilla)"/>',
+        '<path d="M1160,0 H1280 V120 Z" fill="' + BLUE + '"/>',
+        f'<rect x="95" y="95" width="162" height="162" rx="36" fill="none" stroke="{BORDER}" '
+        'stroke-width="2"/>',
+        icono(96, 96, 160),
+        texto(296, 214, "xport", size=128, weight="bold"),
+        *[
+            texto(96, 384 + 66 * i, linea, size=54, weight="bold")
+            for i, linea in enumerate(t["social"])
+        ],
+        f'<text x="96" y="560" font-size="30" font-family="{MONO_PNG}" fill="{MUTED}">'
+        f"{escape(busqueda)}"
+        f'<tspan fill="{BLUE}" dx="24">↗ {escape(archivo)}</tspan></text>',
+    ]
+    return svg(1280, 640, cuerpo, "xport", font=FONT_PNG, defs=grilla)
+
+
 def main() -> None:
+    (DIR / "logo.svg").write_text(logo(), encoding="utf-8")
+    (DIR / "social.svg").write_text(social(TEXTOS["es"]), encoding="utf-8")
     for idioma, t in TEXTOS.items():
         (DIR / f"flujo.{idioma}.svg").write_text(flujo(t), encoding="utf-8")
         (DIR / f"tope.{idioma}.svg").write_text(tope(t), encoding="utf-8")

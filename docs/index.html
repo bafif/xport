@@ -6,15 +6,23 @@
   <title>xport: tweets de cuentas de X a CSV</title>
   <meta name="description" content="Baja los tweets de una o varias cuentas de X entre dos fechas y arma un CSV por cuenta, sin pasar el tope de los términos de X.">
   <link rel="alternate" hreflang="en" href="en/">
+  <link rel="icon" href="img/logo.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#000000">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="xport: tweets de cuentas de X a CSV">
+  <meta property="og:description" content="Los tweets de una cuenta de X, entre dos fechas, en un CSV. Sin pasar el tope de los términos de X.">
+  <meta property="og:image" content="https://bafif.github.io/xport/img/social.png">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <span class="marca">xport</span>
+    <a class="marca" href="./"><img src="img/logo.svg" alt="" width="34" height="34">xport</a>
     <a href="en/" lang="en">English</a>
   </header>
 
   <main>
+    <p class="consulta">from:cuenta 2026-01-01 → 2026-06-30 <span>↗ cuenta_2026-01-01_2026-06-30.csv</span></p>
     <h1>Los tweets de una cuenta de X, entre dos fechas, en un CSV.</h1>
     <p>Una extensión de Chrome o Firefox scrollea por vos la búsqueda de X, y un servicio que corre en tu computadora
       arma un CSV por cuenta: la fecha, el texto completo, los links y el tweet citado. Entran los quote tweets; los
@@ -34,8 +42,8 @@
 
     <h2>Desde el popup</h2>
     <div class="popup">
-      <img src="img/popup.png" width="360" height="616" loading="lazy"
-        alt="El popup de xport con una cuenta de ejemplo, el rango de fechas, el uso del tope y el enlace al CSV exportado.">
+      <div class="marco esquina"><img src="img/popup.png" width="360" height="616" loading="lazy"
+        alt="El popup de xport con una cuenta de ejemplo, el rango de fechas, el uso del tope y el enlace al CSV exportado."></div>
       <ol>
         <li><strong>Completás</strong> la cuenta sin @ y las fechas «Desde» y «Hasta».</li>
         <li><strong>«Capturar ▶»</strong> abre la búsqueda en una pestaña y la scrollea sola. X corta cada búsqueda en
@@ -43,6 +51,16 @@
         <li><strong>«Exportar CSV»</strong> arma el archivo y dice cuántas respuestas a otras cuentas dejó afuera.</li>
         <li><strong>Si X frena la búsqueda,</strong> volvés más tarde y sigue desde el tweet más viejo que ya tenías.</li>
       </ol>
+    </div>
+
+    <h2>El CSV</h2>
+    <p>Uno por cuenta y por rango, en UTF-8 y separado por comas. Los links van en una celda separados por espacios; si
+      el tweet cita a otro, van el id y el link del citado.</p>
+    <div class="csv esquina">
+      <p>cuenta_2026-01-01_2026-06-30.csv</p>
+      <pre><b>account,created_at,content,links,quoted_tweet_id,quoted_tweet_url</b>
+cuenta,2026-03-14T18:02:11+00:00,"Hoy sale el informe completo.",https://example.org/informe,,
+cuenta,2026-03-12T09:40:57+00:00,"Esto, sí.",,1899412345678901234,https://x.com/otra/status/1899412345678901234</pre>
     </div>
 
     <h2>El tope</h2>
@@ -70,6 +88,7 @@
   </main>
 
   <footer>
+    <img src="img/logo.svg" alt="" width="22" height="22">
     <p>Código abierto, con licencia MIT. <a class="repo" data-ruta="" href="https://github.com/">Ver en GitHub</a>.</p>
   </footer>
 

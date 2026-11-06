@@ -1,3 +1,5 @@
+<img src="docs/img/logo.svg" alt="" width="72">
+
 # xport: tweets de cuentas de X a CSV
 
 [English](README.en.md)
@@ -215,8 +217,11 @@ decisiones:
   uno, va en otra imagen.
 - El CORS lo maneja solo FastAPI; nginx no agrega encabezados, para no duplicarlos.
 - La extensión está hecha con [WXT](https://wxt.dev): un solo código para Chrome (MV3) y Firefox (MV2).
-- Los diagramas salen de `docs/img/generar.py` (`python3 docs/img/generar.py`), en castellano y en inglés, así se
-  corrigen en el código y no en un programa de dibujo. `docs/img/popup.png` es el popup real con datos de ejemplo.
+- Las imágenes salen de `docs/img/generar.py` (`python3 docs/img/generar.py`): el logo en vector, los diagramas en
+  castellano y en inglés y la tarjeta para redes, así se corrigen en el código y no en un programa de dibujo. Los
+  íconos de la extensión salen del logo. `docs/img/popup.png` es el popup real con datos de ejemplo.
+- La estética es la de X en negro («Lights out»), con un toque propio que sale del logo: la esquina-flecha azul
+  marca lo que sale y la letra monoespaciada va en los datos.
 - La página del proyecto (`docs/index.html` y `docs/en/`) la publica GitHub Pages desde la carpeta `docs/` de `main`,
   sin ningún paso de armado.
 

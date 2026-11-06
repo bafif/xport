@@ -2,11 +2,12 @@
   /* Rinde los controles nativos (scrollbar, validación) en oscuro, acorde al tema. */
   color-scheme: dark;
   accent-color: #1d9bf0;
-  --bg: #15202b;
+  --bg: #000;
+  --card: #16181c;
   --fg: #e7e9ea;
-  --muted: #8b98a5;
+  --muted: #71767b;
   --accent: #1d9bf0;
-  --border: #38444d;
+  --border: #2f3336;
   --error: #f4212e;
   --ok: #00ba7c;
 }
@@ -28,8 +29,19 @@ body {
 }
 
 header h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* El logo es un cuadrado negro: el anillo lo separa del fondo, que también es negro. */
+header h1 img {
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px var(--border);
 }
 
 .sub {
@@ -69,7 +81,7 @@ input {
   padding: 7px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #1e2732;
+  background: var(--card);
   color: var(--fg);
   font-size: 13px;
 }
@@ -112,7 +124,7 @@ button:disabled {
 .status pre {
   margin: 6px 0;
   padding: 8px;
-  background: #1e2732;
+  background: var(--card);
   border-radius: 6px;
   font-size: 11px;
   white-space: pre-wrap;

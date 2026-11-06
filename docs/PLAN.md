@@ -251,6 +251,12 @@ pedirse por parámetro. Sumé imágenes al README (dos diagramas que salen de `d
 popup real con datos de ejemplo) y una página del proyecto en `docs/index.html`, que GitHub Pages publica desde la
 carpeta `docs/` de `main`.
 
+**6 de noviembre: la estética.** Redibujé el logo en vector (`docs/img/logo.svg`, sale de `generar.py`) y de ahí
+salen los íconos de la extensión. La página, el popup y los diagramas pasaron al negro de X («Lights out»), con lo
+propio sacado del logo: la esquina-flecha azul en lo que sale, el logo en el encabezado, la letra monoespaciada en los
+datos y la grilla de un CSV de fondo. La página suma un ejemplo del CSV y una tarjeta para compartir
+(`docs/img/social.png`).
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: la captura desde el navegador, con el crawl adaptativo, la
