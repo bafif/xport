@@ -40,9 +40,10 @@ export function matchOp(url: string): string | null {
   return url.match(OP_RE)?.[1] ?? null;
 }
 
-/** Extrae el handle de una rawQuery `from:user ...` (case-insensitive). */
+/** Extrae el handle de una rawQuery `from:user ...` (case-insensitive), en minúsculas
+ *  como lo guarda el backend: X no distingue mayúsculas en los handles. */
 export function accountFromQuery(rawQuery: string): string | null {
-  return rawQuery.match(/from:(\w+)/i)?.[1] ?? null;
+  return rawQuery.match(/from:(\w+)/i)?.[1]?.toLowerCase() ?? null;
 }
 
 /** Deriva la cuenta de una URL de SearchTimeline: parsea el param `variables`

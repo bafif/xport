@@ -61,7 +61,9 @@ def extract(
     until_dt = _parse_day(until, "--until")
     if since_dt >= until_dt:
         raise typer.BadParameter("--since debe ser anterior a --until")
-    accounts = [a.strip().lstrip("@").strip() for a in account]
+    # Minúsculas como en la API (`_clean_handle`): X no distingue mayúsculas en los
+    # handles y el store compara exacto. Sin repetidos, preservando el orden.
+    accounts = list(dict.fromkeys(a.strip().lstrip("@").strip().lower() for a in account))
     if any(not a for a in accounts):
         raise typer.BadParameter("--account no puede ser vacío")
 

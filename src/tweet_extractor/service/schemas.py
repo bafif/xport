@@ -12,9 +12,11 @@ from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCO
 
 def _clean_handle(raw: str) -> str:
     """Normaliza un handle: whitespace PRIMERO, después el `@` (un " @nasa" debe
-    quedar "nasa"). Rechaza vacío y separadores de path (el handle se usa como
-    nombre de archivo del CSV y segmento de URL). Fuente única para job + ingesta."""
-    handle = raw.strip().lstrip("@").strip()
+    quedar "nasa"), y a minúsculas: X no distingue mayúsculas en los handles, y sin
+    esto "NASA" y "nasa" quedaban como dos cuentas en el store (la reanudación y el
+    export veían solo una parte). Rechaza vacío y separadores de path (el handle se usa
+    como nombre de archivo del CSV y segmento de URL). Fuente única para job + ingesta."""
+    handle = raw.strip().lstrip("@").strip().lower()
     if not handle:
         raise ValueError("el handle no puede ser vacío")
     if any(sep in handle for sep in ("/", "\\", "..")):

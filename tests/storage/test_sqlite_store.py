@@ -136,3 +136,23 @@ async def test_context_manager_crea_schema_y_persiste(tmp_path: Path):
     # Reabrir: el dato sobrevive al cierre (persistente, no in-memory).
     async with SqliteStore(db) as store:
         assert [m.tweet.id for m in await listar(store)] == ["1"]
+
+
+# --- handles en minúsculas ---
+
+
+async def test_setup_pasa_a_minusculas_los_handles_guardados_antes(tmp_path: Path):
+    # Datos de antes del 2026-11-06, cuando el handle se guardaba tal como se tipeó:
+    # "SomeUser" y "someuser" eran dos cuentas. Al abrir el store quedan en una sola.
+    path = tmp_path / "tweets.db"
+    since = datetime(2025, 1, 1, tzinfo=UTC)
+    until = datetime(2025, 1, 8, tzinfo=UTC)
+    async with SqliteStore(path) as old:
+        await old.save([mapped_tweet("1", account="SomeUser"), mapped_tweet("2")])
+        await old.mark_window_done("SomeUser", since, until)
+        await old.mark_window_done("someuser", since, until)  # choca al normalizar
+
+    async with SqliteStore(path) as store:
+        assert await store.accounts() == ["someuser"]
+        assert [m.tweet.id for m in await listar(store)] == ["1", "2"]
+        assert await store.is_window_done("someuser", since, until)

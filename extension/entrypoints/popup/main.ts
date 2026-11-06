@@ -47,7 +47,8 @@ function currentBase(): string {
 }
 
 function account(): string {
-  return accountInput.value.trim().replace(/^@+/, '');
+  // En minúsculas, como lo guarda el backend: X no distingue mayúsculas en los handles.
+  return accountInput.value.trim().replace(/^@+/, '').toLowerCase();
 }
 
 function setStatus(message: string): void {

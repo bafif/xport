@@ -85,7 +85,7 @@ def test_ingest_no_subcuenta_el_gate(tmp_path: Path) -> None:
 
 def test_ingest_handle_se_limpia(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
-        body = post_ingest(client, [search_response([tweet_entry("1")])], account="  @nasa ").json()
+        body = post_ingest(client, [search_response([tweet_entry("1")])], account="  @NASA ").json()
         assert body["account"] == "nasa"
 
 

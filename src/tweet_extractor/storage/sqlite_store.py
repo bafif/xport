@@ -61,6 +61,17 @@ class SqliteStore:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         db = await self._db()
         await db.executescript(_SCHEMA)
+        # Los handles se guardan en minúsculas desde el 2026-11-06 (X no distingue
+        # mayúsculas): normaliza lo guardado antes. Idempotente; un checkpoint que ya
+        # existía en minúsculas gana y el duplicado se descarta.
+        await db.execute(
+            "UPDATE tweets SET account = lower(account) WHERE account <> lower(account)"
+        )
+        await db.execute(
+            "UPDATE OR IGNORE window_checkpoints SET account = lower(account)"
+            " WHERE account <> lower(account)"
+        )
+        await db.execute("DELETE FROM window_checkpoints WHERE account <> lower(account)")
         await db.commit()
 
     async def close(self) -> None:
