@@ -13,7 +13,7 @@ va el razonamiento.
 
 | Columna | Qué tiene |
 |---|---|
-| `account` | el handle de la cuenta |
+| `account` | el handle de la cuenta, en minúsculas |
 | `created_at` | fecha y hora del tweet, ISO 8601 en UTC |
 | `content` | el texto completo (en los tweets largos, el texto entero y no el recortado) |
 | `links` | las URLs externas del tweet (`expanded_url`), separadas por espacio |
@@ -67,10 +67,16 @@ Varias partes del código remiten a estas reglas por número.
      página (el tamaño de página por tres, por los citados embebidos). Si no entra, espera a que lo
      viejo salga de la ventana; cuando llega la respuesta, se ajusta la reserva al conteo real.
    - El registro vive en un SQLite de auditoría aparte del de los tweets, así sobrevive a que se borre
-     la base de datos, y cada ciclo de leer, decidir y escribir corre bajo un lock.
+     la base de datos. Cada ciclo de leer, decidir y escribir corre bajo un lock y dentro de una
+     transacción `BEGIN IMMEDIATE`, así tampoco dos procesos con el mismo registro (la CLI y el
+     servicio) pueden colarse entre el chequeo y la escritura.
    - Todo camino de acceso pasa por el mismo registro. Los proveedores del lado del servidor van
-     envueltos en `GatedProvider`; la captura del navegador registra después lo que ya accedió y,
-     pasado el tope, el servidor rechaza las capturas siguientes con 429.
+     envueltos en `GatedProvider`. La captura del navegador registra después lo que ya accedió,
+     también lo que el servidor rechaza: rechazar no borra un acceso. Pasado el tope, el servidor
+     responde 429 y la extensión corta el crawl.
+   - La captura no ve lo que el registro no puede contar. La extensión no arranca una captura si el
+     servicio no responde o si el tope está lleno, y la corta si el servicio rechaza un lote, avisa
+     el tope o deja de responder con páginas sin registrar.
    - Los tests fuerzan las dos cosas que importan: que bloquee cuando no hay lugar y que espere hasta
      que el evento más viejo salga de la ventana.
 2. **Secretos fuera del repo.** Las cookies (`auth_token`, `ct0`) y cualquier credencial van en el
@@ -196,11 +202,40 @@ integración continua con ruff, mypy, los tests y los dos builds.
 **1 de noviembre.** Este documento reemplazó al plan inicial, a las especificaciones de cada parte y
 a la nota de estado.
 
+**6 de noviembre: auditoría del plan.** Revisé cada decisión contra el código. Las de fondo se
+sostienen: el tope con ventana deslizante que cuenta accesos, la captura en el navegador, los mappers
+como único lugar que interpreta GraphQL y los defaults del CSV. Lo que no se sostenía era cómo se
+cumplía el tope en la captura del navegador, y lo arreglé junto con otros cuatro problemas:
+
+- En la captura del navegador el tope no frenaba nada. Pasado el tope, `/ingest` respondía 429 sin
+  registrar el lote, y la extensión lo descartaba y seguía scrolleando: accesos reales que el registro
+  nunca contaba. Peor, si el servicio no respondía, el popup arrancaba la captura igual, y lo que
+  juntaba el buffer (hasta mil páginas) se perdía sin contarse. Ahora el servidor registra también lo
+  que rechaza, y la extensión no arranca sin servicio o sin lugar en el tope, y corta el crawl ante un
+  429, un `over_cap`, cualquier otro rechazo o veinte páginas pendientes sin servicio. Además, los
+  lotes van de a veinte páginas: uno solo con todo lo acumulado podía pasar los 32 MB de nginx y
+  perderse con un 413.
+- El lock del registro era de `asyncio`, o sea, de un solo proceso: la CLI y el servicio sobre el
+  mismo registro podían leer el mismo uso y pasar los dos. Ahora el ciclo corre en una transacción
+  `BEGIN IMMEDIATE`, con un test que falla sin ella.
+- Los handles de X no distinguen mayúsculas, pero el almacenamiento sí: capturar «NASA» un día y
+  «nasa» otro partía los datos en dos cuentas, y la reanudación y el export veían una parte. Ahora se
+  guardan en minúsculas, y al abrir la base se pasa a minúsculas lo que ya estaba.
+- El compose no fijaba `CAPTURES_DIR`, así que el export de capturas escribía dentro de `/app`, que
+  es de root, con el servicio corriendo como otro usuario: fallaba, y lo escrito se habría perdido con
+  el contenedor. Ahora va al volumen de datos.
+- La paginación del lado del servidor solo cortaba si se repetía el cursor. Al final de una búsqueda
+  X puede devolver páginas vacías con cursor nuevo, cada una gastando tope; ahora corta tras tres
+  vacías seguidas, como twscrape, que corta en la primera.
+
+El README pasó al castellano, con un espejo en inglés (`README.en.md`).
+
 ## Dónde está hoy
 
-Funciona, y la usé contra x.com real: la captura desde el navegador, con el crawl adaptativo, la reanudación y el
-export. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine y la
-extensión se construyen en CI.
+Funciona, y la usé contra x.com real: la captura desde el navegador, con el crawl adaptativo, la
+reanudación y el export. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen
+Alpine y la extensión se construyen en CI. Los cortes del crawl del 6 de noviembre están
+typecheckeados y la extensión se construye, pero todavía no los probé en un navegador.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue
 bloqueado por el cambio de x.com: falla cerrado con un error claro. La API oficial sigue siendo un
@@ -209,7 +244,8 @@ esqueleto que falla cerrado.
 ## Qué falta
 
 1. Una verificación documentada de punta a punta: cargar la extensión, levantar el servicio, capturar
-   un rango, ver que suba el tope y bajar el CSV.
+   un rango, ver que suba el tope y bajar el CSV. Incluye probar los cortes del 6 de noviembre: bajar
+   el servicio a mitad de una captura y ver que el crawl se corte, y que el popup no arranque sin él.
 2. Probar el native messaging desde un navegador de Windows hacia WSL; el ciclo de vida del host está
    probado, el saludo real con el navegador no.
 3. La API oficial, cuando tenga una clave con qué verificar el mapeo.
@@ -222,8 +258,27 @@ esqueleto que falla cerrado.
    que el recorrido del sobre no tome como tweet de primer nivel uno anidado dentro de una cita.
 
 Preguntas que siguen abiertas: qué cuenta como "link a un documento" (hoy entran todas las URLs
-externas), cómo reportar una cuenta borrada o protegida sin cortar el trabajo entero, cuántas
-cuentas en paralelo admitir y qué hacer con los tweets editados.
+externas), cómo reportar una cuenta borrada o protegida sin cortar el trabajo entero y cuántas
+cuentas en paralelo admitir.
+
+Decisiones que salieron de la auditoría del 6 de noviembre y esperan mi criterio:
+
+- **Tweets editados.** `INSERT OR IGNORE` se queda con la primera versión que se capturó, y una
+  captura posterior no la actualiza. ¿Primera versión o última?
+- **Un registro por instalación.** El servicio a mano o por native messaging usa
+  `data/audit/ledger.db`, y el compose, su propio volumen: si se usan los dos, el tope deja de ser
+  uno solo. ¿Me quedo con una sola forma de levantarlo, o sigo con las dos y lo dejo escrito?
+- **Historia del registro.** Cada escritura borra lo que salió de la ventana, así que el "registro
+  de auditoría" no guarda historia: sirve para el tope, no para probar después qué se accedió. ¿Hace
+  falta guardarla?
+- **Días saturados.** El export no dice qué días se saltearon por saturados (más de 800 tweets), así
+  que el CSV puede tener huecos sin aviso. ¿Lo informo en `/export` y en el popup?
+- **twscrape y la API oficial.** El camino del servidor (CLI, `/jobs`, twscrape) está bloqueado desde
+  junio y la API oficial es un esqueleto. ¿Los mantengo así, dormidos, o los saco?
+- **Servicio sin autenticación.** Escucha solo en 127.0.0.1, pero una página con DNS rebinding podría
+  llamarlo. Un `TrustedHostMiddleware` que acepte solo `localhost` y `127.0.0.1` lo cierra.
+- **Tests de la extensión.** Las funciones puras de `extension/lib/` no tienen tests; sumarlos pide
+  una dependencia de desarrollo (vitest).
 
 ## Cómo retomarlo en otra máquina
 
