@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+MAX_EMPTY_PAGES = 3
+"""Páginas vacías seguidas con cursor nuevo que `fetch_tweets` tolera antes de cortar."""
+
 RawTweet = dict[str, Any]
 """JSON crudo de un objeto-tweet tal como lo entrega el backend.
 El shape de dominio lo fija el mapper en su fase; el gate es agnóstico."""
@@ -65,16 +68,22 @@ class TweetProvider(ABC):
         """Pagina sobre `fetch_page` y hace yield de cada tweet.
 
         Continúa aunque una página traiga `tweets=[]` mientras `next_cursor`
-        sea no-None (páginas parciales válidas de algunos backends). Corta si el
-        backend repite el cursor (X devuelve el mismo "bottom cursor" al final de
-        los resultados): sin este guard el bucle sería infinito y, vía el gate,
-        drenaría todo el presupuesto diario en una sola query atascada.
+        sea no-None (páginas parciales válidas de algunos backends), pero no más de
+        `MAX_EMPTY_PAGES` seguidas. Corta también si el backend repite el cursor. Al
+        final de los resultados X puede devolver el mismo "bottom cursor" o uno nuevo
+        con la página vacía (por eso twscrape corta en la primera vacía): sin estos
+        dos guards el bucle sería infinito y, vía el gate, drenaría todo el
+        presupuesto diario en una sola query atascada.
         """
         cursor: str | None = None
+        empty = 0
         while True:
             page = await self.fetch_page(query, cursor)
             for tweet in page.tweets:
                 yield tweet
+            empty = 0 if page.tweets else empty + 1
             if page.next_cursor is None or page.next_cursor == cursor:
+                break
+            if empty >= MAX_EMPTY_PAGES:
                 break
             cursor = page.next_cursor

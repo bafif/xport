@@ -4,7 +4,7 @@ from datetime import UTC, datetime, tzinfo
 
 import pytest
 
-from tweet_extractor.providers.base import Page, SearchQuery
+from tweet_extractor.providers.base import MAX_EMPTY_PAGES, Page, SearchQuery
 
 
 async def test_fetch_tweets_pagina_y_para_en_next_cursor_none(make_provider, sample_query):
@@ -51,6 +51,21 @@ async def test_fetch_tweets_corta_si_el_cursor_se_repite(make_provider, sample_q
 
     assert [t["id"] for t in out] == ["1", "2"]
     assert provider.cursors_seen == [None, "p1"]  # corta, no vuelve a pedir "p1"
+
+
+async def test_fetch_tweets_corta_tras_paginas_vacias_con_cursor_nuevo(make_provider, sample_query):
+    # Al final de los resultados X puede devolver páginas vacías con un cursor NUEVO
+    # cada vez: el guard de cursor repetido no alcanza y cada página gasta tope.
+    # El FakeProvider resuelve "p{i}" a pages[i]: cada página apunta a la siguiente.
+    pages = [Page(tweets=[{"id": "1"}], accessed_count=1, next_cursor="p1")] + [
+        Page(tweets=[], accessed_count=0, next_cursor=f"p{i + 1}") for i in range(1, 10)
+    ]
+    provider = make_provider(pages)
+
+    got = [t["id"] async for t in provider.fetch_tweets(sample_query)]
+
+    assert got == ["1"]
+    assert len(provider.cursors_seen) == 1 + MAX_EMPTY_PAGES
 
 
 def test_searchquery_rechaza_datetime_naive():
