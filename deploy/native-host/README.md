@@ -30,9 +30,8 @@ navegador --connectNative--> host nativo --lanza--> uvicorn (FastAPI)
 Desde **PowerShell en Windows**, una sola vez:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<usuario>\xport\deploy\native-host\install-windows.ps1
-# si tu distro no es la default o el repo está en otro lado:
-#   -Distro Ubuntu  -RepoPath /home/<usuario>/xport
+powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<usuario>\xport\deploy\native-host\install-windows.ps1 -RepoPath /home/<usuario>/xport
+# si tu distro no es la default, sumá: -Distro Ubuntu
 ```
 
 Escribe `%LOCALAPPDATA%\xport\xport-host.bat` + el manifest, y la clave de registro

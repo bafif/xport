@@ -13,14 +13,14 @@
   Corre esto desde PowerShell EN WINDOWS (no dentro de WSL). Una sola vez.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File install-windows.ps1
-  powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Distro Ubuntu -RepoPath /home/bafif/xport
+  powershell -ExecutionPolicy Bypass -File install-windows.ps1 -RepoPath /home/<usuario>/xport
+  powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Distro Ubuntu -RepoPath /home/<usuario>/xport
   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Chrome -ExtId <chrome-id>
   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Uninstall
 #>
 [CmdletBinding()]
 param(
-  [string]$RepoPath = "/home/bafif/xport",   # ruta del repo DENTRO de WSL
+  [string]$RepoPath = "",                    # ruta del repo DENTRO de WSL (obligatoria)
   [string]$Distro   = "",                     # distro WSL; vacio = la default
   [string]$ExtId    = "xport@local",          # Firefox: gecko id | Chrome: extension id
   [switch]$Chrome,
@@ -48,6 +48,9 @@ New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 # El .bat es lo que lanza el navegador (proceso Windows). Bridgea a WSL con wsl.exe.
 # `bash <script>` no necesita +x; el script arregla el PATH para encontrar uv.
 $DistroArg = if ($Distro) { "-d $Distro " } else { "" }
+if (-not $RepoPath) {
+  throw "Falta -RepoPath: la ruta del repo dentro de WSL, por ejemplo -RepoPath /home/<usuario>/xport"
+}
 $Script    = "$RepoPath/deploy/native-host/xport-host.sh"
 # Chrome MV3: el service worker es efimero; al dormirse cierra el puerto nativo (EOF)
 # y el host bajaria uvicorn. Con XPORT_HOST_KEEP_ALIVE=1 el host deja uvicorn vivo
