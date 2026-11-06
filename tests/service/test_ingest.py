@@ -111,6 +111,9 @@ def test_ingest_over_cap(tmp_path: Path) -> None:
 
         second = post_ingest(client, [search_response([tweet_entry("3")])])
         assert second.status_code == 429
+        # El rechazo NO borra el acceso: el navegador ya lo vio, así que el ledger lo
+        # cuenta igual (hard_cap - 1 + 2 + 1). Contar de menos es lo inseguro.
+        assert client.get("/gate").json()["usage"] == settings.hard_cap + 2
 
 
 def test_export_tras_ingest(tmp_path: Path) -> None:

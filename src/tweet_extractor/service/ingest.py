@@ -27,33 +27,35 @@ async def ingest(body: IngestPayload, svc: SvcDep) -> IngestResult:
     pipeline existente: extract (envelope) -> map (RT fuera, quotes sí) -> store.save
     (dedup por id) -> gate.record (record-after: el acceso ya ocurrió en el browser).
 
-    Contabilidad record-after (regla 1 de docs/PLAN.md): si el ledger global YA está en el tope,
-    se rechaza (429) — no aceptamos más. Pero la ingesta que CRUZA el tope SÍ se
-    procesa y registra (el acceso ya pasó; el ledger debe quedar verídico) y se marca
-    `over_cap`; las siguientes caen en el 429. El ledger NO deduplica."""
+    Contabilidad record-after (regla 1 de docs/PLAN.md): las páginas que llegan ya se
+    vieron en el navegador, así que sus accesos se registran SIEMPRE, también cuando se
+    rechazan. Si el ledger global ya está en el tope, se registran y se responde 429 sin
+    guardar nada: la extensión corta el crawl al recibirlo. La ingesta que CRUZA el tope
+    se procesa, se registra y se marca `over_cap` (la extensión también corta ahí). El
+    ledger NO deduplica."""
+    raws = [raw for page in body.pages for raw in extract_tweet_results(page)]
+    captured = len(raws)
+    # Piso defensivo (mismo criterio que GatedProvider): el ledger nunca debe contar
+    # MENOS que los tweets de nivel-tope efectivamente extraídos. Si `count_accessed`
+    # sub-cuenta (p.ej. un __typename no reconocido que igual mapea), sub-contar es la
+    # dirección INSEGURA del cap (regla #1); nos quedamos con el máximo.
+    accessed = max(sum(count_accessed(page) for page in body.pages), captured)
     if await svc.gate.remaining() <= 0:
+        if accessed:
+            await svc.gate.record(accessed)  # el acceso ya pasó: rechazar no lo borra
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail="tope global de 24 h alcanzado: ingesta pausada",
         )
     mapped: list[MappedTweet] = []
-    accessed = captured = 0
-    for page in body.pages:
-        accessed += count_accessed(page)
-        for raw in extract_tweet_results(page):
-            captured += 1
-            try:
-                m = map_tweet(raw, account=body.account)
-            except MapperError:
-                continue  # tweet embebido/roto: se descarta sin tumbar la página
-            if m is not None:
-                mapped.append(m)
+    for raw in raws:
+        try:
+            m = map_tweet(raw, account=body.account)
+        except MapperError:
+            continue  # tweet embebido/roto: se descarta sin tumbar la página
+        if m is not None:
+            mapped.append(m)
     saved = await svc.store.save(mapped)
-    # Piso defensivo (mismo criterio que GatedProvider): el ledger nunca debe contar
-    # MENOS que los tweets de nivel-tope efectivamente extraídos. Si `count_accessed`
-    # sub-cuenta (p.ej. un __typename no reconocido que igual mapea), sub-contar es la
-    # dirección INSEGURA del cap (regla #1); nos quedamos con el máximo.
-    accessed = max(accessed, captured)
     # accessed==0 (página vacía/malformada) -> no se registra nada; solo se reporta el uso.
     usage = await svc.gate.record(accessed) if accessed else await svc.gate.usage()
     remaining = svc.gate.hard_cap - usage

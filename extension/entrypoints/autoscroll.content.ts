@@ -44,6 +44,17 @@ export default defineContentScript({
       }
     });
 
+    // Corte desde afuera: el background borra el crawl cuando el gate se llenó o el
+    // servicio no registra lo capturado (regla 1 de docs/PLAN.md), y el popup lo borra
+    // con «Detener» aunque la pestaña activa sea otra. Sin crawl no se scrollea más.
+    browser.storage.onChanged.addListener((changes, area): void => {
+      if (area !== 'local' || !(STORAGE_CRAWL in changes)) return;
+      if (changes[STORAGE_CRAWL].newValue === undefined && running) {
+        userStopped = true; // no decidir nada al asentarse: no narrowar ni navegar
+        running = false;
+      }
+    });
+
     // Auto-arranque: si hay un crawl pendiente y ESTA página es su búsqueda, scrolleamos
     // solos tras dejar renderizar. Así el popup puede cerrarse: el crawl no depende de él.
     void maybeStart();

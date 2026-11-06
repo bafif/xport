@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 
-import { XportClient } from '../../lib/api';
+import { type ProgressResult, XportApiError, XportClient } from '../../lib/api';
 import {
   AUTOSCROLL_MSG,
   type CrawlState,
@@ -20,6 +20,8 @@ import {
 } from '../../lib/capture';
 
 const COUNTS_REFRESH_MS = 2000;
+const SERVICE_TRIES = 5; // intentos contra el servicio antes de no arrancar la captura
+const SERVICE_RETRY_MS = 2000;
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -145,34 +147,49 @@ async function onCapture(): Promise<void> {
   const since = sinceInput.value;
   const until = untilInput.value;
 
+  // Sin servicio no se captura (regla 1 de docs/PLAN.md): lo que se viera en X no
+  // quedaría contado en el gate. Se espera un poco por si el native host lo está
+  // levantando; si no aparece, o si el tope de 24 h está lleno, no se abre la búsqueda.
+  const client = new XportClient(currentBase());
+  let prog: ProgressResult;
+  try {
+    prog = await whenServiceUp(() => client.progress({ account: acc, since, until }));
+    const gate = await client.gate();
+    if (gate.remaining <= 0) {
+      setStatus('El tope de 24 h del gate está lleno: no arranco la captura. Probá más tarde.');
+      return;
+    }
+  } catch (err) {
+    setStatus(
+      `No arranco la captura: ${err instanceof Error ? err.message : String(err)}. ` +
+        'Sin el servicio, lo que se vea en X no queda contado en el tope de 24 h.',
+    );
+    return;
+  }
+
   // Reanudar entre sesiones: le preguntamos al backend hasta dónde llegamos en este
   // rango (el tweet más viejo capturado) y arrancamos AHÍ, no en `until`. x.com frena
   // la búsqueda a ~1000 y hay que volver más tarde; retomar no debe re-pedir lo bajado.
   let startUntil = until;
   let msg = 'Abriendo la búsqueda y scrolleando… (podés cerrar el popup)';
-  try {
-    const prog = await new XportClient(currentBase()).progress({ account: acc, since, until });
-    if (prog.oldest) {
-      if (prog.oldest <= since) {
-        setStatus(`Ya está todo capturado en ese rango (${prog.captured} tuits). Exportá cuando quieras.`);
-        return;
-      }
-      if (prog.oldest_count >= SATURATED_DAY) {
-        // El día más viejo ya está saturado (~tope de X): re-incluirlo dejaría el crawl
-        // trabado ahí. Lo EXCLUIMOS para avanzar (se pierde su cola sub-diaria, inevitable
-        // a granularidad de día). Solo se dispara con conteo ALTO: cargar poco/nada es
-        // error/conexión, no saturación, y eso lo reintenta el crawl (no se saltea acá).
-        startUntil = prog.oldest;
-        msg =
-          `Día ${prog.oldest} saturado (${prog.oldest_count} tuits, ~tope de X): ` +
-          `salteo su resto y sigo más atrás… (podés cerrar el popup)`;
-      } else {
-        startUntil = dayAfter(prog.oldest); // re-incluye el día más viejo (solapa, el store deduplica)
-        msg = `Reanudando desde ${prog.oldest} (ya tenías ${prog.captured} tuits)… (podés cerrar el popup)`;
-      }
+  if (prog.oldest) {
+    if (prog.oldest <= since) {
+      setStatus(`Ya está todo capturado en ese rango (${prog.captured} tuits). Exportá cuando quieras.`);
+      return;
     }
-  } catch {
-    // Servicio caído / sin progreso conocido: arrancamos desde el tope del rango.
+    if (prog.oldest_count >= SATURATED_DAY) {
+      // El día más viejo ya está saturado (~tope de X): re-incluirlo dejaría el crawl
+      // trabado ahí. Lo EXCLUIMOS para avanzar (se pierde su cola sub-diaria, inevitable
+      // a granularidad de día). Solo se dispara con conteo ALTO: cargar poco/nada es
+      // error/conexión, no saturación, y eso lo reintenta el crawl (no se saltea acá).
+      startUntil = prog.oldest;
+      msg =
+        `Día ${prog.oldest} saturado (${prog.oldest_count} tuits, ~tope de X): ` +
+        `salteo su resto y sigo más atrás… (podés cerrar el popup)`;
+    } else {
+      startUntil = dayAfter(prog.oldest); // re-incluye el día más viejo (solapa, el store deduplica)
+      msg = `Reanudando desde ${prog.oldest} (ya tenías ${prog.captured} tuits)… (podés cerrar el popup)`;
+    }
   }
 
   // El crawl adaptativo encoge `until` solo si choca la pared. El background lee la
@@ -187,6 +204,20 @@ async function onCapture(): Promise<void> {
   await persistForm();
   await browser.tabs.create({ url: searchUrl(acc, since, startUntil) });
   setStatus(msg);
+}
+
+/** Reintenta `call` mientras el servicio no responda (status 0), hasta ~10 s: al abrir
+ *  el navegador, el native host puede estar levantándolo todavía. */
+async function whenServiceUp<T>(call: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await call();
+    } catch (err) {
+      if (!(err instanceof XportApiError) || err.status !== 0 || attempt >= SERVICE_TRIES) throw err;
+      setStatus('Esperando al servicio local…');
+      await new Promise((r) => setTimeout(r, SERVICE_RETRY_MS));
+    }
+  }
 }
 
 async function stopScroll(): Promise<void> {
