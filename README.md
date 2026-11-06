@@ -1,198 +1,208 @@
-# xport
+# xport: tweets de cuentas de X a CSV
 
-Export the tweets of one or more X (Twitter) accounts between two dates to **one CSV per
-account**, with a hard, code-enforced cap on how many posts the tool can access in any rolling
-24 hours.
+[English](README.en.md)
 
-| Column | Meaning |
+Baja los tweets de una o varias cuentas de X entre dos fechas y arma un CSV por cuenta. Se usa desde una extensión de
+Chrome o Firefox que le pasa lo capturado a un servicio que corre en tu computadora.
+
+**No puede pasar el tope de los términos de X.** Los términos multan acceder a más de un millón de posts en cualquier
+período de 24 horas, así que xport cuenta cada post que el navegador ve, también los citados y los retweets que después
+descarta, y frena en 900.000 dentro de cualquier ventana de 24 horas. Si el servicio no puede contar lo que se captura,
+la captura no arranca o se corta.
+
+## Estado
+
+La captura desde el navegador anda contra x.com: abre la búsqueda de la cuenta, la scrollea sola, sigue cuando X la
+corta y retoma donde quedó. El CSV tiene estas columnas:
+
+| Columna | Qué tiene |
 |---|---|
-| `account` | account handle |
-| `created_at` | tweet date and time, ISO 8601 in UTC |
-| `content` | tweet text |
-| `links` | external URLs embedded in the tweet (`expanded_url`) |
-| `quoted_tweet_id` / `quoted_tweet_url` | link from a quote tweet to the tweet it quotes |
+| `account` | el handle de la cuenta, en minúsculas |
+| `created_at` | fecha y hora del tweet, ISO 8601 en UTC |
+| `content` | el texto completo, también el de los tweets largos |
+| `links` | las URLs externas del tweet (`expanded_url`), separadas por espacio |
+| `quoted_tweet_id`, `quoted_tweet_url` | el tweet citado, si lo hay |
 
-Quote tweets are **included**; retweets are **excluded**. Replies are kept when they belong to the
-account's own threads, and replies inside other people's conversations are left out (the export
-reports how many were excluded).
+Entran los quote tweets y los hilos propios de la cuenta. Quedan afuera los retweets y las respuestas que la cuenta
+escribió en conversaciones ajenas; el export dice cuántas respuestas dejó afuera.
 
-## Compliance Gate
+Lo que todavía no anda: bajar tweets desde el servidor, sin navegador, está bloqueado desde junio de 2026 (x.com cambió
+cómo firma los pedidos y twscrape dejó de poder hacerlo), y la API oficial de X es un esqueleto que no hace nada. Los
+cortes de la captura que se sumaron el 6 de noviembre de 2026 todavía no se probaron en un navegador.
 
-X's terms penalize accessing more than 1,000,000 posts in any 24-hour window. xport makes that
-impossible to cross by construction:
+## Uso diario: el popup
 
-- **`hard_cap = 900_000`**, global for the whole app, below X's limit to leave a margin. It is a
-  code constant: it cannot be raised from `.env`.
-- **Rolling 24-hour window**, never a calendar day: `usage(now) = Σ count WHERE ts > now − 86400`.
-- **Accesses are counted, not rows saved**: the quoted tweet embedded in a response and the
-  retweets that get discarded count too. The ledger never deduplicates (over-counting is safe).
-- **Fail closed**: active scraping reserves an upper bound *before* each request and waits if it
-  does not fit; captures that already happened in the browser are recorded *after* the fact, and
-  further captures are rejected with 429 once over the cap.
-- **Durable and atomic**: the ledger lives in its own SQLite audit database, separate from the
-  tweet data, and every read-decide-write cycle runs under a lock.
+Una vez instalado (ver [Instalar](#instalar)), todo se hace desde el popup de la extensión:
 
-Every data path goes through the same gate, and the tests force both the block and the wait.
+1. **Abrir el popup:** hacé clic en el ícono de xport. Arriba muestra cuántos accesos lleva el tope en las últimas
+   24 horas y cuántos quedan.
+2. **Completar:** la cuenta sin `@`, «Desde» y «Hasta» en formato `AAAA-MM-DD`. «Desde» entra; «Hasta» no.
+3. **Capturar:** «Capturar ▶» abre la búsqueda de X en una pestaña nueva y la scrollea sola. Podés cerrar el popup.
+   Si X deja de dar resultados antes de la fecha de inicio, la extensión achica el rango y busca de nuevo, hasta
+   cubrirlo entero. «Detener ⏹» la corta.
+4. **Exportar:** volvé a abrir el popup y apretá «Exportar CSV». Aparece el enlace al archivo, con cuántos tweets tiene.
+5. **Seguir otro día:** si X frenó la búsqueda, volvé más tarde y apretá «Capturar ▶» con las mismas fechas. Sigue
+   desde el tweet más viejo que ya tenías, sin volver a pedir lo bajado.
 
-## How it works
+**Es privado.** La extensión usa la sesión de X que ya tenés abierta en el navegador: tus cookies no salen de él. Lo
+capturado va al servicio local, que escucha solo en tu computadora, y queda en la carpeta `data/` del repo (o en los
+volúmenes de Podman, si lo levantaste en contenedores). No se manda a ningún otro lado. «Borrar capturado 🗑» borra lo
+de una cuenta; el registro del tope no se borra nunca. Conviene capturar con una cuenta de X que puedas perder: X puede
+limitar las cuentas que bajan muchos tweets.
 
-```
- browser extension ──► local service (FastAPI) ──► mappers ──► SQLite ──► CSV per account
- (captures X's own          │  POST /ingest
-  GraphQL responses)        └──► Compliance Gate ledger (separate SQLite)
-```
+Por ahora captura solo desde la búsqueda de X, que entrega como mucho unos mil resultados por búsqueda. Si un solo día
+tiene más de 800 tweets, la extensión se queda con lo que X le dio de ese día y sigue con los anteriores: el resto de
+ese día no entra.
 
-The extension opens X's search for the account and date range, scrolls it by itself and captures
-the GraphQL responses that x.com already loads in the page; the browser computes X's request
-signatures natively, so nothing has to be reverse-engineered. The local service maps them to the
-domain model, stores them deduplicated and records the accesses in the gate. **Exportar CSV**
-then downloads the file.
+Si el popup dice que no arranca la captura porque el servicio no responde, levantalo (ver [Uso](#uso)) o instalá el
+arranque automático (ver [Instalar](#instalar)). Si dice que el tope está lleno, esperá: el popup muestra cuánto queda.
 
-- **Adaptive crawl**: X's live search stops at around 1,000 results per query, so when the scroll
-  stalls before reaching the start date the extension narrows the range to the oldest day loaded
-  and searches again, until the whole range is covered.
-- **Picks up where it left off**: X also throttles the search endpoint for hours. On the next
-  capture, the service reports how far the stored data already goes and the crawl continues from
-  there instead of starting over.
-- **Optional auto-start**: with the native messaging host (`deploy/native-host/`), opening the
-  extension starts the local service and closing the browser stops it.
+## Instalar
 
-Other backends sit behind the same `TweetProvider` interface and the same gate:
+Hace falta [uv](https://docs.astral.sh/uv/), que trae el Python correcto (3.12, fijado en `.python-version`), y
+[Podman](https://podman.io) sin root para armar la extensión sin instalar Node. Con Node 22 también se puede armar sin
+Podman.
 
-- **twscrape** (server-side scraping, used by the CLI and `POST /jobs`): implemented and tested
-  offline, but **blocked upstream** since x.com moved its web client to Vite in mid-2026 and broke
-  the request-signature generator twscrape depends on. It fails closed with a clear error.
-- **Official X API v2**: a stub that fails closed until there is an API key to verify it with.
+1. **Bajar el código:** en GitHub, «Code» → «Download ZIP», o `git clone` de este repo.
+2. **Preparar el servicio:** en la carpeta del repo, `uv sync`.
+3. **Armar la extensión:** `bash deploy/extension-build.sh`. Queda en `extension/dist/`.
+4. **Cargarla en el navegador:** ver abajo, según el tuyo.
+5. **Arranque automático (opcional):** con el host de native messaging, el navegador levanta el servicio al abrirse y lo
+   baja al cerrarse. Se instala una vez con `bash deploy/native-host/install-linux.sh` (Firefox) o
+   `bash deploy/native-host/install-linux.sh --chrome --ext-id=<id>` (Chrome). Para un navegador de Windows con el
+   servicio en WSL, y para diagnosticar problemas, ver [deploy/native-host/README.md](deploy/native-host/README.md).
 
-## Status
+### En Chrome
 
-Beta. The four planned phases (CLI, swappable backends, local service with nginx, browser
-extension) are in the code; the tests run offline, and `mypy --strict` and ruff pass. I have used
-the in-browser capture against live x.com, and that is where the adaptive crawl and the resume
-came from. Still pending: a documented end-to-end check of the whole flow, the native messaging
-bridge from Windows browsers to WSL, and the official API backend. The plan, the reasoning behind
-each decision and the current status are in [docs/PLAN.md](docs/PLAN.md) (Spanish).
+1. Abrí `chrome://extensions` y prendé «Modo de desarrollador», arriba a la derecha.
+2. Hacé clic en «Cargar descomprimida» y elegí la carpeta `extension/dist/chrome-mv3`.
+3. Anotá el id de 32 letras que aparece en la tarjeta de xport: es el `<id>` del arranque automático.
 
-## Requirements
+### En Firefox
 
-- [uv](https://docs.astral.sh/uv/) and Python 3.12 (pinned in `.python-version`).
-- Podman (rootless is enough, with podman-compose), to run the service with nginx or to build the
-  extension without Node on the host.
-- Chrome or Firefox, logged in to X, ideally with an account you can afford to lose: X may limit
-  accounts that scrape.
+1. Abrí `about:debugging` y elegí «Este Firefox».
+2. Hacé clic en «Cargar complemento temporal…» y elegí el archivo `extension/dist/firefox-mv2/manifest.json`.
 
-## Setup
+Firefox borra los complementos temporales al cerrarse: cada vez que lo abras, hay que cargarlo de nuevo.
 
-```bash
-git clone https://github.com/bafif/xport.git
-cd xport
-uv sync                     # creates .venv from uv.lock
-cp .env.example .env        # only needed for the twscrape/official backends (see below)
-```
+## Uso
 
-## Run the local service
+El servicio se levanta de una de estas formas. Elegí una y usá siempre la misma: cada una tiene su propio registro del
+tope, y si usás las dos, el tope deja de ser uno solo.
 
-Directly (the extension's default address is `http://localhost:8000`):
-
-```bash
+```sh
+uv sync
 uv run fastapi dev src/tweet_extractor/service/app.py
+cp .env.example .env && podman compose -f deploy/compose.yaml up --build
+uv run tweet-extractor --account <cuenta> --since 2025-01-01 --until 2026-01-01
 ```
 
-Or in rootless Podman containers (Alpine, multi-stage) behind nginx on `http://localhost:8080`, which
-listens on 127.0.0.1 only; the gate ledger and the data live in two separate volumes:
+- `fastapi dev` levanta el servicio en `http://localhost:8000`, la dirección que la extensión usa si no le decís otra.
+  Guarda todo en `data/`. Es lo mismo que levanta el arranque automático.
+- `podman compose` lo levanta en contenedores Alpine, detrás de nginx, en `http://localhost:8080`, que escucha solo en
+  tu computadora. En el popup, poné esa dirección en el campo del servicio. Necesita el `.env`, aunque sea la copia
+  vacía de `.env.example`. Los datos y el registro del tope van en dos volúmenes separados. Después de reiniciar la
+  computadora se levanta solo únicamente si está prendido `podman-restart.service`
+  (`systemctl --user enable podman-restart.service`).
+- `tweet-extractor` baja tweets desde el servidor, sin navegador, con las cookies de una cuenta de X en el `.env`. Está
+  bloqueado desde junio de 2026: falla con un error que lo explica. `--since` entra y `--until` no (días UTC). Además:
+  `--out-dir`, `--subwindow-days`, `--encoding` (`utf-8-sig` le agrega el BOM que Excel espera) y `--delimiter` (`;`
+  para un Excel configurado en castellano). Si se corta, correrlo de nuevo saltea los tramos que ya terminó.
 
-```bash
-podman compose -f deploy/compose.yaml up --build
+El servicio responde a estos pedidos:
+
+| Pedido | Qué hace |
+|---|---|
+| `GET /healthz` | dice si el servicio está vivo |
+| `GET /gate` | uso del tope en las últimas 24 horas, cuánto queda, el tope y la ventana |
+| `POST /ingest` | guarda las páginas que capturó la extensión y registra sus accesos |
+| `POST /progress` | el tweet más viejo guardado de una cuenta en un rango: desde dónde se retoma |
+| `POST /export`, `GET /exports/{archivo}` | arma y baja el CSV de un rango capturado |
+| `POST /reset` | borra lo capturado de una cuenta (el registro del tope no se toca) |
+| `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{cuenta}` | bajadas desde el servidor (bloqueadas) |
+
+La configuración va en el `.env`, que git ignora; [`.env.example`](.env.example) tiene todas las variables comentadas.
+La captura desde el navegador no necesita ninguna: usa la sesión del navegador.
+
+| Variable | Para qué | Por defecto |
+|---|---|---|
+| `PROVIDER_BACKEND` | de dónde baja el servidor: `twscrape` o `official` | `twscrape` |
+| `X_AUTH_TOKEN`, `X_CT0` | cookies de una cuenta de X aparte (twscrape) | vacías |
+| `X_API_BEARER_TOKEN` | token de la API oficial (esqueleto) | vacío |
+| `AUDIT_DB_PATH` | registro del tope, aparte de los datos | `data/audit/ledger.db` |
+| `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; cuentas de twscrape | `data/tweets.db`, `data/accounts.db` |
+| `CSV_DIR`, `CAPTURES_DIR` | CSV de las bajadas del servidor y de las capturas | `data/csv`, `data/captures` |
+| `CORS_ALLOW_ORIGINS` | lista JSON de orígenes permitidos (la extensión no lo necesita) | `[]` |
+| `PAGE_SIZE`, `SUBWINDOW_DAYS` | tamaño de página y días por tramo de búsqueda (servidor) | `20`, `7` |
+
+El tope (900.000) y la ventana (24 horas) no están en esta lista a propósito: son constantes del código y ninguna
+variable los cambia.
+
+La búsqueda de X es `from:<cuenta> since:<desde> until:<hasta>`, con días en UTC: `since` entra y `until` no. De las
+respuestas, el CSV se queda con las que cuelgan de una conversación que empezó la misma cuenta. Si ese primer tweet cae
+fuera del rango y nunca se capturó, sus respuestas dentro del rango también quedan afuera.
+
+## Pruebas
+
+```sh
+uv run pytest
+uv run ruff check . && uv run ruff format --check .
+uv run mypy src
 ```
 
-With the compose stack, set the service address in the extension's popup to
-`http://localhost:8080`. The services have `restart: unless-stopped`; with Podman that brings them
-back after a reboot only if `podman-restart.service` is enabled
-(`systemctl --user enable podman-restart.service`).
+Corren sin red, con respuestas de X fabricadas. Las del tope fuerzan las dos cosas que importan: que bloquee cuando no
+hay lugar y que espere hasta que el acceso más viejo salga de la ventana. **Nunca subas el `.env` ni la carpeta
+`data/`:** tienen cookies de sesión y lo capturado.
 
-## Build and load the extension
+## Cómo se arma
 
-```bash
+La integración continua (`.github/workflows/ci.yml`) corre ruff, mypy y los tests, y arma con Podman la imagen del
+servicio y las dos versiones de la extensión. A mano:
+
+```sh
+podman build -f deploy/Containerfile -t xport .
 bash deploy/extension-build.sh
 ```
 
-This type-checks and builds both targets inside a pinned Node image, and the result is copied out to
-`extension/dist` (no container mounts the repository). Without Podman,
-`cd extension && npm ci && npm run build` with Node 22 does the same.
+La imagen sale de `deploy/Containerfile`; la extensión queda en `extension/dist/chrome-mv3` y
+`extension/dist/firefox-mv2`. Ningún contenedor monta el repo: la extensión se copia afuera con `podman cp`. Algunas
+decisiones:
 
-- **Chrome**: `chrome://extensions` → Developer mode → *Load unpacked* → `extension/dist/chrome-mv3`.
-- **Firefox**: `about:debugging` → *This Firefox* → *Load Temporary Add-on* →
-  `extension/dist/firefox-mv2/manifest.json`.
+- La captura es en el navegador y no desde el servidor. Desde que x.com cambió cómo firma los pedidos, en junio de
+  2026, bajar desde afuera exige reconstruir esa firma cada pocas semanas. El navegador la calcula solo, y la forma de
+  las respuestas no cambió, así que el resto del código sirve igual.
+- El tope es 900.000 y no un millón, para dejar margen ante cualquier duda sobre qué cuenta como acceso. La ventana es
+  deslizante, porque un contador por día calendario dejaría pasar casi dos millones entre las 23 y la 1. Se cuentan
+  accesos y no tweets guardados, sin deduplicar, porque contar de más es seguro y contar de menos no.
+- Lo que se baja desde el servidor reserva antes de cada pedido una cota de lo que puede traer (tres veces el tamaño
+  de página, por los citados) y espera si no entra. Lo que captura el navegador ya pasó, así que se registra después, y
+  por eso la extensión corta el crawl cuando el servicio no puede registrarlo.
+- El registro del tope está en un SQLite aparte, así sobrevive a que se borren los tweets. Cada chequeo y su escritura
+  van en una transacción `BEGIN IMMEDIATE`, así dos procesos con el mismo registro no pasan juntos.
+- Solo `mappers/` interpreta las respuestas de X; la extensión no las lee. Cuando x.com cambie la forma, se arregla en
+  un solo lugar, y un cambio que el mapper no entiende da un error y no un CSV vacío.
+- Los defaults del CSV (UTF-8 sin BOM, coma, todo entre comillas, UTC, `<cuenta>_<desde>_<hasta>.csv`) están cerrados
+  desde junio de 2026. El mismo rango reescribe su archivo y rangos distintos conviven.
+- La imagen es Alpine, en dos etapas, y sin navegador: Chromium sobre musl no vale la pena. Si alguna vez hace falta
+  uno, va en otra imagen.
+- El CORS lo maneja solo FastAPI; nginx no agrega encabezados, para no duplicarlos.
+- La extensión está hecha con [WXT](https://wxt.dev): un solo código para Chrome (MV3) y Firefox (MV2).
 
-Then open the popup (its UI is in Spanish), enter the account and the date range, press
-**Capturar ▶** and, when it is done, **Exportar CSV**. **Detener ⏹** stops a capture. To start the
-service from the browser automatically, see [deploy/native-host/README.md](deploy/native-host/README.md).
-
-## CLI (twscrape backend)
-
-```bash
-uv run tweet-extractor --account someone --account other --since 2025-01-01 --until 2026-01-01
-```
-
-`--since` is inclusive and `--until` exclusive (UTC days). Other options: `--out-dir`,
-`--subwindow-days`, `--encoding` (`utf-8-sig` adds a BOM for Excel) and `--delimiter` (`;` for
-spreadsheets that use a comma as decimal separator). A re-run skips the sub-windows already
-completed. It needs the session cookies in `.env` and is currently blocked upstream (see above).
-
-## HTTP API
-
-| Endpoint | What it does |
-|---|---|
-| `GET /healthz` | liveness |
-| `GET /gate` | gate usage, remaining budget, cap and window |
-| `POST /ingest` | store GraphQL pages captured by the extension and record their accesses |
-| `POST /progress` | oldest stored tweet for an account and range (the resume point) |
-| `POST /export`, `GET /exports/{file}` | build and download the CSV of a captured range |
-| `POST /reset` | delete what was captured for an account (the gate ledger is never touched) |
-| `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{account}` | server-side extraction jobs (twscrape backend) |
-
-## Configuration (`.env`)
-
-Secrets live only in `.env`, which is git-ignored. Every variable is listed with comments in
-[`.env.example`](.env.example):
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `PROVIDER_BACKEND` | `twscrape` or `official` | `twscrape` |
-| `X_AUTH_TOKEN`, `X_CT0` | session cookies of a separate X account (twscrape) | empty |
-| `X_API_BEARER_TOKEN` | official API v2 token (stub) | empty |
-| `AUDIT_DB_PATH` | gate ledger, separate from the data | `data/audit/ledger.db` |
-| `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets, twscrape accounts | `data/tweets.db`, `data/accounts.db` |
-| `CSV_DIR`, `CAPTURES_DIR` | CSV output of jobs and of captures | `data/csv`, `data/captures` |
-| `CORS_ALLOW_ORIGINS` | JSON list of allowed origins (the extension does not need it) | `[]` |
-| `PAGE_SIZE`, `SUBWINDOW_DAYS` | backend page size, search sub-window in days | `20`, `7` |
-
-The in-browser capture needs none of these secrets: it uses the session already open in the
-browser.
-
-## Development
-
-```bash
-uv run ruff check . && uv run ruff format --check .
-uv run mypy src
-uv run pytest
-```
-
-Layers, from the bottom up; each one only knows the one below:
+El código va en capas, y cada una conoce solo la de abajo:
 
 ```
-providers/     swappable data source behind TweetProvider (twscrape, official API stub)
-mappers/       raw GraphQL → domain model (the only place that parses GraphQL)
-domain/        Tweet and TweetLink (pydantic v2)
-compliance/    SlidingWindowGate + GatedProvider
-storage/       SQLite store (dedupe, checkpoints) + streaming CSV exporter
-service/       FastAPI: jobs, ingest, export, gate status
-cli.py         Typer CLI
-extension/     WXT extension for Chrome MV3 and Firefox
+providers/     de dónde salen los datos, detrás de TweetProvider (twscrape, API oficial)
+mappers/       respuestas de X → modelo de dominio (el único lugar que las interpreta)
+domain/        Tweet y TweetLink (pydantic v2)
+compliance/    el registro del tope (SlidingWindowGate) y GatedProvider
+storage/       SQLite de datos (deduplicado, tramos terminados) y export CSV en streaming
+service/       FastAPI: capturas, export, estado del tope, bajadas desde el servidor
+cli.py         la línea de comandos (Typer)
+extension/     extensión para Chrome y Firefox (WXT)
 ```
 
-Design notes and the reasoning behind each decision (Spanish): [docs/PLAN.md](docs/PLAN.md).
+Las decisiones con su historia y lo que falta están en [docs/PLAN.md](docs/PLAN.md).
 
-## License
+## Licencia
 
-[MIT](LICENSE) © 2026 Bautista D. Fiori
+[MIT](LICENSE).
