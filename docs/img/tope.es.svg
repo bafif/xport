@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="310" viewBox="0 0 960 310" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="El tope: una ventana de 24 horas que se corre con el reloj">
+<title>El tope: una ventana de 24 horas que se corre con el reloj</title>
+<defs><marker id="flecha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b98a5"/></marker></defs>
+<rect width="960" height="310" rx="16" fill="#161d26"/>
+<text x="24" y="36" font-size="17" fill="#e7e9ea" text-anchor="start" font-weight="bold">El tope: una ventana de 24 horas que se corre con el reloj</text>
+<rect x="320.0" y="54" width="280.0" height="168" rx="6" fill="#1d9bf0" fill-opacity="0.10" stroke="#1d9bf0" stroke-dasharray="5 4"/>
+<text x="330.0" y="74" font-size="13" fill="#1d9bf0" text-anchor="start" font-weight="normal">cuenta: las últimas 24 horas</text>
+<text x="44" y="74" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">ya no cuenta</text>
+<rect x="58.3" y="192" width="10" height="30" rx="2" fill="#8b98a5" fill-opacity="0.35"/>
+<rect x="93.3" y="167" width="10" height="55" rx="2" fill="#8b98a5" fill-opacity="0.35"/>
+<rect x="116.7" y="202" width="10" height="20" rx="2" fill="#8b98a5" fill-opacity="0.35"/>
+<rect x="163.3" y="152" width="10" height="70" rx="2" fill="#8b98a5" fill-opacity="0.35"/>
+<rect x="210.0" y="182" width="10" height="40" rx="2" fill="#8b98a5" fill-opacity="0.35"/>
+<rect x="245.0" y="197" width="10" height="25" rx="2" fill="#8b98a5" fill-opacity="0.35"/>
+<rect x="280.0" y="162" width="10" height="60" rx="2" fill="#8b98a5" fill-opacity="0.35"/>
+<rect x="338.3" y="187" width="10" height="35" rx="2" fill="#1d9bf0" fill-opacity="1"/>
+<rect x="373.3" y="142" width="10" height="80" rx="2" fill="#1d9bf0" fill-opacity="1"/>
+<rect x="408.3" y="172" width="10" height="50" rx="2" fill="#1d9bf0" fill-opacity="1"/>
+<rect x="455.0" y="157" width="10" height="65" rx="2" fill="#1d9bf0" fill-opacity="1"/>
+<rect x="490.0" y="192" width="10" height="30" rx="2" fill="#1d9bf0" fill-opacity="1"/>
+<rect x="513.3" y="132" width="10" height="90" rx="2" fill="#1d9bf0" fill-opacity="1"/>
+<rect x="548.3" y="177" width="10" height="45" rx="2" fill="#1d9bf0" fill-opacity="1"/>
+<rect x="571.7" y="162" width="10" height="60" rx="2" fill="#1d9bf0" fill-opacity="1"/>
+<line x1="40" y1="222" x2="600" y2="222" stroke="#38444d" stroke-width="2"/>
+<text x="40" y="244" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">hace 48 h</text>
+<text x="320.0" y="244" font-size="13" fill="#8b98a5" text-anchor="middle" font-weight="normal">hace 24 h</text>
+<text x="600" y="244" font-size="13" fill="#8b98a5" text-anchor="end" font-weight="normal">ahora</text>
+<line x1="612" y1="150" x2="688" y2="150" stroke="#8b98a5" stroke-width="2" marker-end="url(#flecha)"/>
+<text x="650.0" y="140" font-size="13" fill="#8b98a5" text-anchor="middle" font-weight="normal">se suma</text>
+<rect x="700" y="58" width="40" height="164" rx="6" fill="#1e2732" stroke="#38444d"/>
+<rect x="700" y="164.6" width="40" height="57.400000000000006" rx="6" fill="#1d9bf0"/>
+<line x1="694" y1="58.0" x2="746" y2="58.0" stroke="#f4212e" stroke-width="2"/>
+<text x="756" y="52.0" font-size="13" fill="#f4212e" text-anchor="start" font-weight="normal">1.000.000: términos de X</text>
+<line x1="694" y1="74.4" x2="746" y2="74.4" stroke="#ffd400" stroke-width="2"/>
+<text x="756" y="90.4" font-size="13" fill="#ffd400" text-anchor="start" font-weight="normal">900.000: tope de xport</text>
+<text x="756" y="169.6" font-size="13" fill="#1d9bf0" text-anchor="start" font-weight="normal">uso ahora</text>
+<text x="24" y="288" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">Cada acceso se anota con su hora y sale de la cuenta a las 24 horas. Si no entra, el servidor espera y la extensión corta.</text>
+</svg>

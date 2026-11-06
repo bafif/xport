@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="340" viewBox="0 0 900 340" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="Cómo funciona">
+<title>Cómo funciona</title>
+<defs><marker id="flecha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b98a5"/></marker></defs>
+<rect width="900" height="340" rx="16" fill="#161d26"/>
+<text x="24" y="38" font-size="18" fill="#e7e9ea" text-anchor="start" font-weight="bold">Cómo funciona</text>
+<rect x="24" y="62" width="190" height="124" rx="12" fill="#1e2732" stroke="#1d9bf0" stroke-width="1.5"/>
+<text x="40" y="92" font-size="15" fill="#e7e9ea" text-anchor="start" font-weight="bold">x.com</text>
+<text x="40" y="116" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">en tu navegador,</text>
+<text x="40" y="135" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">con tu sesión</text>
+<rect x="254" y="62" width="210" height="124" rx="12" fill="#1e2732" stroke="#38444d" stroke-width="1.5"/>
+<text x="270" y="92" font-size="15" fill="#e7e9ea" text-anchor="start" font-weight="bold">Extensión</text>
+<text x="270" y="116" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">scrollea la búsqueda y</text>
+<text x="270" y="135" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">copia lo que x.com</text>
+<text x="270" y="154" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">ya descargó</text>
+<rect x="504" y="62" width="180" height="124" rx="12" fill="#1e2732" stroke="#38444d" stroke-width="1.5"/>
+<text x="520" y="92" font-size="15" fill="#e7e9ea" text-anchor="start" font-weight="bold">Servicio local</text>
+<text x="520" y="116" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">interpreta y guarda</text>
+<text x="520" y="135" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">sin repetir</text>
+<rect x="724" y="62" width="152" height="124" rx="12" fill="#1e2732" stroke="#38444d" stroke-width="1.5"/>
+<text x="740" y="92" font-size="15" fill="#e7e9ea" text-anchor="start" font-weight="bold">CSV</text>
+<text x="740" y="116" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">uno por cuenta</text>
+<line x1="218" y1="124" x2="248" y2="124" stroke="#8b98a5" stroke-width="2" marker-end="url(#flecha)"/>
+<line x1="468" y1="124" x2="498" y2="124" stroke="#8b98a5" stroke-width="2" marker-end="url(#flecha)"/>
+<line x1="688" y1="124" x2="718" y2="124" stroke="#8b98a5" stroke-width="2" marker-end="url(#flecha)"/>
+<rect x="494" y="222" width="200" height="96" rx="12" fill="#1e2732" stroke="#ffd400" stroke-width="1.5"/>
+<text x="510" y="252" font-size="15" fill="#e7e9ea" text-anchor="start" font-weight="bold">Tope de 24 horas</text>
+<text x="510" y="276" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">cuenta cada post visto</text>
+<text x="510" y="295" font-size="13" fill="#8b98a5" text-anchor="start" font-weight="normal">y frena en 900.000</text>
+<line x1="594" y1="190" x2="594" y2="218" stroke="#8b98a5" stroke-width="2" marker-start="url(#flecha)" marker-end="url(#flecha)"/>
+<path d="M490,270 L359,270 L359,192" fill="none" stroke="#ffd400" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#flecha)"/>
+<text x="348" y="258" font-size="13" fill="#ffd400" text-anchor="end" font-weight="normal">si no lo puede contar,</text>
+<text x="348" y="276" font-size="13" fill="#ffd400" text-anchor="end" font-weight="normal">la captura se corta</text>
+</svg>
