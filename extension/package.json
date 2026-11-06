@@ -12,10 +12,12 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip && wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "test": "vitest run",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
+    "vitest": "^3.2.7",
     "wxt": "^0.19.0"
   }
 }

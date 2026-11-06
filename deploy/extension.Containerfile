@@ -13,5 +13,6 @@ WORKDIR /ext
 COPY . .
 RUN npm ci --no-audit --no-fund \
     && npm run compile \
+    && npm test \
     && npm run build
 
