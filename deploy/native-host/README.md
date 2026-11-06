@@ -44,15 +44,16 @@ Desde **WSL**, una sola vez:
 
 ```bash
 deploy/native-host/install-linux.sh            # Firefox
-deploy/native-host/install-linux.sh --chrome --ext-id=<chrome-id>
+deploy/native-host/install-linux.sh --chrome   # Chrome, Chrome Beta/Dev y Chromium
 ```
 
 ## El id de la extensión
 
-El manifest autoriza por id. El default es **`xport@local`** (ya fijado en
-`extension/wxt.config.ts` → `browser_specific_settings.gecko.id`). Si lo cambiás,
-pasá `--ext-id=` / `-ExtId`. En **Chrome** el id es el de 32 letras que aparece en
-`chrome://extensions` al cargar la carpeta desempaquetada.
+El manifest autoriza por id, y los dos están fijados en `extension/wxt.config.ts`: en
+**Firefox**, **`xport@local`** (`browser_specific_settings.gecko.id`); en **Chrome**,
+**`aiildgjidjmeilmjinaililpijenmodi`**, que sale de la clave pública del manifest (`key`), así no cambia
+según la carpeta desde la que se carga. Los instaladores usan esos ids solos; si los cambiás,
+pasá `--ext-id=` / `-ExtId`.
 
 ## Verificación
 
@@ -91,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File ...\install-windows.ps1 -Uninstall
 | var | default | para qué |
 |---|---|---|
 | `XPORT_PORT` / `XPORT_HOST` | `8000` / `127.0.0.1` | dónde bindea uvicorn (debe matchear el `DEFAULT_BASE` de la extensión) |
-| `XPORT_HOST_KEEP_ALIVE` | `0` | `1` = NO bajar uvicorn en EOF. Útil en **Chrome MV3** (su service worker es efímero y cerraría el puerto al dormirse). |
+| `XPORT_HOST_KEEP_ALIVE` | `0` | `1` = NO bajar uvicorn en EOF. Con **Chrome MV3** se prende solo (su service worker es efímero y cerraría el puerto al dormirse). |
 | `XPORT_HOST_LOG` | `~/.local/state/xport/native-host.log` | logfile del supervisor |
 
 ## Caveats
@@ -105,8 +106,9 @@ powershell -ExecutionPolicy Bypass -File ...\install-windows.ps1 -Uninstall
   y corré `wsl --shutdown`, o pasá a `networkingMode=mirrored`. (La IP de WSL `172.x` sirve
   de fallback pero **cambia en cada reinicio**, por eso no se hardcodea.)
 - **Chrome MV3**: el service worker se duerme y cerraría el puerto → el host bajaría
-  uvicorn. Para ese navegador usá `XPORT_HOST_KEEP_ALIVE=1`. **Firefox MV2** (el target
-  primario) tiene background persistente: anda sin tocar nada.
+  uvicorn. El host reconoce a Chrome por el origen `chrome-extension://…` que le pasa como
+  argumento y en ese caso deja uvicorn vivo, como con `XPORT_HOST_KEEP_ALIVE=1`; se baja
+  al reiniciar o a mano. **Firefox MV2** tiene background persistente: anda sin tocar nada.
 - **Ledger del gate compartido**: el host corre uvicorn desde la raíz del repo, así que
   usa el MISMO `data/audit/ledger.db` que un `uvicorn` manual. El Compliance Gate sigue
   siendo el único global. El auto-arranque no abre ningún camino que saltee el gate.

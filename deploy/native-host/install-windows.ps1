@@ -15,14 +15,14 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -RepoPath /home/<usuario>/xport
   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Distro Ubuntu -RepoPath /home/<usuario>/xport
-  powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Chrome -ExtId <chrome-id>
+  powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Chrome -RepoPath /home/<usuario>/xport
   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Uninstall
 #>
 [CmdletBinding()]
 param(
   [string]$RepoPath = "",                    # ruta del repo DENTRO de WSL (obligatoria)
   [string]$Distro   = "",                     # distro WSL; vacio = la default
-  [string]$ExtId    = "xport@local",          # Firefox: gecko id | Chrome: extension id
+  [string]$ExtId    = "",                     # vacio = el id fijo de cada navegador
   [switch]$Chrome,
   [switch]$Uninstall
 )
@@ -35,6 +35,8 @@ $Bat      = Join-Path $Dest "xport-host.bat"
 $RegBase  = if ($Chrome) { "HKCU:\Software\Google\Chrome\NativeMessagingHosts" }
             else         { "HKCU:\Software\Mozilla\NativeMessagingHosts" }
 $RegKey   = Join-Path $RegBase $HostName
+# Ids fijos de extension/wxt.config.ts: gecko.id en Firefox, el de la `key` en Chrome.
+if (-not $ExtId) { $ExtId = if ($Chrome) { "aiildgjidjmeilmjinaililpijenmodi" } else { "xport@local" } }
 
 if ($Uninstall) {
   Remove-Item -Path $RegKey -Recurse -ErrorAction SilentlyContinue

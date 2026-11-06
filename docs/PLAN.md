@@ -257,6 +257,12 @@ propio sacado del logo: la esquina-flecha azul en lo que sale, el logo en el enc
 datos y la grilla de un CSV de fondo. La página suma un ejemplo del CSV y una tarjeta para compartir
 (`docs/img/social.png`).
 
+**6 de noviembre: Chrome.** El arranque automático no andaba en Chrome Beta ni en Chromium: el instalador escribía
+solo en la carpeta de Chrome estable. Ahora escribe en la de cada variante que esté instalada. La extensión de Chrome
+tiene un id fijo, que sale de una clave pública en el manifest, así que ya no hay que copiarlo a mano. Y el host
+reconoce cuándo lo lanza Chrome y deja el servicio vivo aunque el service worker se duerma; antes eso dependía de una
+variable que solo ponía el instalador de Windows.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: la captura desde el navegador, con el crawl adaptativo, la

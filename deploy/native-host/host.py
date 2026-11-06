@@ -37,7 +37,12 @@ HEALTH_URL = f"http://{HOST}:{PORT}/healthz"
 # Con XPORT_HOST_KEEP_ALIVE=1 el host NO mata uvicorn en EOF (queda vivo entre ciclos
 # del SW); el server se baja a mano o al reiniciar. Default 0: ciclo de vida atado al
 # puerto (ideal para Firefox MV2, cuyo background persiste toda la sesión).
-KEEP_ALIVE = os.environ.get("XPORT_HOST_KEEP_ALIVE") == "1"
+# Chrome le pasa al host el origen de la extensión (`chrome-extension://<id>/`) como primer
+# argumento; Firefox, la ruta de su manifest. Con eso el modo se prende solo para Chrome, en
+# Linux y en Windows, sin depender de cómo se instaló el host.
+KEEP_ALIVE = os.environ.get("XPORT_HOST_KEEP_ALIVE") == "1" or any(
+    arg.startswith("chrome-extension://") for arg in sys.argv[1:]
+)
 READY_TIMEOUT_S = float(os.environ.get("XPORT_HOST_READY_TIMEOUT", "30"))
 LOG_PATH = Path(
     os.environ.get("XPORT_HOST_LOG", str(Path.home() / ".local/state/xport/native-host.log"))

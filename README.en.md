@@ -82,14 +82,13 @@ without Podman.
 4. **Load it in your browser:** see below, for yours.
 5. **Automatic start (optional):** with the native messaging host, the browser starts the service when it opens and
    stops it when it closes. Install it once with `bash deploy/native-host/install-linux.sh` (Firefox) or
-   `bash deploy/native-host/install-linux.sh --chrome --ext-id=<id>` (Chrome). For a Windows browser with the service in
+   `bash deploy/native-host/install-linux.sh --chrome` (Chrome, Chrome Beta or Chromium). For a Windows browser with the service in
    WSL, and to diagnose problems, see [deploy/native-host/README.md](deploy/native-host/README.md).
 
 ### In Chrome
 
 1. Open `chrome://extensions` and turn on «Developer mode», at the top right.
 2. Click «Load unpacked» and choose the `extension/dist/chrome-mv3` folder.
-3. Note the 32-letter id shown on the xport card: it is the `<id>` for the automatic start.
 
 ### In Firefox
 

@@ -80,14 +80,13 @@ Podman.
 4. **Cargarla en el navegador:** ver abajo, según el tuyo.
 5. **Arranque automático (opcional):** con el host de native messaging, el navegador levanta el servicio al abrirse y lo
    baja al cerrarse. Se instala una vez con `bash deploy/native-host/install-linux.sh` (Firefox) o
-   `bash deploy/native-host/install-linux.sh --chrome --ext-id=<id>` (Chrome). Para un navegador de Windows con el
+   `bash deploy/native-host/install-linux.sh --chrome` (Chrome, Chrome Beta o Chromium). Para un navegador de Windows con el
    servicio en WSL, y para diagnosticar problemas, ver [deploy/native-host/README.md](deploy/native-host/README.md).
 
 ### En Chrome
 
 1. Abrí `chrome://extensions` y prendé «Modo de desarrollador», arriba a la derecha.
 2. Hacé clic en «Cargar descomprimida» y elegí la carpeta `extension/dist/chrome-mv3`.
-3. Anotá el id de 32 letras que aparece en la tarjeta de xport: es el `<id>` del arranque automático.
 
 ### En Firefox
 
