@@ -41,7 +41,7 @@ class SqliteStore:
     Persiste `MappedTweet` (el `Tweet` + los metadatos de conversación): la
     política de replies es por-colección y se aplica AL EXPORTAR, cuando ya está
     todo el job; persistir los metadatos permite reanudar a mitad de job sin
-    perderla. Dedupe por PK con `INSERT OR IGNORE` (el mismo tweet puede caer en
+    perderla. Dedupe por PK, con la última versión capturada (el mismo tweet puede caer en
     sub-ventanas solapadas). Checkpointing por sub-ventana: un tramo completado
     no se vuelve a fetchear en un re-run (cada re-fetch gasta presupuesto del gate).
     """
@@ -94,9 +94,10 @@ class SqliteStore:
     # --- tweets -----------------------------------------------------------------
 
     async def save(self, mapped: Iterable[MappedTweet]) -> int:
-        """Inserta con `INSERT OR IGNORE` (dedupe por PK `id`; el primero gana —
-        un tweet re-visto en otra sub-ventana es idéntico). Devuelve cuántas
-        filas se insertaron de verdad (las ignoradas no cuentan)."""
+        """Guarda deduplicando por PK `id`. Un tweet que ya estaba se reemplaza por la
+        versión nueva: si se editó en X, queda la última que se capturó (decisión del
+        2026-11-06). Devuelve cuántos tweets NUEVOS entraron; los reemplazados no
+        cuentan, así el contador de capturados no crece con lo repetido."""
         rows = [
             (
                 m.tweet.id,
@@ -114,6 +115,9 @@ class SqliteStore:
         if not rows:
             return 0
         db = await self._db()
+        # Dos pasos para contar bien: el INSERT OR IGNORE dice cuántos son nuevos, y
+        # el UPDATE pone la versión recién capturada en los que ya estaban (en los
+        # nuevos no cambia nada). La cuenta y la fecha no cambian al editar un tweet.
         cur = await db.executemany(
             """INSERT OR IGNORE INTO tweets
                (id, account, created_at, content, links,
@@ -121,8 +125,15 @@ class SqliteStore:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
+        inserted = cur.rowcount
+        await db.executemany(
+            """UPDATE tweets SET content = ?, links = ?, quoted_tweet_id = ?,
+                   quoted_tweet_url = ?, is_reply = ?, conversation_id = ?
+               WHERE id = ?""",
+            [(r[3], r[4], r[5], r[6], r[7], r[8], r[0]) for r in rows],
+        )
         await db.commit()
-        return cur.rowcount
+        return inserted
 
     async def iter_account(
         self,

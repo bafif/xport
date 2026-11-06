@@ -35,6 +35,17 @@ async def test_save_dedupea_por_pk(store: SqliteStore):
     assert [m.tweet.id for m in await listar(store)] == ["1", "2"]
 
 
+async def test_save_tweet_editado_queda_la_ultima_version(store: SqliteStore):
+    # Decisión del 2026-11-06: si el tweet se editó en X y se vuelve a capturar, queda
+    # la versión nueva. No cuenta como nuevo (el contador de capturados no crece).
+    assert await store.save([mapped_tweet("1", content="antes")]) == 1
+    link = TweetLink(url="https://t.co/x", expanded_url="https://ejemplo.org")
+    assert await store.save([mapped_tweet("1", content="después", links=[link])]) == 0
+    (m,) = await listar(store)
+    assert m.tweet.content == "después"
+    assert [x.expanded_url for x in m.tweet.links] == ["https://ejemplo.org"]
+
+
 async def test_save_vacio_es_noop(store: SqliteStore):
     assert await store.save([]) == 0
 
