@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
-from tweet_extractor.domain.models import Tweet
+from tweet_extractor.domain.models import Tweet, TweetLink
 from tweet_extractor.providers.base import RawTweet
 
 # Capa de mappers compartida (agnóstica de backend). Cada backend (twscrape,
@@ -77,3 +78,54 @@ def passes_reply_policy(
     export desde storage: `own_ids` ya persistidos + filas de a una) sin
     materializar la colección entera."""
     return not is_reply or conversation_id in own_ids
+
+
+# Permalink de status en twitter.com/x.com (incluye /i/web/status/<id> y sufijos
+# tipo /photo/1); captura el id numérico para detectar links autorreferenciales.
+STATUS_URL = re.compile(
+    r"https?://(?:www\.|mobile\.)?(?:twitter|x)\.com/(?:i/web|[^/]+)/status(?:es)?/(\d+)",
+    re.IGNORECASE,
+)
+
+
+def clean_str(value: object) -> str | None:
+    """str no-vacío trimeado, o `None` (ausente, vacío, whitespace o no-str)."""
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    return s or None
+
+
+def links_from_entities(
+    entities: Iterable[Any], *, own_id: str, quoted_id: str | None
+) -> list[TweetLink]:
+    """Los links exportables a partir de entidades de URL (`{url, expanded_url,
+    display_url}`, la misma forma en el GraphQL de la web y en la API v2). Se
+    descartan las entradas sin `url` o sin `expanded_url` y las autorreferenciales
+    (permalink del propio tweet o de su quote: ruido, no contenido); un link a un
+    TERCER tweet sí se conserva. Dedupe por (url, expanded_url) preservando orden."""
+    links: list[TweetLink] = []
+    seen: set[tuple[str, str]] = set()
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        url = clean_str(entity.get("url"))
+        expanded = clean_str(entity.get("expanded_url"))
+        if url is None or expanded is None:
+            continue
+        match = STATUS_URL.match(expanded)
+        if match is not None and match.group(1) in {own_id, quoted_id}:
+            continue
+        key = (url, expanded)
+        if key in seen:
+            continue
+        seen.add(key)
+        display = entity.get("display_url")
+        links.append(
+            TweetLink(
+                url=url,
+                expanded_url=expanded,
+                display_url=display if isinstance(display, str) else None,
+            )
+        )
+    return links

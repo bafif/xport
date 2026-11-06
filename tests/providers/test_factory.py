@@ -11,10 +11,15 @@ from tweet_extractor.providers.twscrape_provider import TwscrapeProvider
 
 
 async def test_backend_official_aparea_provider_y_mapper():
-    settings = Settings(provider_backend="official")
+    settings = Settings(provider_backend="official", x_api_bearer_token="tok")
     backend = await build_backend(settings)
     assert isinstance(backend.provider, OfficialApiProvider)
     assert backend.mapper is api_v2_mapper.map_tweet
+
+
+async def test_backend_official_sin_token_falla_al_armarlo():
+    with pytest.raises(ProviderError, match="X_API_BEARER_TOKEN"):
+        await build_backend(Settings(provider_backend="official", x_api_bearer_token=None))
 
 
 async def test_backend_twscrape_aparea_provider_y_mapper(monkeypatch: pytest.MonkeyPatch):

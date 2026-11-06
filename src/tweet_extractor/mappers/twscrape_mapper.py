@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
@@ -13,6 +12,8 @@ from tweet_extractor.mappers.base import (
     Mapper,
     MapperError,
     apply_reply_policy,
+    clean_str,
+    links_from_entities,
     passes_reply_policy,
 )
 from tweet_extractor.providers.base import RawTweet
@@ -34,13 +35,6 @@ __all__ = [
 # mes/día del locale del proceso: este formato requiere locale C/inglés (el
 # default de Python salvo que alguien llame locale.setlocale).
 _CREATED_AT_FORMAT = "%a %b %d %H:%M:%S %z %Y"
-
-# Permalink de status en twitter.com/x.com (incluye /i/web/status/<id> y sufijos
-# tipo /photo/1); captura el id numérico para detectar links autorreferenciales.
-_STATUS_URL = re.compile(
-    r"https?://(?:www\.|mobile\.)?(?:twitter|x)\.com/(?:i/web|[^/]+)/status(?:es)?/(\d+)",
-    re.IGNORECASE,
-)
 
 
 def map_tweet(raw: RawTweet, *, account: str) -> MappedTweet | None:
@@ -155,33 +149,9 @@ def _extract_links(
     node: dict[str, Any], legacy: dict[str, Any], *, own_id: str, quoted_id: str | None
 ) -> list[TweetLink]:
     """Los links embebidos exportables: `legacy.entities.urls[]` más los del
-    `entity_set` del note tweet (los tweets largos ponen sus links ahí). Se
-    descartan entradas sin `expanded_url` y las autorreferenciales (permalink
-    del propio tweet o de su quote: ruido, no contenido); un link a un TERCER
-    tweet sí se conserva. Dedupe por (url, expanded_url) preservando orden."""
-    links: list[TweetLink] = []
-    seen: set[tuple[str, str]] = set()
-    for entity in _iter_url_entities(node, legacy):
-        url = _clean_str(entity.get("url"))
-        expanded = _clean_str(entity.get("expanded_url"))
-        if url is None or expanded is None:
-            continue
-        match = _STATUS_URL.match(expanded)
-        if match is not None and match.group(1) in {own_id, quoted_id}:
-            continue
-        key = (url, expanded)
-        if key in seen:
-            continue
-        seen.add(key)
-        display = entity.get("display_url")
-        links.append(
-            TweetLink(
-                url=url,
-                expanded_url=expanded,
-                display_url=display if isinstance(display, str) else None,
-            )
-        )
-    return links
+    `entity_set` del note tweet (los tweets largos ponen sus links ahí). El filtro
+    (vacíos, autorreferenciales, dedupe) es el compartido de `mappers/base`."""
+    return links_from_entities(_iter_url_entities(node, legacy), own_id=own_id, quoted_id=quoted_id)
 
 
 def _iter_url_entities(node: dict[str, Any], legacy: dict[str, Any]) -> Iterator[dict[str, Any]]:
@@ -205,9 +175,4 @@ def _dig(obj: Any, *keys: str) -> Any:
     return obj
 
 
-def _clean_str(value: object) -> str | None:
-    """str no-vacío trimeado, o `None` (ausente, vacío, whitespace o no-str)."""
-    if not isinstance(value, str):
-        return None
-    s = value.strip()
-    return s or None
+_clean_str = clean_str
