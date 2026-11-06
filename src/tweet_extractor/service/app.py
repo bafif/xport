@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from tweet_extractor.compliance.gate import SlidingWindowGate
 from tweet_extractor.config import Settings
@@ -70,6 +71,8 @@ def create_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    # Solo pedidos dirigidos a la propia computadora (ver `Settings.allowed_hosts`).
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=cfg.allowed_hosts)
     app.include_router(router)
     app.include_router(ingest_router)
     return app

@@ -52,6 +52,7 @@ def make_settings(tmp_path: Path, **over: Any) -> Settings:
         "data_db_path": tmp_path / "tweets.db",
         "csv_dir": tmp_path / "csv",
         "captures_dir": tmp_path / "captures",
+        "allowed_hosts": ["testserver"],  # el host que usa TestClient
     }
     params.update(over)
     return Settings(**params)

@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # NUNCA Nginx (regla 6 de docs/PLAN.md: no duplicar headers CORS entre ambos).
     cors_allow_origins: list[str] = []
 
+    # Hosts que el servicio acepta en el encabezado `Host`. Escucha solo en la propia
+    # computadora, pero una página web con DNS rebinding podría hablarle con su propio
+    # dominio apuntando a 127.0.0.1: con esto, esos pedidos reciben 400.
+    allowed_hosts: list[str] = ["localhost", "127.0.0.1"]
+
     # Backend de datos: el ÚNICO punto de intercambio scraping ↔ API oficial (la
     # factory lo lee). Un valor inválido falla la validación de pydantic.
     provider_backend: ProviderBackend = "twscrape"
