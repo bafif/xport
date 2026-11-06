@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -108,11 +109,27 @@ class SlidingWindowGate:
     async def remaining(self, now: int | None = None) -> int:
         return self._hard_cap - await self.usage(now)
 
+    @asynccontextmanager
+    async def _write_txn(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Sección crítica de leer-decidir-escribir. El `asyncio.Lock` la serializa dentro
+        del proceso; `BEGIN IMMEDIATE` toma el lock de escritura de SQLite ANTES de leer el
+        uso, así otro proceso con el mismo ledger (la CLI y el servicio a la vez) no puede
+        colarse entre el chequeo y el INSERT: espera (timeout de sqlite3, 5 s) o falla, y
+        fallar es cerrado. Si el bloque no escribe (no entraba), se hace rollback."""
+        async with self._lock:
+            db = await self._db()
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                yield db
+            finally:
+                if db.in_transaction:
+                    await db.rollback()
+
     async def _append(self, db: aiosqlite.Connection, now: int, n: int) -> int:
         """Núcleo de escritura del ledger, compartido por `reserve` (reserva-antes) y
         `record` (registra-después): poda lo que cayó fuera de la ventana (nunca se
-        vuelve a contar y acota el ledger a una ventana) e inserta `(now, n)`. Devuelve
-        el id de la fila. DEBE llamarse bajo `self._lock`."""
+        vuelve a contar y acota el ledger a una ventana), inserta `(now, n)` y hace
+        commit. Devuelve el id de la fila. DEBE llamarse dentro de `_write_txn`."""
         await db.execute("DELETE FROM access_ledger WHERE ts <= ?", (now - self._window_s,))
         cur = await db.execute("INSERT INTO access_ledger(ts, count) VALUES(?, ?)", (now, n))
         await db.commit()
@@ -129,8 +146,7 @@ class SlidingWindowGate:
         if n > self._hard_cap:
             raise ComplianceError(f"pedido de {n} excede el hard_cap {self._hard_cap}")
         while True:
-            async with self._lock:
-                db = await self._db()
+            async with self._write_txn() as db:
                 now = int(self._clock())
                 used = await self._usage(db, now)
                 if used + n <= self._hard_cap:
@@ -198,8 +214,7 @@ class SlidingWindowGate:
         NO deduplica (regla #1): sobre-contar es seguro, sub-contar no."""
         if n <= 0:
             raise ValueError("n debe ser > 0")
-        async with self._lock:
-            db = await self._db()
+        async with self._write_txn() as db:
             now = int(self._clock())
             await self._append(db, now, n)  # mismo núcleo de escritura que reserve
             return await self._usage(db, now)

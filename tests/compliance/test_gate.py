@@ -153,6 +153,35 @@ async def test_concurrencia_serializa_y_no_cruza_el_cap(tmp_path, make_gate):
     assert await gate.remaining() == 0
 
 
+async def test_dos_procesos_sobre_el_mismo_ledger_no_cruzan_el_cap(tmp_path, make_gate):
+    # Dos gates sobre el mismo archivo son dos procesos (la CLI y el servicio a la vez):
+    # cada uno tiene su propio asyncio.Lock, así que solo `BEGIN IMMEDIATE` impide que los
+    # dos lean el mismo uso y entren juntos. Uno reserva; el otro tiene que quedar esperando.
+    waiting = asyncio.Event()
+
+    async def blocking_sleep(s: float) -> None:
+        waiting.set()
+        await asyncio.sleep(3600)
+
+    path = tmp_path / "ledger.db"
+    a = make_gate(path, hard_cap=10, sleep=blocking_sleep)
+    b = make_gate(path, hard_cap=10, sleep=blocking_sleep)
+    await a.setup()
+    await b.setup()
+
+    tasks = [asyncio.ensure_future(g.reserve(6)) for g in (a, b)]
+    async with asyncio.timeout(10):
+        await waiting.wait()
+    done, pending = await asyncio.wait(tasks, timeout=0.5)
+
+    assert len(done) == 1 and len(pending) == 1
+    assert await a.usage() == 6
+    assert await b.usage() == 6
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 async def test_regresion_c1_mismo_segundo_ids_distintos(tmp_path, make_gate, fake_clock):
     gate = make_gate(tmp_path / "ledger.db", hard_cap=1000, clock=fake_clock.time)
     await gate.setup()
