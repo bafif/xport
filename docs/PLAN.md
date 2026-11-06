@@ -263,6 +263,11 @@ tiene un id fijo, que sale de una clave pública en el manifest, así que ya no 
 reconoce cuándo lo lanza Chrome y deja el servicio vivo aunque el service worker se duerma; antes eso dependía de una
 variable que solo ponía el instalador de Windows.
 
+**6 de noviembre: la primera captura en Chrome Beta.** Anduvo sin errores: el host arrancó el servicio, todos los
+lotes entraron y el tope contó cada post visto. En los datos apareció un problema: el link al tweet citado era el
+permalink tal cual lo daba X, casi siempre en twitter.com y a veces un t.co, que no lleva al tweet. Ahora es siempre
+de x.com, y los ya guardados se corrigen solos al arrancar el servicio.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: la captura desde el navegador, con el crawl adaptativo, la

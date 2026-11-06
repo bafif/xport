@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
@@ -126,8 +127,7 @@ def _extract_content(node: dict[str, Any], legacy: dict[str, Any]) -> str:
 def _extract_quote(node: dict[str, Any], legacy: dict[str, Any]) -> tuple[str | None, str | None]:
     """El vínculo al tweet citado. El quote vive en `quoted_status_result.result`
     (y, defensivamente, en `legacy.quoted_status_result`); si está tombstoneado o
-    ausente, cae a `legacy.quoted_status_id_str`. URL: el permalink que entrega X
-    o, si falta, la forma canónica `/i/web/status/<id>` (no requiere handle)."""
+    ausente, cae a `legacy.quoted_status_id_str`. URL: ver `_quoted_url`."""
     container = node.get("quoted_status_result") or legacy.get("quoted_status_result")
     quoted_id: str | None = None
     if isinstance(container, dict):
@@ -140,9 +140,26 @@ def _extract_quote(node: dict[str, Any], legacy: dict[str, Any]) -> tuple[str | 
         quoted_id = _clean_str(legacy.get("quoted_status_id_str"))
     if quoted_id is None:
         return None, None
-    permalink = _dig(legacy, "quoted_status_permalink", "expanded")
-    url = _clean_str(permalink) or f"https://x.com/i/web/status/{quoted_id}"
-    return quoted_id, url
+    permalink = _clean_str(_dig(legacy, "quoted_status_permalink", "expanded"))
+    return quoted_id, _quoted_url(quoted_id, permalink)
+
+
+# Permalink de status con usuario: `<usuario>/status/<id>` en twitter.com o x.com.
+_PERMALINK = re.compile(
+    r"https?://(?:www\.|mobile\.)?(?:twitter|x)\.com/(\w{1,15})/status(?:es)?/(\d+)",
+    re.IGNORECASE,
+)
+
+
+def _quoted_url(quoted_id: str, permalink: str | None) -> str:
+    """El link al tweet citado, siempre en x.com. El permalink que entrega X viene
+    mezclado: casi siempre en twitter.com, a veces en x.com y a veces es un t.co. Del
+    permalink sale solo el usuario, si es un status de este mismo id; si no, va la forma
+    canónica `/i/web/status/<id>`, que no necesita usuario."""
+    match = _PERMALINK.match(permalink or "")
+    if match and match.group(2) == quoted_id:
+        return f"https://x.com/{match.group(1)}/status/{quoted_id}"
+    return f"https://x.com/i/web/status/{quoted_id}"
 
 
 def _extract_links(

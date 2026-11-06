@@ -115,13 +115,21 @@ def test_quote_id_y_url_canonica():
     assert mapped.tweet.is_quote
 
 
-def test_quote_usa_permalink_si_presente():
-    raw = tweet_result(
-        "1",
-        quoted=tweet_result("200"),
-        quoted_permalink="https://twitter.com/alguien/status/200",
-    )
-    assert mapear(raw).tweet.quoted_tweet_url == "https://twitter.com/alguien/status/200"
+@pytest.mark.parametrize(
+    ("permalink", "esperado"),
+    [
+        ("https://twitter.com/alguien/status/200", "https://x.com/alguien/status/200"),
+        ("https://x.com/Alguien_2/status/200?s=20", "https://x.com/Alguien_2/status/200"),
+        ("https://t.co/CV7dEnfAbc", "https://x.com/i/web/status/200"),
+        ("https://twitter.com/otro/status/999", "https://x.com/i/web/status/200"),
+        ("https://x.com/i/web/status/200", "https://x.com/i/web/status/200"),
+    ],
+)
+def test_quote_link_siempre_en_x_com(permalink, esperado):
+    """Del permalink de X sale solo el usuario, y solo si es un status del mismo id:
+    un t.co o un link a otro tweet caen a la forma canónica."""
+    raw = tweet_result("1", quoted=tweet_result("200"), quoted_permalink=permalink)
+    assert mapear(raw).tweet.quoted_tweet_url == esperado
 
 
 def test_quote_en_legacy_defensivo():

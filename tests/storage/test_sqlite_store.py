@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -167,3 +168,30 @@ async def test_setup_pasa_a_minusculas_los_handles_guardados_antes(tmp_path: Pat
         assert await store.accounts() == ["someuser"]
         assert [m.tweet.id for m in await listar(store)] == ["1", "2"]
         assert await store.is_window_done("someuser", since, until)
+
+
+async def test_setup_lleva_a_x_com_los_links_de_citados_guardados_antes(tmp_path: Path):
+    # Antes de noviembre de 2026 el link al citado era el permalink tal cual lo daba X.
+    path = tmp_path / "tweets.db"
+    async with SqliteStore(path) as old:
+        await old.save([mapped_tweet(str(i), quoted_id=f"20{i}") for i in range(1, 5)])
+    viejos = {
+        "1": "https://twitter.com/alguien/status/201",
+        "2": "https://t.co/CV7dEnfAbc",
+        "3": "https://x.com/otra/status/203",
+        "4": "https://x.com/i/web/status/204",
+    }
+    with sqlite3.connect(path) as conn:
+        conn.executemany(
+            "UPDATE tweets SET quoted_tweet_url = ? WHERE id = ?",
+            [(url, tid) for tid, url in viejos.items()],
+        )
+
+    async with SqliteStore(path) as store:
+        urls = {m.tweet.id: m.tweet.quoted_tweet_url for m in await listar(store)}
+    assert urls == {
+        "1": "https://x.com/alguien/status/201",
+        "2": "https://x.com/i/web/status/202",
+        "3": "https://x.com/otra/status/203",
+        "4": "https://x.com/i/web/status/204",
+    }

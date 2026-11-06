@@ -72,6 +72,17 @@ class SqliteStore:
             " WHERE account <> lower(account)"
         )
         await db.execute("DELETE FROM window_checkpoints WHERE account <> lower(account)")
+        # Hasta noviembre de 2026 el link al citado era el permalink tal cual lo daba X:
+        # twitter.com, x.com o un t.co. Lo lleva a la forma de `_quoted_url` del mapper.
+        # Idempotente.
+        await db.execute(
+            "UPDATE tweets SET quoted_tweet_url = 'https://x.com/' || substr(quoted_tweet_url, 21)"
+            " WHERE quoted_tweet_url LIKE 'https://twitter.com/%/status/%'"
+        )
+        await db.execute(
+            "UPDATE tweets SET quoted_tweet_url = 'https://x.com/i/web/status/' || quoted_tweet_id"
+            " WHERE quoted_tweet_id IS NOT NULL AND quoted_tweet_url NOT LIKE 'https://x.com/%'"
+        )
         await db.commit()
 
     async def close(self) -> None:
