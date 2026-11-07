@@ -38,6 +38,57 @@ export const BLANK_BACKOFF_MAX_MS = 60_000;
 // error/conexión, y eso se reintenta, no se saltea.
 export const SATURATED_DAY = 800;
 
+/** Lo que el crawl ve después de cada scroll. `hidden`: la pestaña estuvo oculta en algún
+ *  momento del paso (otra pestaña adelante, la ventana minimizada o tapada). */
+export interface StepObservation {
+  hidden: boolean;
+  grew: boolean; // la página creció: x.com trajo más
+  loading: boolean; // hay spinner
+  retry: boolean; // x.com muestra «Reintentar»
+}
+
+export interface StepCounters {
+  stale: number; // scrolls seguidos sin crecer
+  retries: number; // clicks a «Reintentar»
+  loadingWaits: number; // esperas al spinner
+}
+
+export type StepAction = 'pause' | 'grew' | 'wait-loading' | 'retry' | 'stale' | 'settled';
+
+export const FRESH_COUNTERS: StepCounters = { stale: 0, retries: 0, loadingWaits: 0 };
+
+/** Qué hacer después de un scroll. Con la pestaña oculta, el navegador deja de dibujarla
+ *  y x.com no carga más: un scroll quieto ahí no es la pared de los ~1000 resultados, y
+ *  contarlo haría achicar el rango y perder el resto del día sin aviso. Por eso `pause` no
+ *  suma scrolls quietos: el crawl espera a que la pestaña vuelva y retoma de cero. Puro y
+ *  testeable. */
+export function decideStep(
+  obs: StepObservation,
+  c: StepCounters,
+): { action: StepAction; counters: StepCounters } {
+  if (obs.hidden) return { action: 'pause', counters: { ...c, stale: 0, loadingWaits: 0 } };
+  if (obs.grew) return { action: 'grew', counters: FRESH_COUNTERS };
+  if (obs.loading && c.loadingWaits < MAX_LOADING_WAITS) {
+    return { action: 'wait-loading', counters: { ...c, loadingWaits: c.loadingWaits + 1 } };
+  }
+  if (obs.retry && c.retries < MAX_RETRIES) {
+    return { action: 'retry', counters: { ...c, retries: c.retries + 1, loadingWaits: 0 } };
+  }
+  const stale = c.stale + 1;
+  return {
+    action: stale >= MAX_STALE ? 'settled' : 'stale',
+    counters: { ...c, stale, loadingWaits: 0 },
+  };
+}
+
+/** El aviso que el popup muestra mientras la captura está en pausa. */
+export function pausedNotice(account: string): string {
+  return (
+    `La captura de @${account} está en pausa: su pestaña quedó oculta. Volvé a esa pestaña ` +
+    'para que siga (si la cerraste, «Capturar ▶» la retoma).'
+  );
+}
+
 /** Backoff antes de recargar una búsqueda que cargó en blanco: 5s, 10s, 20s, 40s, …, tope 60s.
  *  Persistente (no se rinde) pero sin martillar. Puro y testeable. */
 export function blankBackoff(attempt: number): number {

@@ -19,6 +19,9 @@ export const STORAGE_FORM = 'xport:form'; // últimos valores del form (cuenta/f
 // restaurarlos al reabrir el popup (que se cierra al abrir la pestaña de captura)
 export const STORAGE_STATUS = 'xport:status'; // último aviso del crawl (p.ej. "se cortó por
 // errores de carga"), que el popup muestra una vez al reabrirse
+export const STORAGE_PAUSED = 'xport:paused'; // aviso mientras el crawl espera a que su pestaña
+// vuelva a estar a la vista; el popup lo muestra mientras haya crawl
+export const STORAGE_EXCEL = 'xport:excel'; // casilla «Para Excel en castellano» del popup
 
 // Operaciones que capturamos. MVP: SearchTimeline (rango de fechas vía la búsqueda
 // from:user since: until:). UserTweets* son timeline de perfil (otro envelope) — el

@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
 from tweet_extractor.compliance.gate import SlidingWindowGate
 from tweet_extractor.providers.base import Page, SearchQuery, TweetProvider
+
+
+@pytest.fixture(autouse=True)
+def _aislar_carpeta_de_datos(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Ningún test toca la carpeta de datos real, muda el `data/` del repo ni le habla a
+    un xport que esté corriendo en 8000 u 8080: los tests que los necesitan los fijan."""
+    monkeypatch.setenv("XPORT_DATA_DIR", str(tmp_path / "xport-data"))
+    monkeypatch.setenv("XPORT_LEGACY_DIRS", "[]")
+    monkeypatch.setenv("XPORT_PEER_PORTS", "[]")
 
 
 class FakeClock:

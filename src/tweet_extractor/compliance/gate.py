@@ -10,6 +10,16 @@ from typing import Any
 
 import aiosqlite
 
+# Esquema del ledger. Lo usa también la mudanza de un ledger viejo (`datadir.py`).
+LEDGER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS access_ledger (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts    INTEGER NOT NULL,
+    count INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_ts ON access_ledger(ts);
+"""
+
 
 class ComplianceError(RuntimeError):
     """Un pedido no puede cumplirse sin violar el tope de ToS."""
@@ -81,14 +91,7 @@ class SlidingWindowGate:
     async def setup(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         db = await self._db()
-        await db.execute(
-            """CREATE TABLE IF NOT EXISTS access_ledger (
-                id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts    INTEGER NOT NULL,
-                count INTEGER NOT NULL
-            )"""
-        )
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_ledger_ts ON access_ledger(ts)")
+        await db.executescript(LEDGER_SCHEMA)
         await db.commit()
 
     async def _usage(self, db: aiosqlite.Connection, now: int) -> int:

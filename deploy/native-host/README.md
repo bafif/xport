@@ -109,8 +109,10 @@ powershell -ExecutionPolicy Bypass -File ...\install-windows.ps1 -Uninstall
   uvicorn. El host reconoce a Chrome por el origen `chrome-extension://…` que le pasa como
   argumento y en ese caso deja uvicorn vivo, como con `XPORT_HOST_KEEP_ALIVE=1`; se baja
   al reiniciar o a mano. **Firefox MV2** tiene background persistente: anda sin tocar nada.
-- **Ledger del gate compartido**: el host corre uvicorn desde la raíz del repo, así que
-  usa el MISMO `data/audit/ledger.db` que un `uvicorn` manual. El Compliance Gate sigue
-  siendo el único global. El auto-arranque no abre ningún camino que saltee el gate.
+- **Ledger del gate compartido**: el host, un `uvicorn` manual y la CLI usan la misma
+  carpeta de datos por usuario (`~/.local/share/xport` en Linux; `XPORT_DATA_DIR` la
+  cambia), arranquen desde donde arranquen, así que el ledger es uno solo. Si ya hay
+  otro xport en 8000 u 8080, el servicio no arranca y el log del host dice por qué. El
+  auto-arranque no abre ningún camino que saltee el gate.
 - **Una sola vez, fuera del navegador**: native messaging no se puede shippear solo por
   la web store — el manifest del host vive en el FS / registro. Por eso hay un instalador.

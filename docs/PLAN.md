@@ -69,7 +69,8 @@ Varias partes del código remiten a estas reglas por número.
      página (el tamaño de página por tres, por los citados embebidos). Si no entra, espera a que lo
      viejo salga de la ventana; cuando llega la respuesta, se ajusta la reserva al conteo real.
    - El registro vive en un SQLite de auditoría aparte del de los tweets, así sobrevive a que se borre
-     la base de datos. Cada ciclo de leer, decidir y escribir corre bajo un lock y dentro de una
+     la base de datos, y en la carpeta de datos por usuario, la misma para el servicio, la CLI y el native
+     host. Si ya responde otro xport, el servicio no arranca. Cada ciclo de leer, decidir y escribir corre bajo un lock y dentro de una
      transacción `BEGIN IMMEDIATE`, así tampoco dos procesos con el mismo registro (la CLI y el
      servicio) pueden colarse entre el chequeo y la escritura.
    - Todo camino de acceso pasa por el mismo registro. Los proveedores del lado del servidor van
@@ -101,6 +102,7 @@ mappers/       GraphQL crudo → modelo de dominio
 domain/        Tweet y TweetLink (pydantic v2)
 compliance/    el registro del tope (SlidingWindowGate) y GatedProvider
 storage/       SQLite de datos (deduplicado, checkpoints) y export CSV en streaming
+datadir.py     la mudanza de los datos viejos (`data/`) a la carpeta por usuario
 service/       FastAPI: jobs, ingesta de la captura, export, estado del tope
 cli.py         la línea de comandos (Typer)
 extension/     extensión para Chrome y Firefox (WXT, un solo código)
@@ -280,12 +282,36 @@ revisión se arreglan todos. Y entran todas las mejoras propuestas. En cada deci
 instalador cómodo para Windows, macOS y Linux, y que usarla no pida saber nada técnico. El porqué está en «Capturar sin
 el navegador adelante», y el orden de trabajo, en «Pendiente».
 
+**7 de noviembre: la Fase 1, los cuatro errores.** Quedaron arreglados en el código y con tests; lo que pide un navegador
+o un Excel de verdad sigue abierto en «Pendiente»:
+
+- La captura se pone en pausa con la pestaña oculta. La decisión de cada scroll pasó a una función pura (`decideStep`):
+  con la pestaña oculta, o si se ocultó en medio del paso, no cuenta el scroll quieto, así que nunca lo toma por la pared
+  de los mil resultados. El crawl espera el `visibilitychange`, sin timers (Chrome los frena en una pestaña oculta), y el
+  popup muestra «La captura de @cuenta está en pausa: su pestaña quedó oculta» mientras dure.
+- Un cambio de forma de x.com se nota. `/ingest` cuenta los tweets que el mapper no entiende (`rejected`); si son más de
+  la mitad del lote, marca `format_changed`, deja en el log un ejemplo recortado del tweet y la extensión corta el crawl
+  con «x.com cambió el formato de los datos: hay que actualizar xport». Lo que sí se entiende se guarda y todo se cuenta
+  en el tope.
+- `/export` acepta `encoding` y `delimiter`, validados como en `/jobs` (un codec que exista, un solo carácter), y el
+  popup tiene la casilla «Para Excel en castellano», que se recuerda.
+- Un solo registro del tope. Los datos y el registro pasaron a la carpeta fija por usuario (`XPORT_DATA_DIR` la
+  cambia, siempre absoluta), y el `.env` se lee del repo aunque la CLI corra desde otra carpeta. Las rutas relativas
+  cuelgan de esa carpeta, y las del `.env.example` viejo (`data/…`) apuntan a lo mismo que los valores por defecto. La
+  primera vez se muda lo que haya en el `data/` del repo y en el de la carpeta actual, solo si tiene un registro: se
+  mueve, no se copia, y si en la carpeta nueva ya hay un registro, los accesos del viejo se le suman y el viejo se
+  borra. Las bases de tweets no se mezclan: si ya hay una, la vieja queda donde estaba y se avisa. El servicio, antes de
+  abrir nada, busca otro xport en 8000 y 8080 (`/healthz` ahora dice `service: xport`) y, si lo encuentra, no arranca y
+  explica por qué. Uvicorn corre el lifespan antes de abrir su puerto, así que lo que responde es siempre otro proceso.
+  El compose queda para CI y despliegue.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada
 en el código. Esa vez anduvo de punta a punta: el host levantó el servicio, los lotes entraron y el tope contó cada post
 visto. Lo que no ejercité en un navegador son los cortes mismos: el servicio caído a mitad de una captura, el popup sin
-servicio y el tope lleno. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine y la
+servicio y el tope lleno. Tampoco lo de la Fase 1 (7 de noviembre): la pausa con la pestaña oculta, el corte por cambio
+de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine y la
 extensión se construyen en CI.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
@@ -307,6 +333,10 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Captura in-page: parche de `fetch` y XHR, puente, relay en lotes de 20 páginas | `extension/entrypoints/` | real (junio y 6/11) |
 | Crawl adaptativo: scroll, «Reintentar», recarga con backoff, achique del rango, reanudación desde la base, salteo de días saturados | `autoscroll.content.ts`, `POST /progress` | real; funciones puras con vitest |
 | Cortes del crawl: sin servicio, tope lleno, 429, `over_cap`, rechazo, veinte páginas sin registrar | `lib/ingest.ts`, `background.ts`, popup | vitest de `decideIngest`; **no ejercitados en un navegador** |
+| Pausa del crawl con la pestaña oculta, con aviso en el popup | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest de `decideStep`; **sin prueba a mano** |
+| Cambio de forma de x.com: `rejected` y `format_changed` en `/ingest`, ejemplo en el log, corte del crawl | `service/ingest.py`, `lib/ingest.ts` | tests con una página de forma desconocida; vitest |
+| CSV para Excel en castellano desde `/export` y el popup | `service/schemas.py`, popup | tests (BOM y `;`); **sin abrirlo en Excel** |
+| Un solo registro del tope: carpeta de datos por usuario, `.env` del repo, mudanza de `data/`, no arranca si ya corre otro xport | `config.py`, `datadir.py`, `service/app.py` | tests (la CLI desde dos carpetas, la mudanza, la suma de dos registros, el segundo servicio) |
 | Borrar lo capturado de una cuenta sin tocar el tope | `POST /reset`, popup | tests; real |
 | Arranque automático por native messaging: Firefox, Chrome, Chrome Beta y Chromium, id fijo en Chrome | `deploy/native-host/` | real en Chrome Beta (6/11); Windows con WSL sin probar |
 | El servicio solo atiende pedidos a `localhost` o `127.0.0.1` | `service/app.py` | tests |
@@ -390,31 +420,20 @@ Todo lo de abajo está decidido desde el 7 de noviembre: los cuatro errores de l
 mejoras. Va por fases, en este orden, y cada fase entra en una o dos sesiones. Cada punto dice por qué, cómo, cuándo está
 listo y cuánto lleva (chico: una tarde; mediano: un par de días).
 
-### Fase 1: los cuatro errores
+### Fase 1: los cuatro errores (hecha el 7 de noviembre)
 
-1. **Pausar el crawl con la pestaña oculta.** Por qué: hoy volver a otra pestaña puede saltear el resto de cada día con
-   más de una página (ver arriba). Sigue haciendo falta con el navegador invisible, para el plan B con ventana y para el
-   popup mientras exista. Cómo: en `run()`, si `document.hidden`, esperar el `visibilitychange` sin contar scrolls
-   quietos, y dejar un aviso («La captura está en pausa: su pestaña quedó oculta») que el popup muestre; el README avisa
-   que la captura tiene que quedar a la vista. Listo cuando: test de la decisión y una prueba a mano cambiando de pestaña
-   a mitad de captura, con el rango entero en `/progress`. Chico.
-2. **Que un cambio de forma de x.com se note.** Por qué: `/ingest` saltea con `except MapperError: continue` cada tweet
-   que el mapper no entiende. Si x.com rota la forma, fallan todos, se guarda cero, el crawl sigue y el CSV sale vacío
-   sin error, que es lo que el mapper del 13 de junio quería evitar. Cómo: `IngestResult` suma `rejected`; si en un lote
-   falla más de la mitad, el servicio deja un ejemplo en el log y la extensión corta el crawl con «x.com cambió el formato
-   de los datos: hay que actualizar xport». Listo cuando: test con una página de forma desconocida. Chico.
-3. **Excel en castellano.** Por qué: el encoding y el separador se cambian en la CLI y en `/jobs`, pero `/export`, el
-   único camino que hoy anda, no los acepta. Cómo: `ExportRequest` suma `encoding` y `delimiter`, y el popup una casilla
-   «Para Excel en castellano» (`utf-8-sig` y `;`) que se recuerda; la página local la hereda. Listo cuando: el CSV abre
-   bien en un Excel en castellano. Chico.
-4. **Un solo registro del tope.** Por qué: a mano y por native messaging se usa `data/audit/ledger.db`, relativo a la
-   carpeta desde donde se arranca, así que la CLI corrida desde otra carpeta crea otro registro; y el compose usa un
-   volumen de Podman. Lo único que hoy evita dos topes es que el README pida usar siempre la misma forma, y la regla 1
-   dice que se garantiza por código. Cómo: los datos y el registro pasan a la carpeta fija por usuario, la misma para el
-   servicio, la CLI y el native host; la primera vez se mueve ahí lo que haya en `data/` (se mueve, no se copia, para
-   no dejar dos registros); el compose queda para CI y despliegue; y el servicio no arranca si en el otro puerto ya
-   responde otro xport. Listo cuando: un test muestra que la CLI corrida desde otra carpeta usa el mismo registro, y
-   levantar un segundo servicio da un error claro. Chico.
+Está en el código y con tests (ver «Cómo lo fui construyendo»). Los números siguen, porque el resto del plan los cita.
+Falta lo que pide un navegador o un Excel de verdad:
+
+1. **Pausar el crawl con la pestaña oculta.** Falta la prueba a mano: cambiar de pestaña a mitad de una captura, ver
+   el aviso en el popup, volver y comprobar en `/progress` que el rango quedó entero.
+2. **Que un cambio de forma de x.com se note.** Hecho; el test usa una página de forma desconocida. Si algún día cambia
+   el sobre de la respuesta y no el tweet, `/ingest` ve cero tweets y no lo distingue de una página vacía: eso no lo
+   cubre.
+3. **Excel en castellano.** Falta abrir un CSV exportado con la casilla en un Excel configurado en castellano.
+4. **Un solo registro del tope.** Hecho. Un xport de antes de este cambio no dice `service` en `/healthz`, así que un
+   servicio viejo que siga corriendo no se detecta: después de actualizar hay que bajarlo (con Chrome, el native host
+   lo deja vivo hasta reiniciar).
 
 ### Fase 2: lo que falta probar
 
@@ -527,6 +546,7 @@ cp .env.example .env     # solo para twscrape o la API oficial
 uv run pytest -q
 ```
 
-No viajan por git y se regeneran: el `.env` (con las cookies de una cuenta aparte), el `.venv`
+Lo capturado no viaja con el repo: está en la carpeta de datos (`~/.local/share/xport` en Linux). No viajan por git y se regeneran: el `.env` (con las cookies de una cuenta
+aparte), el `.venv`
 (`uv sync`) y `extension/node_modules`, `extension/dist` y `extension/.wxt` (el build con Podman o
 `npm ci && npm run build` dentro de `extension/`).

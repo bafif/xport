@@ -24,7 +24,7 @@ def test_healthz(make_client: ClientFactory) -> None:
     with make_client() as client:
         r = client.get("/healthz")
         assert r.status_code == 200
-        assert r.json() == {"status": "ok"}
+        assert r.json() == {"status": "ok", "service": "xport"}
 
 
 def test_gate_arranca_vacio(make_client: ClientFactory) -> None:

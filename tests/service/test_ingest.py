@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.providers._fixtures import search_response, tweet_entry, tweet_result
@@ -254,3 +256,68 @@ def test_reset_cuenta_sin_datos(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
         body = client.post("/reset", json={"account": "nadie"}).json()
         assert body == {"account": "nadie", "deleted": 0}
+
+
+def _entrada_de_forma_desconocida(rest_id: str) -> dict:
+    # Como si x.com hubiera movido `legacy` a otro lado: el mapper no la entiende.
+    result = {"__typename": "Tweet", "rest_id": rest_id, "data_v2": {"text": "hola"}}
+    return {
+        "entryId": f"tweet-{rest_id}",
+        "content": {"itemContent": {"tweet_results": {"result": result}}},
+    }
+
+
+def test_ingest_forma_desconocida_avisa_que_cambio_el_formato(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Antes, `except MapperError: continue` salteaba todo en silencio: se guardaba cero, el
+    # crawl seguía y el CSV salía vacío sin error.
+    page = search_response(
+        [tweet_entry("1"), _entrada_de_forma_desconocida("7"), _entrada_de_forma_desconocida("8")]
+    )
+    with (
+        TestClient(create_app(make_settings(tmp_path))) as client,
+        caplog.at_level(logging.WARNING),
+    ):
+        body = post_ingest(client, [page]).json()
+    assert body["captured"] == 3
+    assert body["rejected"] == 2
+    assert body["saved"] == 1  # lo que sí se entiende se guarda igual
+    assert body["format_changed"] is True
+    assert body["gate_usage"] == 3  # y todo lo visto se cuenta (regla 1)
+    assert "cambió el formato" in caplog.text
+    assert "data_v2" in caplog.text  # el log trae un ejemplo para arreglar el mapper
+
+
+def test_ingest_pocos_rotos_no_es_cambio_de_formato(tmp_path: Path) -> None:
+    page = search_response([tweet_entry("1"), tweet_entry("2"), _entrada_de_forma_desconocida("7")])
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        body = post_ingest(client, [page]).json()
+    assert body["rejected"] == 1
+    assert body["format_changed"] is False
+
+
+def test_export_para_excel_en_castellano(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        post_ingest(client, [search_response([tweet_entry("1")])], account="someuser")
+        r = client.post(
+            "/export",
+            json={
+                "account": "someuser",
+                "since": "2023-01-01",
+                "until": "2023-02-01",
+                "encoding": "utf-8-sig",
+                "delimiter": ";",
+            },
+        )
+        assert r.status_code == 200
+        raw = (tmp_path / "captures" / r.json()["csv"]).read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")  # el BOM que Excel necesita para leer UTF-8
+    assert raw[3:].startswith(b'"account";"created_at";')
+
+
+def test_export_rechaza_un_formato_invalido(tmp_path: Path) -> None:
+    base = {"account": "someuser", "since": "2023-01-01", "until": "2023-02-01"}
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        assert client.post("/export", json={**base, "delimiter": ";;"}).status_code == 422
+        assert client.post("/export", json={**base, "encoding": "klingon"}).status_code == 422

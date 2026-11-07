@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 from datetime import UTC, date, datetime
 from typing import Any, Self
 
@@ -45,13 +46,35 @@ class _DateRange(BaseModel):
         return datetime(self.until.year, self.until.month, self.until.day, tzinfo=UTC)
 
 
-class JobCreate(_DateRange):
+class _CsvFormat(BaseModel):
+    """Encoding y separador del CSV, para los bodies que lo escriben (job + export). Para
+    un Excel configurado en castellano: `utf-8-sig` (con BOM) y `;`."""
+
+    encoding: str = DEFAULT_ENCODING
+    delimiter: str = DEFAULT_DELIMITER
+
+    @field_validator("encoding")
+    @classmethod
+    def _encoding_conocido(cls, value: str) -> str:
+        try:
+            codecs.lookup(value)
+        except LookupError as e:
+            raise ValueError(f"encoding desconocido: {value!r}") from e
+        return value
+
+    @field_validator("delimiter")
+    @classmethod
+    def _un_caracter(cls, value: str) -> str:
+        if len(value) != 1 or value in '"\r\n':
+            raise ValueError("el separador tiene que ser un solo carácter, sin comillas ni saltos")
+        return value
+
+
+class JobCreate(_DateRange, _CsvFormat):
     """Body de `POST /jobs`."""
 
     accounts: list[str] = Field(min_length=1, description="Handles (sin @). Al menos uno.")
     subwindow_days: int | None = Field(default=None, ge=1)
-    encoding: str = DEFAULT_ENCODING
-    delimiter: str = DEFAULT_DELIMITER
 
     @field_validator("accounts")
     @classmethod
@@ -164,15 +187,18 @@ class IngestResult(BaseModel):
     account: str
     captured: int  # tweet_results de nivel-tope extraídos de las páginas
     saved: int  # nuevos persistidos (dedup por id en el store)
+    rejected: int  # tweets que el mapper no entendió (MapperError)
+    # Más de la mitad del lote no se entendió: x.com cambió la forma de los datos. La
+    # extensión corta el crawl; seguir daría un CSV vacío sin ningún error.
+    format_changed: bool
     accessed: int  # objetos-tweet contados para el gate (incluye RT/quotes)
     gate_usage: int
     gate_remaining: int
     over_cap: bool  # el ledger global cruzó el tope (las próximas ingestas dan 429)
 
 
-class ExportRequest(_DateRange):
-    """Body de `POST /export`: exporta a CSV lo capturado de una cuenta en un rango.
-    El store acumula varias navegaciones; el filtro de fecha acota a lo pedido."""
+class ProgressRequest(_DateRange):
+    """Body de `POST /progress`: una cuenta y un rango de lo capturado."""
 
     account: str
 
@@ -180,6 +206,11 @@ class ExportRequest(_DateRange):
     @classmethod
     def _clean(cls, raw: str) -> str:
         return _clean_handle(raw)
+
+
+class ExportRequest(ProgressRequest, _CsvFormat):
+    """Body de `POST /export`: exporta a CSV lo capturado de una cuenta en un rango.
+    El store acumula varias navegaciones; el filtro de fecha acota a lo pedido."""
 
 
 class ExportResult(BaseModel):

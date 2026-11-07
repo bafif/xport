@@ -1,3 +1,6 @@
+# Para CI y para desplegar, no para el uso diario: tiene su propio registro del tope, en un volumen,
+# aparte del de la carpeta de datos que comparten `fastapi dev`, el native host y la CLI. Un servicio
+# local no arranca si este responde en 8080 (regla 1 de docs/PLAN.md: un solo registro).
 # Podman sin root: `podman compose -f deploy/compose.yaml up --build`, en http://localhost:8080.
 # `restart: unless-stopped` vuelve a levantar los contenedores después de un reinicio solo si está
 # habilitado `podman-restart.service` (systemctl --user enable podman-restart.service).

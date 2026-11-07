@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import asyncio
+import logging
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from tweet_extractor.compliance.gate import SlidingWindowGate
 from tweet_extractor.config import Settings
+from tweet_extractor.datadir import migrate_legacy_data
 from tweet_extractor.service.ingest import router as ingest_router
 from tweet_extractor.service.jobs import (
     BackendBuilder,
@@ -16,8 +20,30 @@ from tweet_extractor.service.jobs import (
     ServiceState,
     build_backend,
 )
-from tweet_extractor.service.routers import router
+from tweet_extractor.service.routers import SERVICE_NAME, router
 from tweet_extractor.storage.sqlite_store import SqliteStore
+
+log = logging.getLogger(__name__)
+
+
+class AnotherServiceError(RuntimeError):
+    """Ya hay otro xport corriendo: dos servicios serían dos registros del tope."""
+
+
+async def find_running_xport(ports: Iterable[int], wait_s: float = 0.5) -> str | None:
+    """La dirección de otro xport que ya responda en alguno de `ports`, o `None`. Corre en
+    el lifespan, antes de que uvicorn abra el puerto propio: lo que responde es otro
+    proceso. Se reconoce por `/healthz`, que desde noviembre de 2026 dice `service`."""
+    async with httpx.AsyncClient(timeout=wait_s, trust_env=False) as client:
+        for port in ports:
+            try:
+                r = await client.get(f"http://127.0.0.1:{port}/healthz")
+                body = r.json() if r.status_code == 200 else None
+            except (httpx.HTTPError, ValueError):
+                continue
+            if isinstance(body, dict) and body.get("service") == SERVICE_NAME:
+                return f"http://localhost:{port}"
+    return None
 
 
 def create_app(
@@ -33,6 +59,20 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Regla 1 de docs/PLAN.md: un solo registro del tope. Si ya corre otro xport (a
+        # mano, por el native host o el compose), este no arranca: tendría su propio
+        # registro o pisaría el del otro.
+        other = await find_running_xport(cfg.xport_peer_ports)
+        if other is not None:
+            msg = (
+                f"ya hay otro xport corriendo en {other}: no arranco un segundo servicio, "
+                "porque dos servicios llevarían dos registros del tope de 24 h. Usá ese o "
+                "bajalo antes de levantar este."
+            )
+            log.error(msg)
+            raise AnotherServiceError(msg)
+        for note in await asyncio.to_thread(migrate_legacy_data, cfg):
+            log.warning("datos viejos: %s", note)
         gate = SlidingWindowGate(cfg.audit_db_path, cfg.hard_cap, cfg.window_s)
         store = SqliteStore(cfg.data_db_path)
         registry = JobRegistry()

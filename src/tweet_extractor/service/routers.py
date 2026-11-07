@@ -21,12 +21,16 @@ def get_svc(request: Request) -> ServiceState:
 
 SvcDep = Annotated[ServiceState, Depends(get_svc)]
 
+# Lo que `/healthz` dice ser: así un servicio nuevo reconoce que ya corre otro xport
+# (ver `find_running_xport` en app.py).
+SERVICE_NAME = "xport"
+
 router = APIRouter()
 
 
 @router.get("/healthz")
 async def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "service": SERVICE_NAME}
 
 
 @router.get("/gate", response_model=GateResponse)

@@ -9,9 +9,10 @@ import {
   STORAGE_CAPTURE,
   STORAGE_COUNTS,
   STORAGE_CRAWL,
+  STORAGE_PAUSED,
   STORAGE_STATUS,
 } from '../lib/capture';
-import { decideIngest, MAX_PAGES_PER_POST, stopNotice } from '../lib/ingest';
+import { decideIngest, type IngestFlags, MAX_PAGES_PER_POST, stopNotice } from '../lib/ingest';
 
 // Relay del patrón C: recibe las capturas del bridge, las batchea por cuenta y las
 // POSTea al FastAPI local (/ingest). El backend hace extract+map+store+gate. Si el
@@ -26,10 +27,10 @@ import { decideIngest, MAX_PAGES_PER_POST, stopNotice } from '../lib/ingest';
 const FLUSH_MS = 1500;
 const MAX_PAGES_PER_ACCOUNT = 1000; // cota del buffer ante outage prolongado
 
-interface IngestReply {
+interface IngestReply extends IngestFlags {
   account: string;
   saved: number;
-  over_cap: boolean;
+  rejected: number;
 }
 
 export default defineBackground(() => {
@@ -121,7 +122,7 @@ export default defineBackground(() => {
         if (rest.length > 0) buffers.set(account, rest);
         else buffers.delete(account);
         let status = 0; // 0 = el servicio no respondió
-        let overCap = false;
+        let reply: IngestReply | null = null;
         try {
           const res = await fetch(`${base}/ingest`, {
             method: 'POST',
@@ -130,16 +131,18 @@ export default defineBackground(() => {
           });
           status = res.status;
           if (res.ok) {
-            const reply = (await res.json()) as IngestReply;
-            overCap = reply.over_cap;
+            reply = (await res.json()) as IngestReply;
             await bumpCount(reply.account, reply.saved);
-            console.debug('[xport] ingest OK', account, '→ saved', reply.saved, 'over_cap', overCap);
+            console.debug(
+              '[xport] ingest OK', account, '→ saved', reply.saved, 'rejected', reply.rejected,
+              'over_cap', reply.over_cap,
+            );
           }
         } catch (err) {
           console.warn('[xport] servicio no responde en', base, err);
         }
         const pending = pages.length + (buffers.get(account)?.length ?? 0);
-        const decision = decideIngest(status, overCap, pending);
+        const decision = decideIngest(status, reply, pending);
         if (decision.requeue) {
           console.warn('[xport] ingest', status || 'sin respuesta', '→ reintento');
           requeue(account, pages);
@@ -160,7 +163,7 @@ export default defineBackground(() => {
     const had = (await browser.storage.local.get(STORAGE_CRAWL))[STORAGE_CRAWL];
     if (!had) return; // no había crawl (captura manual): nada que cortar
     console.warn('[xport] corto el crawl:', notice);
-    await browser.storage.local.remove(STORAGE_CRAWL);
+    await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
     await browser.storage.local.set({ [STORAGE_STATUS]: notice });
   }
 

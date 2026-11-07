@@ -42,11 +42,19 @@ export interface GateResponse {
   window_s: number;
 }
 
-export interface ExportRequest {
+export interface ProgressRequest {
   account: string;
   since: string; // YYYY-MM-DD
   until: string; // YYYY-MM-DD
 }
+
+export interface ExportRequest extends ProgressRequest {
+  encoding?: string; // default utf-8; `utf-8-sig` para Excel en castellano
+  delimiter?: string; // default ','; ';' para Excel en castellano
+}
+
+/** El formato que lee bien un Excel configurado en castellano: UTF-8 con BOM y `;`. */
+export const EXCEL_ES = { encoding: 'utf-8-sig', delimiter: ';' } as const;
 
 export interface ExportResult {
   account: string;
@@ -121,7 +129,7 @@ export class XportClient {
 
   /** Frente de reanudación: hasta dónde (tweet más viejo) se capturó una cuenta en un
    *  rango. La captura retoma desde ahí en vez de re-pedir desde `until`. */
-  progress(body: ExportRequest): Promise<ProgressResult> {
+  progress(body: ProgressRequest): Promise<ProgressResult> {
     return this.req<ProgressResult>('/progress', { method: 'POST', body: JSON.stringify(body) });
   }
 

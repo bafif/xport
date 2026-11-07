@@ -3,9 +3,15 @@ import { describe, expect, it } from 'vitest';
 import {
   blankBackoff,
   dayAfter,
+  decideStep,
+  FRESH_COUNTERS,
   isValidDate,
+  MAX_LOADING_WAITS,
+  MAX_RETRIES,
+  MAX_STALE,
   matchesSearch,
   nextUntil,
+  pausedNotice,
   reachedSince,
   searchQuery,
   searchUrl,
@@ -41,6 +47,47 @@ describe('reachedSince', () => {
     expect(reachedSince('2025-01-01', '2025-01-01')).toBe(true);
     expect(reachedSince('2024-12-31', '2025-01-01')).toBe(true);
     expect(reachedSince('2025-01-02', '2025-01-01')).toBe(false);
+  });
+});
+
+describe('decideStep', () => {
+  const visible = { hidden: false, grew: false, loading: false, retry: false };
+  it('con la pestaña oculta pausa y no cuenta el scroll quieto', () => {
+    // Al borde de asentarse: un scroll quieto más sería 'settled' y achicaría el rango.
+    const edge = { ...FRESH_COUNTERS, stale: MAX_STALE - 1 };
+    expect(decideStep(visible, edge).action).toBe('settled');
+    const paused = decideStep({ ...visible, hidden: true }, edge);
+    expect(paused.action).toBe('pause');
+    expect(paused.counters.stale).toBe(0); // vuelve a la vista y arranca de cero
+    // Oculta, ni el crecimiento ni el spinner deciden nada.
+    expect(decideStep({ hidden: true, grew: true, loading: true, retry: true }, edge).action).toBe(
+      'pause',
+    );
+  });
+  it('se asienta tras MAX_STALE scrolls quietos a la vista', () => {
+    let counters = FRESH_COUNTERS;
+    const actions = [];
+    for (let i = 0; i < MAX_STALE; i++) {
+      const step = decideStep(visible, counters);
+      actions.push(step.action);
+      counters = step.counters;
+    }
+    expect(actions).toEqual([...Array(MAX_STALE - 1).fill('stale'), 'settled']);
+  });
+  it('si crece, reinicia los contadores', () => {
+    const step = decideStep({ ...visible, grew: true }, { stale: 3, retries: 2, loadingWaits: 5 });
+    expect(step).toEqual({ action: 'grew', counters: FRESH_COUNTERS });
+  });
+  it('espera al spinner y aprieta «Reintentar» hasta sus topes', () => {
+    expect(decideStep({ ...visible, loading: true }, FRESH_COUNTERS).action).toBe('wait-loading');
+    const tired = { ...FRESH_COUNTERS, loadingWaits: MAX_LOADING_WAITS };
+    expect(decideStep({ ...visible, loading: true }, tired).action).toBe('stale');
+    expect(decideStep({ ...visible, retry: true }, FRESH_COUNTERS).action).toBe('retry');
+    const retried = { ...FRESH_COUNTERS, retries: MAX_RETRIES };
+    expect(decideStep({ ...visible, retry: true }, retried).action).toBe('stale');
+  });
+  it('el aviso de pausa nombra la cuenta', () => {
+    expect(pausedNotice('nasa')).toMatch(/@nasa está en pausa/);
   });
 });
 

@@ -50,14 +50,18 @@ fechas, el uso del tope y el enlace al CSV exportado.">
 2. **Completar:** la cuenta sin `@`, «Desde» y «Hasta» en formato `AAAA-MM-DD`. «Desde» entra; «Hasta» no.
 3. **Capturar:** «Capturar ▶» abre la búsqueda de X en una pestaña nueva y la scrollea sola. Podés cerrar el popup.
    Si X deja de dar resultados antes de la fecha de inicio, la extensión achica el rango y busca de nuevo, hasta
-   cubrirlo entero. «Detener ⏹» la corta.
+   cubrirlo entero. «Detener ⏹» la corta. **Esa pestaña tiene que quedar a la vista:** si pasás a otra pestaña o
+   minimizás la ventana, la captura se pone en pausa (el popup lo avisa) y sigue sola cuando volvés.
 4. **Exportar:** volvé a abrir el popup y apretá «Exportar CSV». Aparece el enlace al archivo, con cuántos tweets tiene.
+   Si lo vas a abrir en un Excel configurado en castellano, marcá antes «Para Excel en castellano»: el CSV sale separado
+   con `;` y con el BOM que Excel necesita para leer los acentos. El popup se acuerda de la casilla.
 5. **Seguir otro día:** si X frenó la búsqueda, volvé más tarde y apretá «Capturar ▶» con las mismas fechas. Sigue
    desde el tweet más viejo que ya tenías, sin volver a pedir lo bajado.
 
 **Es privado.** La extensión usa la sesión de X que ya tenés abierta en el navegador: tus cookies no salen de él. Lo
-capturado va al servicio local, que escucha solo en tu computadora, y queda en la carpeta `data/` del repo (o en los
-volúmenes de Podman, si lo levantaste en contenedores). No se manda a ningún otro lado. «Borrar capturado 🗑» borra lo
+capturado va al servicio local, que escucha solo en tu computadora, y queda en tu carpeta de datos de xport:
+`~/.local/share/xport` en Linux, `%LOCALAPPDATA%\xport` en Windows y `~/Library/Application Support/xport` en macOS.
+No se manda a ningún otro lado. «Borrar capturado 🗑» borra lo
 de una cuenta; el registro del tope no se borra nunca. Conviene capturar con una cuenta de X que puedas perder: X puede
 limitar las cuentas que bajan muchos tweets.
 
@@ -67,6 +71,8 @@ ese día no entra.
 
 Si el popup dice que no arranca la captura porque el servicio no responde, levantalo (ver [Uso](#uso)) o instalá el
 arranque automático (ver [Instalar](#instalar)). Si dice que el tope está lleno, esperá: el popup muestra cuánto queda.
+Si dice que x.com cambió el formato de los datos, el servicio no entendió la mayoría de los tweets que llegaron y cortó la
+captura para no dejarte un CSV vacío: hace falta una versión nueva de xport, y el log del servicio tiene un ejemplo.
 
 ## Instalar
 
@@ -97,8 +103,12 @@ Firefox borra los complementos temporales al cerrarse: cada vez que lo abras, ha
 
 ## Uso
 
-El servicio se levanta de una de estas formas. Elegí una y usá siempre la misma: cada una tiene su propio registro del
-tope, y si usás las dos, el tope deja de ser uno solo.
+El servicio se levanta de una de estas formas. `fastapi dev`, el arranque automático y `tweet-extractor` usan la misma
+carpeta de datos y el mismo registro del tope, se corran desde la carpeta que sea. La primera vez mudan ahí lo que haya
+quedado en la carpeta `data/` del repo de una versión anterior (lo mueven, no lo copian, para no dejar dos registros).
+El compose es para CI y para desplegar: tiene su propio registro, en un volumen de Podman. Si ya hay un xport
+respondiendo en `localhost:8000` o en `localhost:8080`, el servicio no arranca y lo dice, porque dos servicios llevarían
+dos registros.
 
 ```sh
 uv sync
@@ -108,15 +118,15 @@ uv run tweet-extractor --account <cuenta> --since 2025-01-01 --until 2026-01-01
 ```
 
 - `fastapi dev` levanta el servicio en `http://localhost:8000`, la dirección que la extensión usa si no le decís otra.
-  Guarda todo en `data/`. Es lo mismo que levanta el arranque automático.
-- `podman compose` lo levanta en contenedores Alpine, detrás de nginx, en `http://localhost:8080`, que escucha solo en
+  Guarda todo en la carpeta de datos. Es lo mismo que levanta el arranque automático.
+- `podman compose`, para CI y para desplegar, lo levanta en contenedores Alpine, detrás de nginx, en `http://localhost:8080`, que escucha solo en
   tu computadora. En el popup, poné esa dirección en el campo del servicio. Necesita el `.env`, aunque sea la copia
   vacía de `.env.example`. Los datos y el registro del tope van en dos volúmenes separados. Después de reiniciar la
   computadora se levanta solo únicamente si está prendido `podman-restart.service`
   (`systemctl --user enable podman-restart.service`).
 - `tweet-extractor` baja tweets desde el servidor, sin navegador: con la API oficial (ver abajo) o con las cookies de
   una cuenta de X, que está bloqueado desde junio de 2026 y falla con un error que lo explica. `--since` entra y
-  `--until` no (días UTC). Además: `--out-dir`, `--subwindow-days`, `--encoding` (`utf-8-sig` le agrega el BOM que Excel
+  `--until` no (días UTC). Además: `--out-dir` (por defecto, `csv/` en la carpeta de datos), `--subwindow-days`, `--encoding` (`utf-8-sig` le agrega el BOM que Excel
   espera) y `--delimiter` (`;` para un Excel configurado en castellano). Si se corta, correrlo de nuevo saltea los
   tramos que ya terminó.
 
@@ -135,25 +145,27 @@ El servicio responde a estos pedidos:
 
 | Pedido | Qué hace |
 |---|---|
-| `GET /healthz` | dice si el servicio está vivo |
+| `GET /healthz` | dice si el servicio está vivo y que es xport |
 | `GET /gate` | uso del tope en las últimas 24 horas, cuánto queda, el tope y la ventana |
 | `POST /ingest` | guarda las páginas que capturó la extensión y registra sus accesos |
 | `POST /progress` | el tweet más viejo guardado de una cuenta en un rango: desde dónde se retoma |
-| `POST /export`, `GET /exports/{archivo}` | arma y baja el CSV de un rango capturado |
+| `POST /export`, `GET /exports/{archivo}` | arma y baja el CSV de un rango capturado (`encoding` y `delimiter`, opcionales) |
 | `POST /reset` | borra lo capturado de una cuenta (el registro del tope no se toca) |
 | `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{cuenta}` | bajadas desde el servidor (bloqueadas) |
 
-La configuración va en el `.env`, que git ignora; [`.env.example`](.env.example) tiene todas las variables comentadas.
-La captura desde el navegador no necesita ninguna: usa la sesión del navegador.
+La configuración va en el `.env` del repo, que git ignora; [`.env.example`](.env.example) tiene todas las variables
+comentadas. Se lee siempre el del repo, aunque la CLI se corra desde otra carpeta. La captura desde el navegador no
+necesita ninguna: usa la sesión del navegador. Las rutas relativas cuelgan de la carpeta de datos.
 
 | Variable | Para qué | Por defecto |
 |---|---|---|
 | `PROVIDER_BACKEND` | de dónde baja el servidor: `twscrape` o `official` | `twscrape` |
 | `X_AUTH_TOKEN`, `X_CT0` | cookies de una cuenta de X aparte (twscrape) | vacías |
 | `X_API_BEARER_TOKEN` | Bearer token de la API oficial (paga) | vacío |
-| `AUDIT_DB_PATH` | registro del tope, aparte de los datos | `data/audit/ledger.db` |
-| `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; cuentas de twscrape | `data/tweets.db`, `data/accounts.db` |
-| `CSV_DIR`, `CAPTURES_DIR` | CSV de las bajadas del servidor y de las capturas | `data/csv`, `data/captures` |
+| `XPORT_DATA_DIR` | carpeta de datos (ruta absoluta) | la de tu sistema, ver arriba |
+| `AUDIT_DB_PATH` | registro del tope, aparte de los datos | `audit/ledger.db` |
+| `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; cuentas de twscrape | `tweets.db`, `accounts.db` |
+| `CSV_DIR`, `CAPTURES_DIR` | CSV de las bajadas del servidor y de las capturas | `csv`, `captures` |
 | `CORS_ALLOW_ORIGINS` | lista JSON de orígenes permitidos (la extensión no lo necesita) | `[]` |
 | `ALLOWED_HOSTS` | hosts a los que el servicio responde (protege contra DNS rebinding) | `["localhost","127.0.0.1"]` |
 | `PAGE_SIZE`, `SUBWINDOW_DAYS` | tamaño de página y días por tramo de búsqueda (servidor) | `20`, `7` |
@@ -176,7 +188,7 @@ uv run mypy src
 Corren sin red, con respuestas de X fabricadas. Las del tope fuerzan las dos cosas que importan: que bloquee cuando no
 hay lugar y que espere hasta que el acceso más viejo salga de la ventana. Los de la extensión (vitest) corren dentro de
 `bash deploy/extension-build.sh`, entre el chequeo de tipos y el armado; cubren, entre otras cosas, cuándo se corta el
-crawl. **Nunca subas el `.env` ni la carpeta `data/`:** tienen cookies de sesión y lo capturado.
+crawl. **Nunca subas el `.env`:** tiene cookies de sesión. Lo capturado no vive en el repo sino en la carpeta de datos.
 
 ## Cómo se arma
 

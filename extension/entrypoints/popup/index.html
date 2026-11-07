@@ -51,9 +51,14 @@
           <button id="capture-stop" type="button" class="secondary">Detener ⏹</button>
           <button id="export" type="button" class="secondary">Exportar CSV</button>
         </div>
+        <label class="check"
+          ><input id="excel" type="checkbox" /> Para Excel en castellano
+          <small>(separador «;» y UTF-8 con BOM)</small></label
+        >
         <button id="reset" type="button" class="secondary danger">Borrar capturado 🗑</button>
       </form>
 
+      <p id="paused" class="paused" hidden></p>
       <section id="gate" class="gate" hidden></section>
       <section id="counts" class="gate" hidden></section>
       <p id="status" class="sub" hidden></p>

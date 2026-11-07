@@ -77,6 +77,21 @@ label small {
   flex: 1;
 }
 
+label.check {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.paused {
+  margin-top: 12px;
+  padding: 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
 input {
   padding: 7px 8px;
   border: 1px solid var(--border);

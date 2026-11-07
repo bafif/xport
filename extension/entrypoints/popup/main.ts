@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 
-import { type ProgressResult, XportApiError, XportClient } from '../../lib/api';
+import { EXCEL_ES, type ProgressResult, XportApiError, XportClient } from '../../lib/api';
 import {
   AUTOSCROLL_MSG,
   type CrawlState,
@@ -15,7 +15,9 @@ import {
   STORAGE_CAPTURE,
   STORAGE_COUNTS,
   STORAGE_CRAWL,
+  STORAGE_EXCEL,
   STORAGE_FORM,
+  STORAGE_PAUSED,
   STORAGE_STATUS,
 } from '../../lib/capture';
 
@@ -37,6 +39,8 @@ const captureForm = el<HTMLFormElement>('capture-form');
 const captureStop = el<HTMLButtonElement>('capture-stop');
 const exportBtn = el<HTMLButtonElement>('export');
 const resetBtn = el<HTMLButtonElement>('reset');
+const excelInput = el<HTMLInputElement>('excel');
+const pausedEl = el<HTMLElement>('paused');
 const gateEl = el<HTMLElement>('gate');
 const countsEl = el<HTMLElement>('counts');
 const statusEl = el<HTMLElement>('status');
@@ -99,6 +103,15 @@ async function renderCounts(): Promise<void> {
   countsEl.textContent = 'Capturado: ' + entries.map(([a, n]) => `${a} (${n})`).join(' · ');
 }
 
+/** Muestra el aviso de pausa (pestaña de la captura oculta) mientras haya un crawl: si
+ *  el crawl se cortó o terminó, un aviso viejo no se muestra. */
+async function renderPaused(): Promise<void> {
+  const stored = await browser.storage.local.get([STORAGE_PAUSED, STORAGE_CRAWL]);
+  const notice = stored[STORAGE_PAUSED];
+  pausedEl.hidden = !(typeof notice === 'string' && notice && stored[STORAGE_CRAWL]);
+  if (!pausedEl.hidden) pausedEl.textContent = notice as string;
+}
+
 // Inserta los guiones de AAAA-MM-DD a medida que se escribe (los inputs son de texto,
 // no `type=date`: el calendario nativo queda tapado por la ventana chica del popup).
 function autoFormatDate(input: HTMLInputElement): void {
@@ -131,6 +144,14 @@ captureForm.addEventListener('submit', (event) => {
 captureStop.addEventListener('click', () => void stopScroll());
 exportBtn.addEventListener('click', () => void onExport());
 resetBtn.addEventListener('click', () => void onReset());
+excelInput.addEventListener('change', () => {
+  void browser.storage.local.set({ [STORAGE_EXCEL]: excelInput.checked });
+});
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && (STORAGE_PAUSED in changes || STORAGE_CRAWL in changes)) {
+    void renderPaused();
+  }
+});
 baseInput.addEventListener('change', () => {
   void browser.storage.local.set({ [STORAGE_BASE]: currentBase() });
 });
@@ -196,7 +217,7 @@ async function onCapture(): Promise<void> {
   // El crawl adaptativo encoge `until` solo si choca la pared. El background lee la
   // base de storage (no del campo).
   const crawl: CrawlState = { account: acc, since, until: startUntil };
-  await browser.storage.local.remove(STORAGE_STATUS); // limpiar avisos viejos
+  await browser.storage.local.remove([STORAGE_STATUS, STORAGE_PAUSED]); // limpiar avisos viejos
   await browser.storage.local.set({
     [STORAGE_BASE]: currentBase(),
     [STORAGE_CAPTURE]: true,
@@ -224,7 +245,7 @@ async function whenServiceUp<T>(call: () => Promise<T>): Promise<T> {
 async function stopScroll(): Promise<void> {
   // Borramos el crawl desde el popup también: si la pestaña activa no es la de captura,
   // el mensaje no llega, pero igual no debe seguir narrowando ni navegando.
-  await browser.storage.local.remove(STORAGE_CRAWL);
+  await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) {
     setStatus('Captura detenida.');
@@ -251,6 +272,7 @@ async function onExport(): Promise<void> {
       account: account(),
       since: sinceInput.value,
       until: untilInput.value,
+      ...(excelInput.checked ? EXCEL_ES : {}),
     });
     exportStatus.hidden = false;
     // Aclaración: el CSV trae menos que el contador "Capturado" porque deja afuera las
@@ -296,7 +318,7 @@ async function onReset(): Promise<void> {
     const counts = (stored[STORAGE_COUNTS] ?? {}) as Record<string, number>;
     delete counts[acc];
     await browser.storage.local.set({ [STORAGE_COUNTS]: counts });
-    await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_STATUS]);
+    await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_STATUS, STORAGE_PAUSED]);
     await renderCounts();
     setStatus(`Borrado: ${r.deleted} tuits de @${acc}. La próxima captura arranca de cero.`);
   } catch (err) {
@@ -305,7 +327,13 @@ async function onReset(): Promise<void> {
 }
 
 async function init(): Promise<void> {
-  const stored = await browser.storage.local.get([STORAGE_BASE, STORAGE_FORM, STORAGE_STATUS]);
+  const stored = await browser.storage.local.get([
+    STORAGE_BASE,
+    STORAGE_EXCEL,
+    STORAGE_FORM,
+    STORAGE_STATUS,
+  ]);
+  excelInput.checked = stored[STORAGE_EXCEL] === true;
   const savedBase = stored[STORAGE_BASE];
   baseInput.value = typeof savedBase === 'string' && savedBase ? savedBase : DEFAULT_BASE;
   const form = stored[STORAGE_FORM] as Partial<FormState> | undefined;
@@ -320,6 +348,7 @@ async function init(): Promise<void> {
     setStatus(notice);
     await browser.storage.local.remove(STORAGE_STATUS);
   }
+  await renderPaused();
   await refreshGate();
   await renderCounts();
   setInterval(() => void renderCounts(), COUNTS_REFRESH_MS);

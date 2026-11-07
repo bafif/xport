@@ -10,6 +10,7 @@ import typer
 from tweet_extractor.compliance.gate import ComplianceError, SlidingWindowGate
 from tweet_extractor.compliance.gated_provider import GatedProvider
 from tweet_extractor.config import Settings
+from tweet_extractor.datadir import migrate_legacy_data
 from tweet_extractor.mappers.base import MapperError
 from tweet_extractor.orchestrator import AccountResult, run_job
 from tweet_extractor.providers.base import ProviderError
@@ -41,9 +42,10 @@ def extract(
     ],
     since: Annotated[str, typer.Option(help="Fecha inicial YYYY-MM-DD (UTC), inclusiva.")],
     until: Annotated[str, typer.Option(help="Fecha final YYYY-MM-DD (UTC), exclusiva.")],
-    out_dir: Annotated[Path, typer.Option(help="Directorio de salida de los CSV.")] = Path(
-        "data/csv"
-    ),
+    out_dir: Annotated[
+        Path | None,
+        typer.Option(help="Directorio de los CSV (default: csv/ en la carpeta de datos)."),
+    ] = None,
     subwindow_days: Annotated[
         int | None,
         typer.Option(min=1, help="Días por sub-ventana de búsqueda (default: Settings)."),
@@ -89,7 +91,7 @@ async def _run(
     accounts: list[str],
     since: datetime,
     until: datetime,
-    out_dir: Path,
+    out_dir: Path | None,
     subwindow_days: int | None,
     encoding: str,
     delimiter: str,
@@ -98,6 +100,10 @@ async def _run(
     `PROVIDER_BACKEND`, gate persistente, store de datos, y el provider SIEMPRE
     envuelto en `GatedProvider` (regla #1: ningún fetch saltea el gate)."""
     settings = Settings()
+    # La misma carpeta de datos que el servicio, se corra desde donde se corra (regla 1 de
+    # docs/PLAN.md: un solo registro del tope); la primera vez muda el `data/` viejo.
+    for note in await asyncio.to_thread(migrate_legacy_data, settings):
+        typer.echo(f"datos viejos: {note}")
     backend = await build_backend(settings)
     async with (
         SlidingWindowGate(settings.audit_db_path, settings.hard_cap, settings.window_s) as gate,
@@ -111,7 +117,7 @@ async def _run(
             provider=gated,
             mapper=backend.mapper,
             store=store,
-            out_dir=out_dir,
+            out_dir=out_dir or settings.csv_dir,
             subwindow_days=subwindow_days or settings.subwindow_days,
             encoding=encoding,
             delimiter=delimiter,

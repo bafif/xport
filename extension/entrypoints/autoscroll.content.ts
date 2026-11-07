@@ -6,31 +6,40 @@ import {
   AUTOSTART_SETTLE_MS,
   blankBackoff,
   type CrawlState,
-  MAX_LOADING_WAITS,
-  MAX_RETRIES,
-  MAX_STALE,
+  decideStep,
+  FRESH_COUNTERS,
   MAX_STEPS,
   matchesSearch,
   nextUntil,
+  pausedNotice,
   reachedSince,
   RETRY_WAIT_MS,
   SCROLL_DELAY_MS,
   searchUrl,
 } from '../lib/autoscroll';
-import { STORAGE_CRAWL, STORAGE_STATUS } from '../lib/capture';
+import { STORAGE_CRAWL, STORAGE_PAUSED, STORAGE_STATUS } from '../lib/capture';
 
 // Mundo ISOLATED: conduce el crawl adaptativo (patrón C). Scrollea la búsqueda hasta
 // el fondo disparando los fetches de SearchTimeline que captura-main intercepta y,
 // cuando la página deja de crecer, DECIDE: ¿alcanzó `since`? → terminó; ¿se frenó
 // antes (la pared de ~1000 / un error)? → encoge `until` al día del tweet más viejo
 // cargado y re-busca más viejo. Tolera carga lenta (spinner) y errores (botón
-// Reintentar), y recarga ante carga en blanco. NO captura ni interpreta tweets: solo
-// lee del DOM señales de NAVEGACIÓN (el backend sigue siendo el único que mapea).
+// Reintentar), y recarga ante carga en blanco. Con la pestaña oculta se pone en pausa
+// (ver `decideStep`). NO captura ni interpreta tweets: solo lee del DOM señales de
+// NAVEGACIÓN (el backend sigue siendo el único que mapea).
 export default defineContentScript({
   matches: ['*://x.com/*', '*://twitter.com/*'],
   main() {
     let running = false;
     let userStopped = false;
+    // Pausa por pestaña oculta: `wake` despierta la espera (al volver a la vista o al
+    // detener) y `visibilityChanges` delata si la pestaña se ocultó en medio de un paso.
+    let wake: (() => void) | null = null;
+    let visibilityChanges = 0;
+    document.addEventListener('visibilitychange', () => {
+      visibilityChanges += 1;
+      if (!document.hidden) wake?.();
+    });
 
     browser.runtime.onMessage.addListener((msg: unknown): void => {
       const m = msg as Partial<AutoscrollMsg> | null;
@@ -38,6 +47,7 @@ export default defineContentScript({
       if (m.action === 'stop') {
         userStopped = true;
         running = false;
+        wake?.();
         void browser.storage.local.remove(STORAGE_CRAWL); // detener = no narrowar más
       } else if (m.action === 'start' && !running) {
         void maybeStart();
@@ -52,6 +62,7 @@ export default defineContentScript({
       if (changes[STORAGE_CRAWL].newValue === undefined && running) {
         userStopped = true; // no decidir nada al asentarse: no narrowar ni navegar
         running = false;
+        wake?.();
       }
     });
 
@@ -69,7 +80,7 @@ export default defineContentScript({
       await browser.storage.local.set({ [STORAGE_CRAWL]: s });
     }
     async function endCrawl(notice?: string): Promise<void> {
-      await browser.storage.local.remove(STORAGE_CRAWL);
+      await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
       if (notice) await browser.storage.local.set({ [STORAGE_STATUS]: notice });
     }
 
@@ -123,39 +134,58 @@ export default defineContentScript({
       return /no results for|no hay resultados/i.test(primary().textContent ?? '');
     }
 
+    /** Espera, sin timers (Chrome los frena en una pestaña oculta), a que la pestaña
+     *  vuelva a la vista o a que se detenga el crawl. Mientras, el popup muestra el aviso. */
+    async function pauseWhileHidden(state: CrawlState): Promise<void> {
+      console.debug('[xport] pestaña oculta: crawl en pausa');
+      await browser.storage.local.set({ [STORAGE_PAUSED]: pausedNotice(state.account) });
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+        if (!document.hidden || !running) resolve();
+      });
+      wake = null;
+      await browser.storage.local.remove(STORAGE_PAUSED);
+      console.debug('[xport] pestaña a la vista: sigue el crawl');
+    }
+
     async function run(state: CrawlState): Promise<void> {
       running = true;
       userStopped = false;
       console.debug('[xport] crawl', state.since, '→', state.until);
       let lastHeight = -1;
-      let stale = 0;
       let steps = 0;
-      let retries = 0;
-      let loadingWaits = 0;
+      let counters = FRESH_COUNTERS;
       while (running && steps < MAX_STEPS) {
+        if (document.hidden) {
+          await pauseWhileHidden(state);
+          continue;
+        }
+        const seen = visibilityChanges;
         window.scrollTo(0, height());
         await sleep(SCROLL_DELAY_MS);
         steps += 1;
         const h = height();
-        if (h > lastHeight) {
-          lastHeight = h; // creció: progreso real
-          stale = retries = loadingWaits = 0;
-          continue;
-        }
-        if (isLoading() && loadingWaits < MAX_LOADING_WAITS) {
-          loadingWaits += 1; // spinner: x.com sigue trayendo (conexión lenta) → esperar
-          continue;
-        }
-        loadingWaits = 0;
         const retry = retryButton();
-        if (retry && retries < MAX_RETRIES) {
-          retries += 1; // x.com mostró un error de paginación → reintentar (transitorio se recupera)
-          retry.click();
+        const step = decideStep(
+          {
+            hidden: document.hidden || visibilityChanges !== seen,
+            grew: h > lastHeight,
+            loading: isLoading(),
+            retry: retry !== null,
+          },
+          counters,
+        );
+        counters = step.counters;
+        if (step.action === 'grew') {
+          lastHeight = h; // creció: progreso real
+        } else if (step.action === 'retry') {
+          retry?.click(); // x.com mostró un error de paginación → reintentar
           await sleep(RETRY_WAIT_MS);
-          continue;
+        } else if (step.action === 'settled') {
+          break; // asentado: ni crece, ni carga, ni hay reintento
         }
-        stale += 1;
-        if (stale >= MAX_STALE) break; // asentado: ni crece, ni carga, ni hay reintento
+        // 'pause': la próxima vuelta espera a que la pestaña vuelva; 'wait-loading' y
+        // 'stale': scrollear de nuevo.
       }
       running = false;
       if (!userStopped) await onSettled(state);

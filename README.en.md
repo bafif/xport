@@ -51,14 +51,19 @@ date range, the cap usage and the link to the exported CSV.">
    «Hasta» is not.
 3. **Capture:** «Capturar ▶» opens X's search in a new tab and scrolls it by itself. You can close the popup. If X stops
    returning results before the start date, the extension narrows the range and searches again until the whole range is
-   covered. «Detener ⏹» stops it.
+   covered. «Detener ⏹» stops it. **That tab has to stay in view:** if you switch to another tab or minimize the
+   window, the capture pauses (the popup says so) and carries on by itself when you come back.
 4. **Export:** open the popup again and press «Exportar CSV». A link to the file appears, with how many tweets it has.
+   If you will open it in an Excel set to Spanish (or any locale that uses the comma as decimal separator), tick «Para
+   Excel en castellano» first: the CSV comes out separated by `;` and with the BOM Excel needs to read accents. The
+   popup remembers the box.
 5. **Carry on another day:** if X throttled the search, come back later and press «Capturar ▶» with the same dates. It
    continues from the oldest tweet you already have, without asking again for what it downloaded.
 
 **It is private.** The extension uses the X session already open in your browser: your cookies never leave it. What it
-captures goes to the local service, which only listens on your computer, and stays in the repository's `data/` folder
-(or in the Podman volumes, if you started it in containers). It is not sent anywhere else. «Borrar capturado 🗑» deletes
+captures goes to the local service, which only listens on your computer, and stays in your xport data folder:
+`~/.local/share/xport` on Linux, `%LOCALAPPDATA%\xport` on Windows and `~/Library/Application Support/xport` on macOS.
+It is not sent anywhere else. «Borrar capturado 🗑» deletes
 what was captured for one account; the cap's ledger is never deleted. Capture with an X account you can afford to lose:
 X may limit accounts that download many tweets.
 
@@ -68,7 +73,8 @@ that day is not included.
 
 If the popup says it will not start because the service does not answer, start the service (see [Usage](#usage)) or
 install the automatic start (see [Install](#install)). If it says the cap is full, wait: the popup shows how much is
-left.
+left. If it says x.com changed the data format, the service could not read most of the tweets that came in and stopped
+the capture so you are not left with an empty CSV: you need a new version of xport, and the service log has an example.
 
 ## Install
 
@@ -99,8 +105,11 @@ Firefox removes temporary add-ons when it closes: you have to load it again ever
 
 ## Usage
 
-Start the service in one of these ways. Pick one and always use the same one: each has its own cap ledger, and if you
-use both, the cap is no longer a single one.
+Start the service in one of these ways. `fastapi dev`, the automatic start and `tweet-extractor` share the data folder
+and the cap's ledger, whatever folder they are run from. The first time, they move there whatever an earlier version
+left in the repository's `data/` folder (they move it, not copy it, so there are never two ledgers). The compose is for
+CI and deployment: it has its own ledger, in a Podman volume. If an xport already answers on `localhost:8000` or
+`localhost:8080`, the service does not start and says why, because two services would keep two ledgers.
 
 ```sh
 uv sync
@@ -110,14 +119,14 @@ uv run tweet-extractor --account <account> --since 2025-01-01 --until 2026-01-01
 ```
 
 - `fastapi dev` starts the service on `http://localhost:8000`, the address the extension uses unless you tell it
-  otherwise. It keeps everything in `data/`. It is what the automatic start runs too.
-- `podman compose` starts it in Alpine containers, behind nginx, on `http://localhost:8080`, which only listens on your
+  otherwise. It keeps everything in the data folder. It is what the automatic start runs too.
+- `podman compose`, for CI and deployment, starts it in Alpine containers, behind nginx, on `http://localhost:8080`, which only listens on your
   computer. In the popup, put that address in the service field. It needs the `.env`, even if it is the empty copy of
   `.env.example`. The data and the cap's ledger live in two separate volumes. After a reboot it comes back by itself
   only if `podman-restart.service` is enabled (`systemctl --user enable podman-restart.service`).
 - `tweet-extractor` downloads tweets from the server, without a browser: with the official API (see below) or with the
   cookies of an X account, which has been blocked since June 2026 and fails with an error that says so. `--since` is
-  included and `--until` is not (UTC days). Also: `--out-dir`, `--subwindow-days`, `--encoding` (`utf-8-sig` adds the
+  included and `--until` is not (UTC days). Also: `--out-dir` (by default, `csv/` in the data folder), `--subwindow-days`, `--encoding` (`utf-8-sig` adds the
   BOM Excel expects) and `--delimiter` (`;` for an Excel set to a locale that uses the comma as decimal separator). If
   it stops, running it again skips the stretches it already finished.
 
@@ -137,25 +146,27 @@ The service answers these requests:
 
 | Request | What it does |
 |---|---|
-| `GET /healthz` | says whether the service is alive |
+| `GET /healthz` | says whether the service is alive and that it is xport |
 | `GET /gate` | cap usage in the last 24 hours, what is left, the cap and the window |
 | `POST /ingest` | stores the pages the extension captured and records their accesses |
 | `POST /progress` | the oldest stored tweet of an account in a range: where capture resumes |
-| `POST /export`, `GET /exports/{file}` | builds and downloads the CSV of a captured range |
+| `POST /export`, `GET /exports/{file}` | builds and downloads the CSV of a captured range (optional `encoding` and `delimiter`) |
 | `POST /reset` | deletes what was captured for an account (the cap's ledger is never touched) |
 | `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{account}` | server-side downloads (blocked) |
 
-Configuration lives in `.env`, which git ignores; [`.env.example`](.env.example) lists every variable with comments.
-In-browser capture needs none of them: it uses the browser's session.
+Configuration lives in the repository's `.env`, which git ignores; [`.env.example`](.env.example) lists every variable
+with comments. It is always read from the repository, even when the CLI runs from another folder. In-browser capture
+needs none of them: it uses the browser's session. Relative paths hang from the data folder.
 
 | Variable | Purpose | Default |
 |---|---|---|
 | `PROVIDER_BACKEND` | where the server downloads from: `twscrape` or `official` | `twscrape` |
 | `X_AUTH_TOKEN`, `X_CT0` | cookies of a separate X account (twscrape) | empty |
 | `X_API_BEARER_TOKEN` | Bearer token for the official API (paid) | empty |
-| `AUDIT_DB_PATH` | the cap's ledger, separate from the data | `data/audit/ledger.db` |
-| `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; twscrape accounts | `data/tweets.db`, `data/accounts.db` |
-| `CSV_DIR`, `CAPTURES_DIR` | CSVs of server-side downloads and of captures | `data/csv`, `data/captures` |
+| `XPORT_DATA_DIR` | the data folder (absolute path) | your system's, see above |
+| `AUDIT_DB_PATH` | the cap's ledger, separate from the data | `audit/ledger.db` |
+| `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; twscrape accounts | `tweets.db`, `accounts.db` |
+| `CSV_DIR`, `CAPTURES_DIR` | CSVs of server-side downloads and of captures | `csv`, `captures` |
 | `CORS_ALLOW_ORIGINS` | JSON list of allowed origins (the extension does not need it) | `[]` |
 | `ALLOWED_HOSTS` | hosts the service answers to (guards against DNS rebinding) | `["localhost","127.0.0.1"]` |
 | `PAGE_SIZE`, `SUBWINDOW_DAYS` | page size and days per search stretch (server) | `20`, `7` |
@@ -178,7 +189,8 @@ uv run mypy src
 They run offline, with made-up X responses. The cap's tests force the two things that matter: that it blocks when
 there is no room and that it waits until the oldest access leaves the window. The extension's tests (vitest) run inside
 `bash deploy/extension-build.sh`, between the type check and the build; among other things they cover when the crawl
-is cut. **Never commit `.env` or the `data/` folder:** they hold session cookies and what was captured.
+is cut. **Never commit `.env`:** it holds session cookies. What was captured does not live in the repository but in
+the data folder.
 
 ## How it is built
 

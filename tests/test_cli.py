@@ -88,3 +88,31 @@ def test_error_de_dominio_sale_con_codigo_1(monkeypatch: pytest.MonkeyPatch):
     result = runner.invoke(cli.app, ["--account", "u", *ARGS_BASE])
     assert result.exit_code == 1
     assert "Faltan cookies" in salida(result)
+
+
+def test_desde_otra_carpeta_usa_el_mismo_registro(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Regla 1 de docs/PLAN.md: antes, la CLI corrida desde otra carpeta creaba otro
+    # `data/audit/ledger.db` y el tope dejaba de ser uno solo.
+    from tests.providers._fixtures import tweet_result
+    from tests.service.conftest import fake_backend_builder
+
+    monkeypatch.setenv("XPORT_DATA_DIR", str(tmp_path / "xport-data"))
+    monkeypatch.setattr(
+        cli, "build_backend", fake_backend_builder([tweet_result("1"), tweet_result("2")])
+    )
+    outputs = []
+    for folder in ("una", "otra"):
+        (tmp_path / folder).mkdir()
+        monkeypatch.chdir(tmp_path / folder)
+        result = runner.invoke(cli.app, ["--account", "someuser", *ARGS_BASE])
+        assert result.exit_code == 0, salida(result)
+        outputs.append(result.output)
+    assert "Gate: 2 accesos" in outputs[0]
+    # La segunda corrida ve el registro y el checkpoint de la primera: no vuelve a pedir
+    # el tramo y el tope sigue en los mismos 2 accesos, no en 0.
+    assert "1 salteados por checkpoint" in outputs[1]
+    assert "Gate: 2 accesos" in outputs[1]
+    assert (tmp_path / "xport-data" / "audit" / "ledger.db").is_file()
+    assert not (tmp_path / "una" / "data").exists()
