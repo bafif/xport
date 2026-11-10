@@ -1,5 +1,7 @@
 # xport: plan y estado del proyecto
 
+[English](PLAN.en.md)
+
 Armé xport para bajar los tweets de una o varias cuentas de X entre dos fechas y quedarme con un
 CSV por cuenta que tenga solo lo que me interesa: la cuenta, la fecha, el texto, los links que el
 tweet trae y, si cita a otro tweet, a cuál. Los quote tweets entran; los retweets no.

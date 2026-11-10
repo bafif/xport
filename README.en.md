@@ -124,7 +124,7 @@ the capture goes back to a tab in your browser. For now, the same on Windows and
 5. **Automatic start (optional):** with the native messaging host, the browser starts the service when it opens and
    stops it when it closes. Install it once with `bash deploy/native-host/install-linux.sh` (Firefox) or
    `bash deploy/native-host/install-linux.sh --chrome` (Chrome, Chrome Beta or Chromium). For a Windows browser with the service in
-   WSL, and to diagnose problems, see [deploy/native-host/README.md](deploy/native-host/README.md).
+   WSL, and to diagnose problems, see [deploy/native-host/README.en.md](deploy/native-host/README.en.md).
 
 ### In Chrome
 
@@ -307,7 +307,7 @@ cli.py         the command line (Typer)
 extension/     extension for Chrome and Firefox (WXT)
 ```
 
-The decisions with their history, and what is left, are in [docs/PLAN.md](docs/PLAN.md) (in Spanish).
+The decisions with their history, and what is left, are in [docs/PLAN.en.md](docs/PLAN.en.md).
 
 ## License
 

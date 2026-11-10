@@ -1,5 +1,7 @@
 # xport: la extensión
 
+[English](README.en.md)
+
 Extensión Chrome (MV3) + Firefox, código compartido vía [WXT](https://wxt.dev).
 Es el camino principal para capturar tweets:
 

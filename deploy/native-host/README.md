@@ -1,5 +1,7 @@
 # native-host — auto-arranque del backend de xport
 
+[English](README.en.md)
+
 Hace que **el navegador arranque y baje el FastAPI local solo**, vía la API de
 *native messaging*. Así la extensión deja de depender de tener un `uvicorn` corriendo
 a mano en WSL: abrís la extensión → se levanta el backend; cerrás el navegador → se baja.

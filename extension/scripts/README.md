@@ -1,5 +1,7 @@
 # Iconos de la extensión
 
+[English](README.en.md)
+
 WXT **autodescubre** los PNG de `extension/public/icon/{size}.png` y los cablea
 en los manifests de Chrome y Firefox (campo `icons`). La barra de herramientas usa
 ese set como fallback del botón de acción. No hace falta tocar `wxt.config.ts`.
