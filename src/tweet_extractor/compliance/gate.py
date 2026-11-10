@@ -10,6 +10,8 @@ from typing import Any
 
 import aiosqlite
 
+from tweet_extractor.i18n import t
+
 # Esquema del ledger. Lo usa también la mudanza de un ledger viejo (`datadir.py`).
 #
 # `access_daily` es el resumen por día (local) de lo visto, para mostrar la historia: la poda
@@ -170,7 +172,7 @@ class SlidingWindowGate:
         if n <= 0:
             raise ValueError("n debe ser > 0")
         if n > self._hard_cap:
-            raise ComplianceError(f"pedido de {n} excede el hard_cap {self._hard_cap}")
+            raise ComplianceError(t("gate.over_cap", n=n, cap=self._hard_cap))
         while True:
             async with self._write_txn() as db:
                 now = int(self._clock())

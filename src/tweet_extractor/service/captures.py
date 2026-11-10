@@ -13,7 +13,8 @@ from typing import Annotated
 from fastapi import APIRouter, Header, HTTPException, Response, status
 from fastapi.responses import FileResponse
 
-from tweet_extractor.service.routers import SvcDep
+from tweet_extractor.i18n import Note, number, t
+from tweet_extractor.service.routers import LangDep, SvcDep
 from tweet_extractor.service.schemas import (
     BrowserOut,
     CaptureCreate,
@@ -26,15 +27,11 @@ from tweet_extractor.storage.queue import Capture, CaptureState
 
 router = APIRouter()
 
-EMPTY_NOTE = "No encontré tweets: ¿la cuenta existe, es pública y escribió en esas fechas?"
+EMPTY_NOTE = Note(key="note.empty")
 
 
 def _utc(day: date) -> datetime:
     return datetime(day.year, day.month, day.day, tzinfo=UTC)
-
-
-def _thousands(n: int) -> str:
-    return f"{n:,}".replace(",", ".")
 
 
 def _percent(cap: Capture, oldest: datetime | None) -> int:
@@ -63,7 +60,7 @@ async def _out(svc: SvcDep, cap: Capture) -> CaptureOut:
         encoding=cap.encoding,
         delimiter=cap.delimiter,
         state=cap.state,
-        note=cap.note,
+        note=Note.load(cap.note),
         created_at=cap.created_at,
         started_at=cap.started_at,
         finished_at=cap.finished_at,
@@ -84,12 +81,12 @@ async def _finish(svc: SvcDep, cap: Capture) -> Capture:
     hay CSV que valga: se dice por qué puede ser (punto 10)."""
     since, until = _utc(cap.since), _utc(cap.until)
     _, total = await svc.store.account_extent(cap.account, since=since, until=until)
-    title = f"Terminó la captura de @{cap.account}"
+    title = t("notify.done", account=cap.account)
     if total == 0:
         cap = await svc.queue.record_export(
-            cap.id, csv=None, exported=0, excluded_replies=0, note=EMPTY_NOTE
+            cap.id, csv=None, exported=0, excluded_replies=0, note=EMPTY_NOTE.dump()
         )
-        svc.notifier.post(title, EMPTY_NOTE)
+        svc.notifier.post(title, EMPTY_NOTE.render())
         return cap
     path, exported = await export_account(
         svc.store,
@@ -103,7 +100,7 @@ async def _finish(svc: SvcDep, cap: Capture) -> Capture:
     cap = await svc.queue.record_export(
         cap.id, csv=path.name, exported=exported, excluded_replies=max(0, total - exported)
     )
-    svc.notifier.post(title, f"{_thousands(exported)} tweets en {path.name}", path)
+    svc.notifier.post(title, t("notify.done_body", count=number(exported), file=path.name), path)
     return cap
 
 
@@ -148,34 +145,41 @@ async def next_capture(
 
 
 @router.post("/captures/{capture_id}/state", response_model=CaptureOut)
-async def report_state(capture_id: int, body: CaptureReport, svc: SvcDep) -> CaptureOut:
+async def report_state(
+    capture_id: int, body: CaptureReport, svc: SvcDep, lang: LangDep
+) -> CaptureOut:
     """Lo que avisa la extensión (en curso, en pausa, esperando a X, terminada, cortada) o
     la persona al cancelarla. Terminada: el servicio exporta el CSV y lo notifica. Cortada:
     se notifica el motivo, salvo que la haya cortado la persona. Esperando a X no se
     notifica: sigue sola."""
+    note = body.note.dump() if isinstance(body.note, Note) else None
     cap, changed = await svc.queue.set_state(
-        capture_id, CaptureState(body.state), body.note, body.resume_at
+        capture_id, CaptureState(body.state), note, body.resume_at
     )
     if cap is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no hay captura {capture_id}")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail=t("error.capture_not_found", lang, id=capture_id)
+        )
     if changed and cap.state == CaptureState.DONE:
         cap = await _finish(svc, cap)
     elif changed and cap.state == CaptureState.STOPPED and not body.by_user:
+        why = Note.load(cap.note)
         svc.notifier.post(
-            f"Se cortó la captura de @{cap.account}", cap.note or "Mirá la página de xport."
+            t("notify.stopped", account=cap.account),
+            why.render() if why else t("notify.see_page"),
         )
     return await _out(svc, cap)
 
 
 @router.get("/captures/{capture_id}/csv")
-async def capture_csv(capture_id: int, svc: SvcDep) -> FileResponse:
+async def capture_csv(capture_id: int, svc: SvcDep, lang: LangDep) -> FileResponse:
     """El CSV de una captura terminada."""
     cap = await svc.queue.get(capture_id)
     if cap is None or cap.csv is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="esa captura no tiene CSV")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=t("error.capture_no_csv", lang))
     path = svc.settings.captures_dir / cap.csv
     if not path.exists():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="el CSV ya no está")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=t("error.csv_gone", lang))
     return FileResponse(path, media_type="text/csv", filename=cap.csv)
 
 

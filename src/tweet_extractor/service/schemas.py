@@ -6,11 +6,19 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
+from tweet_extractor.i18n import Note, catalog
 from tweet_extractor.orchestrator import AccountResult
 from tweet_extractor.service.jobs import JobRecord, JobStatus
 from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCODING
 from tweet_extractor.storage.queue import CaptureState
+
+
+def _invalid(code: str, /, **ctx: str) -> PydanticCustomError:
+    """Un error de validación con su clave del catálogo como tipo: el manejador de
+    `app.py` lo muestra en el idioma del pedido (acá queda el texto en inglés)."""
+    return PydanticCustomError(code, catalog("en")[code], ctx or None)
 
 
 def _clean_handle(raw: str) -> str:
@@ -21,9 +29,9 @@ def _clean_handle(raw: str) -> str:
     como nombre de archivo del CSV y segmento de URL). Fuente única para job + ingesta."""
     handle = raw.strip().lstrip("@").strip().lower()
     if not handle:
-        raise ValueError("el handle no puede ser vacío")
+        raise _invalid("error.empty_handle")
     if any(sep in handle for sep in ("/", "\\", "..")):
-        raise ValueError("handle inválido (no puede contener '/', '\\' ni '..')")
+        raise _invalid("error.bad_handle")
     return handle
 
 
@@ -38,7 +46,7 @@ class _DateRange(BaseModel):
     @model_validator(mode="after")
     def _range_ordenado(self) -> Self:
         if self.since >= self.until:
-            raise ValueError("since debe ser anterior a until")
+            raise _invalid("error.since_after_until")
         return self
 
     def since_utc(self) -> datetime:
@@ -61,14 +69,14 @@ class _CsvFormat(BaseModel):
         try:
             codecs.lookup(value)
         except LookupError as e:
-            raise ValueError(f"encoding desconocido: {value!r}") from e
+            raise _invalid("error.unknown_encoding", encoding=repr(value)) from e
         return value
 
     @field_validator("delimiter")
     @classmethod
     def _un_caracter(cls, value: str) -> str:
         if len(value) != 1 or value in '"\r\n':
-            raise ValueError("el separador tiene que ser un solo carácter, sin comillas ni saltos")
+            raise _invalid("error.bad_delimiter")
         return value
 
 
@@ -89,7 +97,7 @@ def _clean_accounts(raw: list[str]) -> list[str]:
     espacios. Sin repetidos y en orden: la misma cuenta dos veces no duplica el CSV."""
     handles = [h for entry in raw for h in re.split(r"[\s,]+", entry) if h.strip("@ ")]
     if not handles:
-        raise ValueError("falta al menos una cuenta")
+        raise _invalid("error.no_accounts")
     return list(dict.fromkeys(_clean_handle(h) for h in handles))
 
 
@@ -109,9 +117,7 @@ class CaptureCreate(_DateRange, _CsvFormat):
         handles = _clean_accounts(raw)
         for h in handles:
             if not _X_HANDLE.fullmatch(h):
-                raise ValueError(
-                    f"@{h} no es un nombre de usuario de X (letras, números y _, hasta 15)"
-                )
+                raise _invalid("error.not_x_handle", handle=h)
         return handles
 
 
@@ -119,16 +125,30 @@ class CaptureReport(BaseModel):
     """Body de `POST /captures/{id}/state`: lo que avisa la extensión, el popup o la página."""
 
     state: Literal["running", "paused", "waiting", "done", "stopped"]
-    note: str | None = Field(default=None, max_length=500)  # el motivo, si se cortó
+    # El motivo, si se cortó: un aviso del catálogo (`note.stop_cap`…) que cada uno lee en su
+    # idioma. Un texto suelto (lo que mandaba la extensión antes) se guarda tal cual.
+    note: Note | str | None = None
     resume_at: datetime | None = None  # `waiting`: cuándo vuelve a buscar (punto 11)
     by_user: bool = False  # la cortó la persona: no hace falta avisarle
+
+    @field_validator("note")
+    @classmethod
+    def _aviso_conocido(cls, value: Note | str | None) -> Note | None:
+        if value is None:
+            return None
+        note = Note.text(value) if isinstance(value, str) else value
+        if not note.known():
+            raise _invalid("error.unknown_note", key=note.key)
+        if len(note.dump()) > 1000:
+            raise ValueError("note too long")
+        return note
 
 
 class BrowserOut(BaseModel):
     """`GET /browser`: el navegador sin ventana de xport (punto 13 de docs/PLAN.md)."""
 
     state: Literal["off", "idle", "running", "login", "failed"]
-    note: str | None
+    note: Note | None
 
 
 class CaptureOut(BaseModel):
@@ -141,7 +161,7 @@ class CaptureOut(BaseModel):
     encoding: str
     delimiter: str
     state: CaptureState
-    note: str | None
+    note: Note | None
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None

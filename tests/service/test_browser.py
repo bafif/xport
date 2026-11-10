@@ -275,7 +275,8 @@ async def test_off_or_without_browser_the_queue_is_open_to_any_extension(tmp_pat
         FakeQueue(True),  # type: ignore[arg-type]
         FakeNotifier(),
     )
-    assert no_cage.status.state == RunnerState.OFF and "cage" in (no_cage.status.note or "")
+    assert no_cage.status.state == RunnerState.OFF
+    assert no_cage.status.note is not None and "cage" in no_cage.status.note.render()
 
 
 async def test_closes_after_the_queue_stays_empty(tmp_path: Path) -> None:

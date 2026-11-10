@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from tests.providers._fixtures import search_response, tweet_entry
 from tests.service.conftest import make_settings
 from tweet_extractor.compliance.gate import SlidingWindowGate
+from tweet_extractor.i18n import t
 from tweet_extractor.service import notify
 from tweet_extractor.service.app import create_app, origin_allowed
 from tweet_extractor.service.captures import EMPTY_NOTE
@@ -97,9 +98,9 @@ def test_sin_un_solo_tweet_lo_dice(tmp_path: Path) -> None:
         (cap,) = client.post("/captures", json={"accounts": ["nadie"], **RANGE}).json()
         client.post("/captures/next")
         done = _report(client, cap["id"], "done")
-        assert done["note"] == EMPTY_NOTE
+        assert done["note"] == {"key": "note.empty", "params": {}}
         assert done["csv"] is None and done["download_url"] is None
-        assert sent.wait(1)[0][1] == EMPTY_NOTE
+        assert sent.wait(1)[0][1] == EMPTY_NOTE.render() == t("note.empty")
         assert client.get(f"/captures/{cap['id']}/csv").status_code == 404
 
 
@@ -188,7 +189,7 @@ def test_origin_allowed() -> None:
 def test_la_pagina_y_el_tope_por_dia(tmp_path: Path) -> None:
     with _client(tmp_path, Sent()) as client:
         page = client.get("/")
-        assert page.status_code == 200 and "Nueva captura" in page.text
+        assert page.status_code == 200 and 'data-i18n="page.new"' in page.text
         assert client.get("/page/page.js").status_code == 200
         _ingest(client, "uno", "1", "2")
         assert client.get("/gate/days").json() == [{"day": date.today().isoformat(), "accessed": 2}]

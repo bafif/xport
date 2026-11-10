@@ -7,6 +7,7 @@ from twscrape.api import GQL_FEATURES, GQL_URL, OP_SearchTimeline
 from twscrape.queue_client import QueueClient
 from twscrape.utils import encode_params
 
+from tweet_extractor.i18n import t
 from tweet_extractor.providers.base import ProviderError
 
 
@@ -41,9 +42,6 @@ async def fetch_search_page(
     async with QueueClient(pool, "SearchTimeline", False) as client:
         rep = await client.get(f"{GQL_URL}/{OP_SearchTimeline}", params=encode_params(params))
     if rep is None:
-        raise ProviderError(
-            "twscrape no pudo completar el request de búsqueda "
-            "(cuenta inválida/suspendida o rate-limit agotado)"
-        )
+        raise ProviderError(t("provider.twscrape_failed"))
     result: dict[str, Any] = rep.json()
     return result

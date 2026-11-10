@@ -7,10 +7,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 
+from tweet_extractor.i18n import t
 from tweet_extractor.mappers.base import MappedTweet, MapperError
 from tweet_extractor.mappers.twscrape_mapper import map_tweet
 from tweet_extractor.providers.search_envelope import count_accessed, extract_tweet_results
-from tweet_extractor.service.routers import SvcDep
+from tweet_extractor.service.routers import LangDep, SvcDep
 from tweet_extractor.service.schemas import (
     ExportRequest,
     ExportResult,
@@ -31,7 +32,7 @@ _EXAMPLE_CHARS = 2000
 
 
 @router.post("/ingest", response_model=IngestResult)
-async def ingest(body: IngestPayload, svc: SvcDep) -> IngestResult:
+async def ingest(body: IngestPayload, svc: SvcDep, lang: LangDep) -> IngestResult:
     """Recibe páginas GraphQL capturadas in-page (patrón C) y las normaliza con el
     pipeline existente: extract (envelope) -> map (RT fuera, quotes sí) -> store.save
     (dedup por id) -> gate.record (record-after: el acceso ya ocurrió en el browser).
@@ -54,7 +55,7 @@ async def ingest(body: IngestPayload, svc: SvcDep) -> IngestResult:
             await svc.gate.record(accessed)  # el acceso ya pasó: rechazar no lo borra
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="tope global de 24 h alcanzado: ingesta pausada",
+            detail=t("error.gate_full", lang),
         )
     mapped: list[MappedTweet] = []
     rejected = 0
@@ -157,12 +158,12 @@ async def reset(body: ResetRequest, svc: SvcDep) -> ResetResult:
 
 
 @router.get("/exports/{filename}")
-async def download_export(filename: str, svc: SvcDep) -> FileResponse:
+async def download_export(filename: str, svc: SvcDep, lang: LangDep) -> FileResponse:
     """Descarga un CSV de captura. `filename` es un único segmento; se rechazan
     separadores/`..` (defensa en profundidad ante path traversal)."""
     if any(sep in filename for sep in ("/", "\\", "..")):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="archivo no encontrado")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=t("error.file_not_found", lang))
     path = svc.settings.captures_dir / filename
     if not path.exists():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="archivo no encontrado")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=t("error.file_not_found", lang))
     return FileResponse(path, media_type="text/csv", filename=filename)

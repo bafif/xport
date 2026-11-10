@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -17,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from tweet_extractor.compliance.gate import SlidingWindowGate
 from tweet_extractor.config import Settings
 from tweet_extractor.datadir import migrate_legacy_data
+from tweet_extractor.i18n import Lang, catalog, t
 from tweet_extractor.service.browser import BrowserRunner
 from tweet_extractor.service.captures import router as captures_router
 from tweet_extractor.service.ingest import router as ingest_router
@@ -27,7 +30,7 @@ from tweet_extractor.service.jobs import (
     build_backend,
 )
 from tweet_extractor.service.notify import Notifier
-from tweet_extractor.service.routers import SERVICE_NAME, router
+from tweet_extractor.service.routers import SERVICE_NAME, request_lang, router
 from tweet_extractor.storage.queue import CaptureQueue
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
@@ -94,11 +97,7 @@ def create_app(
         # registro o pisaría el del otro.
         other = await find_running_xport(cfg.xport_peer_ports)
         if other is not None:
-            msg = (
-                f"ya hay otro xport corriendo en {other}: no arranco un segundo servicio, "
-                "porque dos servicios llevarían dos registros del tope de 24 h. Usá ese o "
-                "bajalo antes de levantar este."
-            )
+            msg = t("app.already_running", url=other)
             log.error(msg)
             raise AnotherServiceError(msg)
         for note in await asyncio.to_thread(migrate_legacy_data, cfg):
@@ -161,10 +160,22 @@ def create_app(
             request.method, request.headers.get("origin"), request.headers.get("host")
         ):
             return JSONResponse(
-                {"detail": "pedido rechazado: viene de otro sitio, no de la página de xport"},
-                status_code=403,
+                {"detail": t("error.cross_site", request_lang(request))}, status_code=403
             )
         return await call_next(request)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Los errores propios (tipo = clave del catálogo, ver `schemas._invalid`) salen en el
+        # idioma del pedido; los de pydantic quedan como vienen.
+        lang = request_lang(request)
+        errors = [
+            {**e, "msg": t(e["type"], lang, **e.get("ctx", {}))}
+            if e["type"].startswith("error.")
+            else e
+            for e in exc.errors()
+        ]
+        return JSONResponse({"detail": jsonable_encoder(errors)}, status_code=422)
 
     # Solo pedidos dirigidos a la propia computadora (ver `Settings.allowed_hosts`).
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=cfg.allowed_hosts)
@@ -175,6 +186,11 @@ def create_app(
     @app.get("/", include_in_schema=False)
     async def page() -> FileResponse:
         return FileResponse(PAGE_DIR / "index.html")
+
+    @app.get("/i18n/{lang}", include_in_schema=False)
+    async def texts(lang: Lang) -> dict[str, str]:
+        """Los textos de la página en un idioma (el mismo catálogo que usa el servicio)."""
+        return catalog(lang)
 
     app.mount("/page", StaticFiles(directory=PAGE_DIR), name="page")
     return app

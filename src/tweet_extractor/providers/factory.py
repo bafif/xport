@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from tweet_extractor.config import Settings
+from tweet_extractor.i18n import t
 from tweet_extractor.mappers import api_v2_mapper, twscrape_mapper
 from tweet_extractor.mappers.base import Mapper
 from tweet_extractor.providers.base import ProviderError, TweetProvider
@@ -38,4 +39,4 @@ async def build_backend(settings: Settings) -> Backend:
             provider=OfficialApiProvider(settings),
             mapper=api_v2_mapper.map_tweet,
         )
-    raise ProviderError(f"provider_backend desconocido: {settings.provider_backend!r}")
+    raise ProviderError(t("provider.unknown_backend", name=repr(settings.provider_backend)))

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from tweet_extractor.compliance.gate import DAILY_BACKFILL, LEDGER_SCHEMA
 from tweet_extractor.config import Settings
+from tweet_extractor.i18n import t
 
 # Lo que se muda, con el campo de Settings que dice adónde. El registro va ÚLTIMO: es lo que
 # marca un `data/` como de xport, así que si algo falla antes, la próxima vez se reintenta.
@@ -52,19 +53,20 @@ def migrate_legacy_data(settings: Settings) -> list[str]:
             if not new.exists():
                 new.parent.mkdir(parents=True, exist_ok=True)
                 _move(old, new)
-                notes.append(f"moví {old} a {new}")
+                notes.append(t("datadir.moved", old=old, new=new))
             elif rel == _LEDGER:
                 n = _merge_ledger(old, new)
                 _remove_db(old)
-                notes.append(f"sumé {n} accesos del registro viejo {old} a {new} y lo borré")
+                notes.append(t("datadir.merged_ledger", n=n, old=old, new=new))
             elif old.is_dir():
                 left = _merge_dir(old, new)
                 notes.append(
-                    f"moví {old} a {new}"
-                    + (f"; quedaron {left} archivos que ya estaban en {new}" if left else "")
+                    t("datadir.moved_left", old=old, new=new, left=left)
+                    if left
+                    else t("datadir.moved", old=old, new=new)
                 )
             else:
-                notes.append(f"dejé {old}: ya hay {new} y no mezclo las dos bases")
+                notes.append(t("datadir.kept", old=old, new=new))
         # Sin registro, el `data/` viejo ya no se vuelve a mirar; si quedó vacío, se va.
         _remove_empty_dirs(src)
     return notes

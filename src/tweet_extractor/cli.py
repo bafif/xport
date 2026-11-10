@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated
@@ -12,6 +13,7 @@ from tweet_extractor.compliance.gate import ComplianceError, SlidingWindowGate
 from tweet_extractor.compliance.gated_provider import GatedProvider
 from tweet_extractor.config import Settings
 from tweet_extractor.datadir import migrate_legacy_data
+from tweet_extractor.i18n import Lang, number, parse_lang, set_lang, system_lang, t
 from tweet_extractor.mappers.base import MapperError
 from tweet_extractor.orchestrator import AccountResult, run_job
 from tweet_extractor.providers.base import ProviderError
@@ -20,10 +22,35 @@ from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCO
 from tweet_extractor.storage.queue import Capture, CaptureQueue
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
-app = typer.Typer(
-    help="Extrae los tweets de una o varias cuentas de X entre dos fechas → un CSV por cuenta.",
-    add_completion=False,
-)
+
+def _argv_lang(argv: list[str]) -> str | None:
+    """El `--lang` de la línea de comandos. Se lee antes de armar la CLI porque la ayuda de
+    Typer se arma al importar: así `--help` también sale en el idioma pedido."""
+    for i, arg in enumerate(argv):
+        if arg == "--lang" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--lang="):
+            return arg.removeprefix("--lang=")
+    return None
+
+
+set_lang(parse_lang(_argv_lang(sys.argv[1:])) or system_lang())
+
+app = typer.Typer(help=t("cli.help"), add_completion=False)
+
+# `--lang` va en la CLI y en cada comando, así anda antes o después del comando. La ayuda ya
+# salió en ese idioma (`_argv_lang`); acá se fija para los mensajes.
+LangOption = Annotated[Lang | None, typer.Option("--lang", help=t("cli.opt_lang"))]
+
+
+def _use(lang: Lang | None) -> None:
+    if lang is not None:
+        set_lang(lang)
+
+
+@app.callback()
+def main(lang: LangOption = None) -> None:
+    _use(lang)
 
 
 def _parse_day(value: str, param: str) -> datetime:
@@ -32,7 +59,7 @@ def _parse_day(value: str, param: str) -> datetime:
     try:
         day = date.fromisoformat(value)
     except ValueError as e:
-        raise typer.BadParameter(f"{param} debe ser YYYY-MM-DD: {value!r}") from e
+        raise typer.BadParameter(t("cli.bad_date", param=param, value=repr(value))) from e
     return datetime(day.year, day.month, day.day, tzinfo=UTC)
 
 
@@ -43,41 +70,37 @@ def _accounts(values: list[str]) -> list[str]:
     raw = [part for value in values for part in value.split(",")]
     accounts = list(dict.fromkeys(a.strip().lstrip("@").strip().lower() for a in raw))
     if any(not a for a in accounts):
-        raise typer.BadParameter("--account no puede ser vacío")
+        raise typer.BadParameter(t("cli.empty_account"))
     return accounts
 
 
-@app.command()
+@app.command(help=t("cli.extract"))
 def extract(
     account: Annotated[
         list[str],
-        typer.Option(
-            "--account", "-a", help="Handle de la cuenta (sin @). Repetible o separadas por comas."
-        ),
+        typer.Option("--account", "-a", help=t("cli.opt_account")),
     ],
-    since: Annotated[str, typer.Option(help="Fecha inicial YYYY-MM-DD (UTC), inclusiva.")],
-    until: Annotated[str, typer.Option(help="Fecha final YYYY-MM-DD (UTC), exclusiva.")],
+    since: Annotated[str, typer.Option(help=t("cli.opt_since"))],
+    until: Annotated[str, typer.Option(help=t("cli.opt_until"))],
     out_dir: Annotated[
         Path | None,
-        typer.Option(help="Directorio de los CSV (default: csv/ en la carpeta de datos)."),
+        typer.Option(help=t("cli.opt_out_dir")),
     ] = None,
     subwindow_days: Annotated[
         int | None,
-        typer.Option(min=1, help="Días por sub-ventana de búsqueda (default: Settings)."),
+        typer.Option(min=1, help=t("cli.opt_subwindow")),
     ] = None,
-    encoding: Annotated[
-        str, typer.Option(help="Encoding del CSV (default utf-8; utf-8-sig agrega BOM p/ Excel).")
-    ] = DEFAULT_ENCODING,
-    delimiter: Annotated[
-        str, typer.Option(help="Delimitador del CSV (default ','; ';' p/ Excel-AR).")
-    ] = DEFAULT_DELIMITER,
+    encoding: Annotated[str, typer.Option(help=t("cli.opt_encoding"))] = DEFAULT_ENCODING,
+    delimiter: Annotated[str, typer.Option(help=t("cli.opt_delimiter"))] = DEFAULT_DELIMITER,
+    lang: LangOption = None,
 ) -> None:
     """Extrae del lado del servidor (twscrape o la API oficial). Todo acceso pasa por el
     Compliance Gate (tope deslizante de 24 h); un re-run saltea los tramos ya completados."""
+    _use(lang)
     since_dt = _parse_day(since, "--since")
     until_dt = _parse_day(until, "--until")
     if since_dt >= until_dt:
-        raise typer.BadParameter("--since debe ser anterior a --until")
+        raise typer.BadParameter(t("cli.since_after_until"))
     accounts = _accounts(account)
 
     try:
@@ -85,51 +108,52 @@ def extract(
             _run(accounts, since_dt, until_dt, out_dir, subwindow_days, encoding, delimiter)
         )
     except (ProviderError, ComplianceError, MapperError) as e:
-        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        typer.secho(t("cli.error", error=e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
 
     typer.echo("")
     for r in results:
         typer.echo(
-            f"{r.account}: {r.exported} tweets → {r.csv_path} "
-            f"({r.saved} nuevos; {r.windows_run} tramos corridos, "
-            f"{r.windows_skipped} salteados por checkpoint)"
+            t(
+                "cli.result",
+                account=r.account,
+                exported=r.exported,
+                path=r.csv_path,
+                saved=r.saved,
+                run=r.windows_run,
+                skipped=r.windows_skipped,
+            )
         )
-    typer.echo(f"Gate: {usage:,} accesos en la ventana de 24 h; quedan {remaining:,} del tope.")
+    typer.echo(t("cli.gate", usage=number(usage), remaining=number(remaining)))
 
 
-@app.command()
+@app.command(help=t("cli.capture"))
 def capture(
     account: Annotated[
         list[str],
-        typer.Option(
-            "--account", "-a", help="Handle de la cuenta (sin @). Repetible o separadas por comas."
-        ),
+        typer.Option("--account", "-a", help=t("cli.opt_account")),
     ],
-    since: Annotated[str, typer.Option(help="Fecha inicial YYYY-MM-DD (UTC), inclusiva.")],
-    until: Annotated[str, typer.Option(help="Fecha final YYYY-MM-DD (UTC), exclusiva.")],
-    excel: Annotated[
-        bool, typer.Option("--excel", help="CSV para Excel en castellano (UTF-8 con BOM y ';').")
-    ] = False,
+    since: Annotated[str, typer.Option(help=t("cli.opt_since"))],
+    until: Annotated[str, typer.Option(help=t("cli.opt_until"))],
+    excel: Annotated[bool, typer.Option("--excel", help=t("cli.opt_excel"))] = False,
+    lang: LangOption = None,
 ) -> None:
     """Encola capturas para la extensión, una por cuenta: las toma de a una mientras el
     navegador con xport esté abierto, y al terminar cada una el servicio exporta su CSV."""
+    _use(lang)
     since_day = _parse_day(since, "--since").date()
     until_day = _parse_day(until, "--until").date()
     if since_day >= until_day:
-        raise typer.BadParameter("--since debe ser anterior a --until")
+        raise typer.BadParameter(t("cli.since_after_until"))
     accounts = _accounts(account)
     bad = [a for a in accounts if not re.fullmatch(r"[a-z0-9_]{1,15}", a)]
     if bad:
-        raise typer.BadParameter(f"@{bad[0]} no es un nombre de usuario de X")
+        raise typer.BadParameter(t("cli.not_x_handle", handle=bad[0]))
     encoding, delimiter = ("utf-8-sig", ";") if excel else (DEFAULT_ENCODING, DEFAULT_DELIMITER)
     caps = asyncio.run(_enqueue(accounts, since_day, until_day, encoding, delimiter))
     for c in caps:
         typer.echo(f"#{c.id} @{c.account} {c.since} → {c.until}: {c.state.value}")
-    typer.echo(
-        "La extensión las toma de a una con el navegador abierto; el avance y los CSV están "
-        "en http://localhost:8000/."
-    )
+    typer.echo(t("cli.queued"))
 
 
 async def _enqueue(
@@ -137,7 +161,7 @@ async def _enqueue(
 ) -> list[Capture]:
     settings = Settings()
     for note in await asyncio.to_thread(migrate_legacy_data, settings):
-        typer.echo(f"datos viejos: {note}")
+        typer.echo(t("cli.legacy_data", note=note))
     async with CaptureQueue(settings.queue_db_path) as queue:
         return await queue.add(accounts, since, until, encoding=encoding, delimiter=delimiter)
 
@@ -158,7 +182,7 @@ async def _run(
     # La misma carpeta de datos que el servicio, se corra desde donde se corra (regla 1 de
     # docs/PLAN.md: un solo registro del tope); la primera vez muda el `data/` viejo.
     for note in await asyncio.to_thread(migrate_legacy_data, settings):
-        typer.echo(f"datos viejos: {note}")
+        typer.echo(t("cli.legacy_data", note=note))
     backend = await build_backend(settings)
     async with (
         SlidingWindowGate(settings.audit_db_path, settings.hard_cap, settings.window_s) as gate,

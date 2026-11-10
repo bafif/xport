@@ -5,6 +5,7 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
+from tweet_extractor.i18n import Lang, accept_lang, current, t
 from tweet_extractor.service.jobs import JobStatus, ServiceState
 from tweet_extractor.service.schemas import (
     GateResponse,
@@ -20,6 +21,15 @@ def get_svc(request: Request) -> ServiceState:
 
 
 SvcDep = Annotated[ServiceState, Depends(get_svc)]
+
+
+def request_lang(request: Request) -> Lang:
+    """El idioma de los mensajes de la respuesta: el del `Accept-Language` (la página y la
+    extensión mandan el que eligió la persona) o, sin ese header, el del servicio."""
+    return accept_lang(request.headers.get("accept-language")) or current()
+
+
+LangDep = Annotated[Lang, Depends(request_lang)]
 
 # Lo que `/healthz` dice ser: así un servicio nuevo reconoce que ya corre otro xport
 # (ver `find_running_xport` en app.py).
@@ -67,31 +77,36 @@ async def list_jobs(svc: SvcDep) -> list[JobSummary]:
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str, svc: SvcDep) -> JobResponse:
+async def get_job(job_id: str, svc: SvcDep, lang: LangDep) -> JobResponse:
     record = svc.registry.get(job_id)
     if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"job {job_id!r} no encontrado")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail=t("error.job_not_found", lang, id=repr(job_id))
+        )
     return JobResponse.from_record(record)
 
 
 @router.get("/jobs/{job_id}/csv/{account}")
-async def download_csv(job_id: str, account: str, svc: SvcDep) -> FileResponse:
+async def download_csv(job_id: str, account: str, svc: SvcDep, lang: LangDep) -> FileResponse:
     """Descarga el CSV de UNA cuenta del job (siempre es un archivo por
     cuenta). El job tiene que estar `done`. Sirve la ruta REAL escrita por el job
     (incluye el rango en el nombre), así el endpoint no depende del naming."""
     record = svc.registry.get(job_id)
     if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"job {job_id!r} no encontrado")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail=t("error.job_not_found", lang, id=repr(job_id))
+        )
     if record.status != JobStatus.DONE or record.results is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=f"el job está '{record.status}': el CSV todavía no está disponible",
+            detail=t("error.job_not_ready", lang, status=record.status),
         )
     result = next((r for r in record.results if r.account == account), None)
     if result is None:
         raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail=f"la cuenta {account!r} no tiene CSV en este job"
+            status.HTTP_404_NOT_FOUND,
+            detail=t("error.job_no_csv", lang, account=repr(account)),
         )
     if not result.csv_path.exists():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="CSV no encontrado")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=t("error.csv_not_found", lang))
     return FileResponse(result.csv_path, media_type="text/csv", filename=result.csv_path.name)

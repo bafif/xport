@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from tweet_extractor.i18n import t
 from tweet_extractor.mappers.base import MappedTweet, Mapper
 from tweet_extractor.providers.base import SearchQuery, TweetProvider
 from tweet_extractor.providers.subwindows import subwindows
@@ -66,13 +67,13 @@ async def run_job(
             tramo = f"[{account}] {w_since:%Y-%m-%d} → {w_until:%Y-%m-%d}"
             if await store.is_window_done(account, w_since, w_until):
                 windows_skipped += 1
-                log(f"{tramo}: ya completado, se saltea")
+                log(t("run.skipped", stretch=tramo))
                 continue
             saved_tramo = await _run_window(account, w_since, w_until, provider, mapper, store)
             await store.mark_window_done(account, w_since, w_until)
             saved += saved_tramo
             windows_run += 1
-            log(f"{tramo}: {saved_tramo} tweets nuevos")
+            log(t("run.saved", stretch=tramo, count=saved_tramo))
         csv_path, exported = await export_account(
             store,
             account,
@@ -92,7 +93,7 @@ async def run_job(
                 windows_skipped=windows_skipped,
             )
         )
-        log(f"[{account}] exportado: {exported} tweets → {csv_path}")
+        log(t("run.exported", account=account, count=exported, path=csv_path))
     return results
 
 

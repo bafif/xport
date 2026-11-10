@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from tweet_extractor.config import Settings
+from tweet_extractor.i18n import t
 from tweet_extractor.providers.base import Page, ProviderError, SearchQuery, TweetProvider
 
 # Backend de la X API v2 oficial (de pago, por lectura). Usa la búsqueda de archivo
@@ -108,12 +109,8 @@ def _describe(res: httpx.Response) -> str:
             detail = " ".join(str(body[k]) for k in ("title", "detail") if body.get(k))
     except ValueError:
         detail = res.text[:200]
-    hint = {
-        401: "el token (X_API_BEARER_TOKEN) no es válido",
-        402: "la cuenta de la API no tiene crédito",
-        403: "el plan o la app no tienen acceso a la búsqueda de archivo completo",
-    }.get(res.status_code, "")
-    parts = [f"la API de X respondió {res.status_code}", hint, detail]
+    hint = t(f"provider.api_{res.status_code}") if res.status_code in (401, 402, 403) else ""
+    parts = [t("provider.api_status", status=res.status_code), hint, detail]
     return ": ".join(p for p in parts if p)
 
 
@@ -133,10 +130,7 @@ class SearchAllFetcher:
     ) -> None:
         token = settings.x_api_bearer_token
         if not token:
-            raise ProviderError(
-                "Falta X_API_BEARER_TOKEN en el entorno (.env): el backend oficial necesita "
-                "el Bearer token de una app de X con acceso a la búsqueda de archivo completo."
-            )
+            raise ProviderError(t("provider.no_bearer"))
         self._headers = {"Authorization": f"Bearer {token}"}
         self._transport = transport
         self._sleep = sleep
@@ -159,18 +153,18 @@ class SearchAllFetcher:
                 except httpx.TransportError as e:
                     retries += 1
                     if retries > MAX_RETRIES:
-                        raise ProviderError(f"no se pudo contactar a la API de X: {e}") from e
+                        raise ProviderError(t("provider.api_unreachable", error=e)) from e
                     await self._sleep(2.0**retries)
                     continue
                 if res.status_code == 200:
                     body = res.json()
                     if not isinstance(body, dict):
-                        raise ProviderError("la API de X devolvió algo que no es un objeto JSON")
+                        raise ProviderError(t("provider.api_not_json"))
                     return body
                 if res.status_code == 429:
                     rate_waits += 1
                     if rate_waits > MAX_RATE_LIMIT_WAITS:
-                        raise ProviderError(_describe(res) + " (rate limit, sin recuperarse)")
+                        raise ProviderError(t("provider.rate_limited", reason=_describe(res)))
                     await self._sleep(self._rate_limit_wait(res, rate_waits))
                     continue
                 if res.status_code >= 500:

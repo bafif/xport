@@ -19,6 +19,8 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
+from tweet_extractor.i18n import t
+
 log = logging.getLogger(__name__)
 
 Send = Callable[[str, str, Path | None], Coroutine[Any, Any, None]]
@@ -80,7 +82,7 @@ async def _linux(title: str, body: str, open_path: Path | None) -> None:
     # `--wait` deja el proceso vivo hasta que la notificación se cierra o vence, y escribe
     # la acción elegida. Corre en una tarea aparte (ver `Notifier`), sin frenar a nadie.
     chosen = await _run(
-        exe, "--app-name=xport", "--action=open=Abrir el CSV", "--wait", title, body
+        exe, "--app-name=xport", f"--action=open={t('notify.open_csv')}", "--wait", title, body
     )
     opener = shutil.which("xdg-open")
     if chosen.strip() == b"open" and opener is not None:

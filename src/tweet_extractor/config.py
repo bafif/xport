@@ -8,6 +8,8 @@ from typing import ClassVar, Literal, Self
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from tweet_extractor.i18n import t
+
 ProviderBackend = Literal["twscrape", "official"]
 
 # La raíz del repo, si se corre desde el repo (uv run, fastapi dev, el native host). Instalado
@@ -143,7 +145,7 @@ class Settings(BaseSettings):
         # Una carpeta relativa dependería otra vez de desde dónde se arranca.
         value = value.expanduser()
         if not value.is_absolute():
-            raise ValueError(f"XPORT_DATA_DIR tiene que ser una ruta absoluta: {value}")
+            raise ValueError(t("config.data_dir_absolute", path=value))
         return value
 
     @model_validator(mode="after")

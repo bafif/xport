@@ -42,6 +42,8 @@ from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from tweet_extractor.config import Settings
+from tweet_extractor.i18n import Note
+from tweet_extractor.i18n import t as text
 from tweet_extractor.storage.queue import CaptureQueue
 
 log = logging.getLogger(__name__)
@@ -335,7 +337,7 @@ class RunnerState(StrEnum):
 @dataclass(frozen=True)
 class RunnerStatus:
     state: RunnerState
-    note: str | None = None
+    note: Note | None = None  # en el idioma de quien lo lee: ver `tweet_extractor.i18n`
 
 
 class Notify(Protocol):
@@ -383,28 +385,15 @@ class BrowserRunner:
         self._error_seen = False
         self._status = RunnerStatus(RunnerState.IDLE)
         if not settings.xport_browser:
-            self._status = RunnerStatus(
-                RunnerState.OFF, "Apagado en la configuración (XPORT_BROWSER)."
-            )
+            self._status = RunnerStatus(RunnerState.OFF, Note(key="runner.off_config"))
         elif self._cage is None:
             # Sin pantalla virtual quedaría `--headless`, y X le contesta 403: la captura no
             # avanzaría nunca. Mejor que la tome la extensión del navegador de siempre.
-            self._status = RunnerStatus(
-                RunnerState.OFF,
-                "Para capturar sin ventana hace falta cage (por ahora, solo en Linux): "
-                "mientras tanto, la captura usa tu navegador.",
-            )
+            self._status = RunnerStatus(RunnerState.OFF, Note(key="runner.no_cage"))
         elif self._binary is None:
-            self._status = RunnerStatus(
-                RunnerState.OFF,
-                "No encontré Chrome, Chromium ni Edge: la captura usa tu navegador.",
-            )
+            self._status = RunnerStatus(RunnerState.OFF, Note(key="runner.no_browser"))
         elif self._extension is None:
-            self._status = RunnerStatus(
-                RunnerState.OFF,
-                "No encontré la extensión armada (extension/dist/chrome-mv3): "
-                "la captura usa tu navegador.",
-            )
+            self._status = RunnerStatus(RunnerState.OFF, Note(key="runner.no_extension"))
 
     async def _launch_login(self, profile: Path, url: str) -> LoginWindow:
         assert self._binary is not None
@@ -476,7 +465,7 @@ class BrowserRunner:
             self._browser = None
             browser = None
             if pending:
-                self._crash("El navegador de xport se cerró solo.")
+                self._crash(Note(key="runner.closed"))
                 if self._status.state == RunnerState.FAILED:
                     return
         if not pending:
@@ -498,10 +487,7 @@ class BrowserRunner:
             self._last_session_check = now
             if await self._stuck_on_error(browser):
                 await self._close_browser()
-                self._crash(
-                    "X no deja cargar la página (una página de error, como el 403 que X "
-                    "le da al modo sin ventana)."
-                )
+                self._crash(Note(key="runner.error_page"))
                 return
             if not await self._ensure_session(browser):
                 await self._login()
@@ -518,15 +504,15 @@ class BrowserRunner:
         self._error_seen = on_error
         return stuck
 
-    def _crash(self, note: str) -> None:
+    def _crash(self, note: Note) -> None:
         self._crashes += 1
         if self._crashes >= self.MAX_CRASHES:
-            msg = f"{note} Falló {self._crashes} veces seguidas: la captura vuelve a tu navegador."
-            log.error("navegador de xport: %s", msg)
-            self._status = RunnerStatus(RunnerState.FAILED, msg)
-            self._notifier.post("xport no pudo usar su navegador", msg)
+            failed = Note(key="runner.crashed", params={"reason": note, "count": self._crashes})
+            log.error("navegador de xport: %s", failed.render())
+            self._status = RunnerStatus(RunnerState.FAILED, failed)
+            self._notifier.post(text("notify.runner_failed"), failed.render())
         else:
-            log.warning("navegador de xport: %s (vez %d)", note, self._crashes)
+            log.warning("navegador de xport: %s (vez %d)", note.render(), self._crashes)
 
     async def _open(self, headless: bool, url: str) -> Browser:
         profile = self._settings.browser_profile_dir
@@ -544,7 +530,7 @@ class BrowserRunner:
         try:
             browser = await self._open(headless=True, url="about:blank")
         except OSError as exc:
-            self._crash(f"No pude abrir el navegador ({exc}).")
+            self._crash(Note(key="runner.launch_failed", params={"error": str(exc)}))
             return
         self._browser = browser
         try:
@@ -555,7 +541,7 @@ class BrowserRunner:
             await self._mark(browser, ext_id)
         except CdpError as exc:
             await self._close_browser()
-            self._crash(f"El navegador no aceptó la extensión ({exc}).")
+            self._crash(Note(key="runner.extension_refused", params={"error": str(exc)}))
             return
         self._crashes = 0
         self._status = RunnerStatus(RunnerState.RUNNING)
@@ -631,22 +617,15 @@ class BrowserRunner:
                 await self._browser.cdp.call("Storage.clearCookies")
         await self._close_browser()
         if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
-            self._give_up("X pide iniciar sesión y no hay pantalla para abrir la ventana.")
+            self._give_up(Note(key="runner.no_display"))
             return
         profile = self._settings.browser_profile_dir
-        self._status = RunnerStatus(
-            RunnerState.LOGIN,
-            "Iniciá sesión en X en la ventana de Chrome de xport (conviene una cuenta aparte).",
-        )
-        self._notifier.post(
-            "xport necesita una sesión de X",
-            "Se abrió una ventana de Chrome de xport: iniciá sesión en X ahí, una sola vez. "
-            "Conviene una cuenta aparte de la tuya.",
-        )
+        self._status = RunnerStatus(RunnerState.LOGIN, Note(key="runner.login"))
+        self._notifier.post(text("notify.login"), text("notify.login_body"))
         try:
             window = await self._login_launcher(profile, LOGIN_URL)
         except OSError as exc:
-            self._give_up(f"No pude abrir la ventana para iniciar sesión ({exc}).")
+            self._give_up(Note(key="runner.login_window_failed", params={"error": str(exc)}))
             return
         self._login_window = window
         deadline = time.monotonic() + self.LOGIN_TIMEOUT_S
@@ -665,12 +644,12 @@ class BrowserRunner:
         finally:
             await close_login_window(window)
             self._login_window = None
-        self._give_up("Se cerró la ventana sin iniciar sesión en X.")
+        self._give_up(Note(key="runner.login_closed"))
 
-    def _give_up(self, note: str) -> None:
-        msg = f"{note} Mientras tanto, la captura vuelve a tu navegador."
-        log.warning("navegador de xport: %s", msg)
-        self._status = RunnerStatus(RunnerState.FAILED, msg)
+    def _give_up(self, note: Note) -> None:
+        failed = Note(key="runner.gave_up", params={"reason": note})
+        log.warning("navegador de xport: %s", failed.render())
+        self._status = RunnerStatus(RunnerState.FAILED, failed)
 
     async def _close_browser(self) -> None:
         browser, self._browser = self._browser, None

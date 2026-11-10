@@ -6,6 +6,7 @@ from typing import Any
 from twscrape import AccountsPool
 
 from tweet_extractor.config import Settings
+from tweet_extractor.i18n import t
 from tweet_extractor.providers._twscrape_gql import fetch_search_page
 from tweet_extractor.providers.base import Page, ProviderError, SearchQuery, TweetProvider
 
@@ -64,10 +65,7 @@ async def build_pool(settings: Settings) -> AccountsPool:
     (estructura pool-friendly para crecer a N cuentas después). Con `ct0` presente la
     cuenta queda activa sin login. Idempotente (twscrape persiste en `accounts.db`)."""
     if not settings.x_auth_token or not settings.x_ct0:
-        raise ProviderError(
-            "Faltan cookies X_AUTH_TOKEN/X_CT0 en el entorno (.env). "
-            "Cargá una cuenta de X aparte."
-        )
+        raise ProviderError(t("provider.no_cookies"))
     settings.accounts_db_path.parent.mkdir(parents=True, exist_ok=True)
     pool = AccountsPool(db_file=str(settings.accounts_db_path))
     if await pool.get_account("xport-session") is None:

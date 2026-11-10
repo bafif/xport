@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
+from tweet_extractor import i18n
 from tweet_extractor.compliance.gate import SlidingWindowGate
 from tweet_extractor.providers.base import Page, SearchQuery, TweetProvider
 
@@ -18,6 +19,13 @@ def _aislar_carpeta_de_datos(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     monkeypatch.setenv("XPORT_LEGACY_DIRS", "[]")
     monkeypatch.setenv("XPORT_PEER_PORTS", "[]")
     monkeypatch.setenv("XPORT_NOTIFY", "false")  # ninguna notificación a la pantalla
+
+
+@pytest.fixture(autouse=True)
+def _en_castellano(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Los mensajes salen en castellano, sea cual sea el locale de la máquina que corre los
+    tests: los que miran el inglés lo piden (`tests/test_i18n.py`)."""
+    monkeypatch.setattr(i18n, "_current", "es")
 
 
 class FakeClock:
