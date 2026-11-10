@@ -13,6 +13,7 @@ import {
   STORAGE_CRAWL,
   STORAGE_PAUSED,
   STORAGE_QUEUE_TAB,
+  STORAGE_RUNNER,
   STORAGE_STATUS,
 } from '../lib/capture';
 import { decideIngest, type IngestFlags, MAX_PAGES_PER_POST, stopNotice } from '../lib/ingest';
@@ -195,7 +196,8 @@ export default defineBackground(() => {
   }
 
   async function client(): Promise<XportClient> {
-    return new XportClient(await getBase());
+    const runner = (await browser.storage.local.get(STORAGE_RUNNER))[STORAGE_RUNNER];
+    return new XportClient(await getBase(), typeof runner === 'string' ? runner : undefined);
   }
 
   async function report(
@@ -228,6 +230,11 @@ export default defineBackground(() => {
   }
 
   void browser.alarms.create(QUEUE_ALARM, { periodInMinutes: POLL_MINUTES });
+  // El servicio le deja la marca a esta extensión apenas carga su navegador sin ventana: con
+  // la marca, mirar la cola en el momento en vez de esperar la alarma.
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && STORAGE_RUNNER in changes) void serial(pollQueue);
+  });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === QUEUE_ALARM) void serial(pollQueue);
   });

@@ -15,6 +15,12 @@ ProviderBackend = Literal["twscrape", "official"]
 _ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT: Path | None = _ROOT if (_ROOT / "pyproject.toml").is_file() else None
 
+# La extensión armada para Chrome (`bash deploy/extension-build.sh`), que el servicio le carga
+# a su navegador sin ventana (punto 13 de docs/PLAN.md).
+DEFAULT_EXTENSION_DIR: Path | None = (
+    REPO_ROOT / "extension" / "dist" / "chrome-mv3" if REPO_ROOT else None
+)
+
 # El `.env` se lee siempre del repo, no de la carpeta desde donde se arranca: si no, la CLI
 # corrida desde otra carpeta no veía la misma configuración que el servicio.
 ENV_FILE: Path = REPO_ROOT / ".env" if REPO_ROOT else Path(".env")
@@ -63,6 +69,7 @@ _DATA_PATHS = (
     "csv_dir",
     "captures_dir",
     "queue_db_path",
+    "browser_profile_dir",
 )
 
 
@@ -92,6 +99,14 @@ class Settings(BaseSettings):
     csv_dir: Path = Path("csv")  # raíz de salida de los CSV (el service usa un subdir por job)
     captures_dir: Path = Path("captures")  # CSV exportados de la captura in-page (patrón C)
     queue_db_path: Path = Path("queue.db")  # la cola de capturas (sobrevive a un reinicio)
+    browser_profile_dir: Path = Path("browser")  # el perfil del navegador de xport (sesión de X)
+    # El navegador sin ventana que maneja el servicio (`service/browser.py`): con la cola no
+    # vacía, levanta Chrome, Chromium o Edge con la extensión y captura sin ninguna ventana.
+    # Apagado (`XPORT_BROWSER=false`), la cola la toma la extensión del navegador de siempre.
+    xport_browser: bool = True
+    xport_browser_bin: Path | None = None  # si no, el primero que encuentre en el PATH
+    xport_browser_cage: Path | None = None  # la pantalla virtual (cage); si no, la del PATH
+    xport_extension_dir: Path | None = DEFAULT_EXTENSION_DIR
     # Notificación del sistema al terminar o cortarse una captura de la cola.
     xport_notify: bool = True
     # De dónde mudar los datos viejos (`data/`) la primera vez (ver `datadir.py`).

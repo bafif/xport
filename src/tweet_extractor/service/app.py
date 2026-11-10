@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from tweet_extractor.compliance.gate import SlidingWindowGate
 from tweet_extractor.config import Settings
 from tweet_extractor.datadir import migrate_legacy_data
+from tweet_extractor.service.browser import BrowserRunner
 from tweet_extractor.service.captures import router as captures_router
 from tweet_extractor.service.ingest import router as ingest_router
 from tweet_extractor.service.jobs import (
@@ -107,6 +108,7 @@ def create_app(
         queue = CaptureQueue(cfg.queue_db_path)
         notes = notifier or Notifier(enabled=cfg.xport_notify)
         registry = JobRegistry()
+        runner = BrowserRunner(cfg, queue, notes)
         # setup DENTRO del try: si `store.setup()` falla, el `finally` igual cierra
         # el gate (su conexión ya abierta) — close() es no-op si no se abrió.
         try:
@@ -121,11 +123,14 @@ def create_app(
                 backend_builder=backend_builder,
                 queue=queue,
                 notifier=notes,
+                runner=runner,
             )
+            runner.start()
             yield
         finally:
-            # Orden importante: cancelar los jobs en vuelo ANTES de cerrar las
-            # conexiones (un run_job a mitad no debe tocar un gate/store cerrado).
+            # Orden importante: cancelar los jobs en vuelo y cerrar el navegador ANTES de
+            # cerrar las conexiones (un run_job a mitad no debe tocar un gate/store cerrado).
+            await runner.aclose()
             await registry.shutdown()
             await notes.shutdown()
             await queue.close()
@@ -134,7 +139,7 @@ def create_app(
 
     app = FastAPI(
         title="tweet-extractor",
-        version="0.1.0",
+        version="0.2.0",
         summary="Extrae tweets por rango de fechas → un CSV por cuenta, bajo el Compliance Gate.",
         lifespan=lifespan,
     )

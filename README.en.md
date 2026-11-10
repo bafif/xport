@@ -37,7 +37,9 @@ Without a browser there are two ways. With a regular X account it has been block
 it signs requests and twscrape can no longer do it. With the [official X API](#with-the-official-api), which is paid,
 it is implemented but **has not been tried against the real API**: it was built from X's documentation and made-up
 responses. The capture cut-offs from 6 November 2026 and the queue from 10 November were tried against x.com on 10
-November, with Chrome without a window; the local page and the notifications have not been tried in a browser yet.
+November, with Chrome without a window; the local page and the notifications have not been tried in a browser yet. That
+same afternoon X started answering 403 to anything that presents itself as `HeadlessChrome`, so the service's own
+Chrome now runs inside cage.
 
 ## Everyday use: the page
 
@@ -47,9 +49,13 @@ handles several accounts at once:
 1. **Accounts and dates:** one or more accounts, separated by commas or spaces. «Desde» (from) and «Hasta» (to) are
    both included («hasta el 31/12/2025 inclusive»), and an empty «Hasta» means today. There are shortcuts: last month,
    last year and a whole year. If the CSV is going to an Excel set to Spanish, tick «Para Excel en castellano».
-2. **Capture:** each account goes into the queue. The extension takes them one at a time (X throttles search per
-   account, and in parallel it does not pay off): it opens the search in a tab and scrolls it by itself, as from the
-   popup. **That tab has to stay in view** while it captures. If you close it, it opens it again where it was.
+2. **Capture:** each account goes into the queue and they are captured one at a time (X throttles search per account,
+   and in parallel it does not pay off). The service opens its own Chrome with the extension inside a virtual screen
+   nobody sees, so you do not have to keep anything in view or touch the browser. The first time, and whenever X ends
+   the session, a small window shows up to log in to X; a separate account is better than your own. As soon as you log
+   in, the window closes by itself and the capture goes on. If you close it without logging in, or if the service
+   cannot use its Chrome (see [Install](#install)), the extension in your browser takes the queue as before: it opens
+   the search in a tab and **that tab has to stay in view** while it captures.
 3. **Follow it:** each capture shows its state (queued, running, paused, done or stopped), how far back it got, how
    much of the range it covers, how many tweets it has and when the last page came in. «Cancelar» takes it off the
    queue; what was already stored stays.
@@ -106,7 +112,10 @@ the capture so you are not left with an empty CSV: you need a new version of xpo
 
 You need [uv](https://docs.astral.sh/uv/), which brings the right Python (3.12, pinned in `.python-version`), and
 rootless [Podman](https://podman.io) to build the extension without installing Node. With Node 22 you can also build it
-without Podman.
+without Podman. To capture with no window on Linux you need Chrome, Chromium or Edge and
+[cage](https://github.com/cage-kiosk/cage) (`sudo pacman -S cage` on Arch, `sudo apt install cage` on Debian and
+Ubuntu): it is the virtual screen xport's Chrome runs in. X answers 403 to Chrome in `--headless` mode, so without cage
+the capture goes back to a tab in your browser. For now, the same on Windows and macOS.
 
 1. **Get the code:** on GitHub, «Code» → «Download ZIP», or `git clone` this repository.
 2. **Set up the service:** in the repository folder, `uv sync`.

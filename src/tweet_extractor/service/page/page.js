@@ -285,18 +285,35 @@ function renderGate(g, days) {
   );
 }
 
+// Quién captura: el navegador propio del servicio (sin ventana) o la extensión del navegador
+// de siempre, que necesita la pestaña a la vista (punto 13 de docs/PLAN.md).
+const BROWSER_TEXT = {
+  idle: 'Las hace el navegador propio de xport, sin ninguna ventana: no tenés que tocar nada.',
+  running: 'El navegador propio de xport está capturando, sin ninguna ventana a la vista.',
+  login: 'Iniciá sesión en X en la ventana chica de xport que se abrió (una sola vez).',
+};
+
+function renderBrowser(b) {
+  $('browser').textContent =
+    BROWSER_TEXT[b.state] ??
+    `${b.note ? `${b.note} ` : ''}La extensión de tu navegador abre la búsqueda en una pestaña: ` +
+      'dejala abierta y a la vista mientras captura.';
+}
+
 // --- Ciclo ----------------------------------------------------------------------------
 
 async function refresh() {
   try {
-    const [caps, gate, days] = await Promise.all([
+    const [caps, gate, days, nav] = await Promise.all([
       api('/captures'),
       api('/gate'),
       api('/gate/days'),
+      api('/browser'),
     ]);
     $('offline').hidden = true;
     renderQueue(caps);
     renderGate(gate, days);
+    renderBrowser(nav);
   } catch {
     $('offline').hidden = false;
   }

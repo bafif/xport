@@ -19,7 +19,9 @@ corta.](docs/img/flujo.es.svg)
 ## Estado
 
 La captura desde el navegador anda contra x.com: abre la búsqueda de la cuenta, la scrollea sola, sigue cuando X la
-corta y retoma donde quedó. El CSV tiene estas columnas:
+corta y retoma donde quedó. Desde el 10 de noviembre de 2026, en Linux, el servicio usa su propio Chrome, sin ninguna
+ventana a la vista: lo levanta cuando hay capturas en la cola y lo cierra cuando la cola se vacía. El CSV tiene estas
+columnas:
 
 | Columna | Qué tiene |
 |---|---|
@@ -37,7 +39,9 @@ Sin navegador hay dos caminos. Con una cuenta de X común está bloqueado desde 
 pedidos y twscrape dejó de poder hacerlo. Con la [API oficial de X](#con-la-api-oficial), que es paga, está implementado
 pero **no se probó contra la API real**: se armó con la documentación de X y respuestas fabricadas. Los cortes de la
 captura del 6 de noviembre de 2026 y la cola del 10 se probaron el 10 de noviembre contra x.com, con Chrome sin ventana;
-la página local y las notificaciones todavía no se probaron en un navegador.
+la página local y las notificaciones todavía no se probaron en un navegador. Esa misma tarde, X
+empezó a contestar 403 a todo lo que se presenta como `HeadlessChrome`, y el Chrome propio del servicio pasó a correr
+adentro de cage.
 
 ## Uso diario: la página
 
@@ -47,9 +51,13 @@ para varias cuentas a la vez:
 1. **Cuentas y fechas:** una o varias cuentas, separadas por comas o espacios. «Desde» y «Hasta» entran los dos
    («hasta el 31/12/2025 inclusive»), y «Hasta» vacío quiere decir hoy. Hay atajos: último mes, último año y un año
    entero. Si el CSV va a un Excel configurado en castellano, marcá «Para Excel en castellano».
-2. **Capturar:** cada cuenta entra a la cola. La extensión las toma de a una (X frena la búsqueda por cuenta y en
-   paralelo no rinde): abre la búsqueda en una pestaña y la scrollea sola, como desde el popup. **Esa pestaña tiene
-   que quedar a la vista** mientras captura. Si la cerrás, la vuelve a abrir donde iba.
+2. **Capturar:** cada cuenta entra a la cola y se capturan de a una (X frena la búsqueda por cuenta y en paralelo no
+   rinde). El servicio abre su propio Chrome con la extensión adentro de una pantalla virtual que nadie ve, así que no
+   tenés que dejar nada a la vista ni tocar el navegador. La primera vez, y cada vez que X cierre la sesión, aparece una
+   ventana chica para iniciar sesión en X; conviene una cuenta aparte de la tuya. Apenas entrás, la ventana se cierra
+   sola y la captura sigue. Si la cerrás sin iniciar sesión, o si el servicio no puede usar su Chrome (ver
+   [Instalar](#instalar)), la cola la toma la extensión de tu navegador como antes: abre la búsqueda en una pestaña y
+   **esa pestaña tiene que quedar a la vista** mientras captura.
 3. **Seguirla:** cada captura dice su estado (en cola, en curso, en pausa, terminada o cortada), hasta qué día llegó,
    qué parte del rango cubre, cuántos tweets lleva y a qué hora entró la última página. «Cancelar» la saca de la cola;
    lo que ya se guardó queda.
@@ -104,7 +112,10 @@ captura para no dejarte un CSV vacío: hace falta una versión nueva de xport, y
 
 Hace falta [uv](https://docs.astral.sh/uv/), que trae el Python correcto (3.12, fijado en `.python-version`), y
 [Podman](https://podman.io) sin root para armar la extensión sin instalar Node. Con Node 22 también se puede armar sin
-Podman.
+Podman. Para capturar sin ventana, en Linux, hacen falta Chrome, Chromium o Edge y [cage](https://github.com/cage-kiosk/cage)
+(`sudo pacman -S cage` en Arch, `sudo apt install cage` en Debian y Ubuntu): es la pantalla virtual donde corre el
+Chrome de xport. X le contesta 403 a Chrome en modo `--headless`, así que sin cage la captura vuelve a la pestaña de tu
+navegador. En Windows y macOS, por ahora, también.
 
 1. **Bajar el código:** en GitHub, «Code» → «Download ZIP», o `git clone` de este repo.
 2. **Preparar el servicio:** en la carpeta del repo, `uv sync`.

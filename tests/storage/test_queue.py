@@ -147,3 +147,18 @@ async def test_una_cola_vieja_recibe_la_columna_nueva(tmp_path: Path) -> None:
     again = CaptureQueue(path)  # abrirla otra vez no intenta sumarla de nuevo
     await again.setup()
     await again.close()
+
+
+async def test_sabe_si_queda_algo_sin_terminar(tmp_path: Path) -> None:
+    """Lo que mira el navegador propio del servicio para levantarse o cerrarse."""
+    q = await _queue(tmp_path)
+    try:
+        assert await q.has_unfinished() is False
+        (cap,) = await q.add(["a"], SINCE, UNTIL, encoding="utf-8", delimiter=",")
+        assert await q.has_unfinished() is True  # en cola
+        await q.claim_next()
+        assert await q.has_unfinished() is True  # en curso
+        await q.set_state(cap.id, CaptureState.DONE)
+        assert await q.has_unfinished() is False
+    finally:
+        await q.close()
