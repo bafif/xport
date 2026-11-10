@@ -338,6 +338,24 @@ pasar: gastó las 50 búsquedas de la ventana de X y siguió con un 429 cada cua
 cota siempre (si no baja, pasa al día anterior), y la reanudación de `startPlan` pide hasta el día más viejo, no hasta el
 siguiente. El mismo mes que antes quedaba en bucle terminó entero en 11 búsquedas.
 
+**10 de noviembre, a la noche: la Fase 4, el crawl.** En el código y con tests: vitest de `decideRate`, `nextBound`,
+`startPlan` y `waitStep`, y pytest del estado `waiting`, de la columna nueva en una cola vieja y de `/progress` con la
+hora. Lo que cambia está en los puntos 11 y 12, más abajo. Además:
+
+- El «techo de unos mil resultados por búsqueda» de junio coincide justo con 50 búsquedas de 20 tweets, el cupo de X en
+  15 minutos: puede que nunca haya sido un techo de la búsqueda sino el rate limit. El crawl no necesita saberlo: ante un
+  429 espera, y si una búsqueda se asienta antes de `since` sin un 429, achica al segundo y sigue.
+- La cola suma la columna `resume_at`; una `queue.db` de la Fase 3 la recibe al abrirse. Los `IN (…)` de la cola se arman
+  con el largo de las tuplas de estados, que ahora tienen uno más.
+- La prueba contra x.com quedó a medias. Para encontrar un día de más de mil tweets sondeé la primera página de varias
+  cuentas, un sondeo por cuenta: @AmazonHelp hacía unos 170 tweets por hora a las 14 UTC del lunes 9, @RailwaySeva y
+  @JioCare unos 70 de día y 10 de noche (justo mil por día), @ANI unos 600 por día, y los bots que contestan menciones no
+  aparecen en la búsqueda. Lo sondeado entra por `/ingest` y mueve el frente de reanudación (el más viejo guardado), así
+  que antes de capturar hay que borrar lo de esa cuenta. La captura de @AmazonHelp del 9 no llegó a scrollear: Chrome
+  corrió el service worker de la prueba anterior, guardado en el perfil, porque la extensión tenía el mismo id y la misma
+  versión del manifest (la búsqueda salió con `since:`/`until:`). Antes de volver a intentarlo, la máquina se quedó sin
+  memoria y la prueba se cortó. Para la próxima: subir la versión del manifest de la copia que se prueba.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada
@@ -347,8 +365,9 @@ popup sin servicio y el tope lleno) y anduvieron. Lo de la Fase 1 (7 de noviembr
 con la pestaña oculta, el corte por cambio
 de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Lo mismo la Fase 3
 (10 de noviembre): la cola, la página local y las notificaciones tienen tests y una prueba de humo contra el servicio,
-pero no pasaron por un navegador. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine y la
-extensión se construyen en CI.
+pero no pasaron por un navegador. La Fase 4 (10 de noviembre), la espera a X ante el rate limit y la búsqueda al
+segundo, también tiene tests, pero la captura que la iba a probar contra x.com quedó a medias. Los tests corren sin red,
+mypy en modo estricto y ruff pasan, y la imagen Alpine y la extensión se construyen en CI.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
 cambio de x.com: falla cerrado con un error claro. La API oficial está implementada para quien tenga una clave paga,
@@ -367,10 +386,11 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Almacenamiento: dedupe por id con la última versión, handles en minúsculas, checkpoint por sub-ventana | `storage/sqlite_store.py` | tests |
 | CSV en streaming, atómico, `<account>_<since>_<until>.csv` | `storage/csv_exporter.py` | tests; real |
 | Captura in-page: parche de `fetch` y XHR, puente, relay en lotes de 20 páginas | `extension/entrypoints/` | real (junio y 6/11) |
-| Crawl adaptativo: scroll, «Reintentar», recarga con backoff, achique del rango, reanudación desde la base, salteo de días saturados | `autoscroll.content.ts`, `POST /progress` | real; funciones puras con vitest |
+| Crawl adaptativo: scroll, «Reintentar», recarga con backoff, achique del rango al segundo del tweet más viejo, reanudación desde la base | `autoscroll.content.ts`, `POST /progress` | real; funciones puras con vitest |
 | Cortes del crawl: sin servicio, tope lleno, 429, `over_cap`, rechazo, veinte páginas sin registrar | `lib/ingest.ts`, `background.ts`, popup | vitest de `decideIngest`; real sin ventana (10/11): el servicio caído, el popup sin servicio y el tope lleno |
-| El crawl termina aunque X incluya el día de `until:` | `lib/autoscroll.ts` (`nextUntil`), `lib/queue.ts` (`startPlan`) | vitest; real sin ventana (10/11): el mes que quedaba en bucle terminó |
+| Búsqueda al segundo y en UTC (`since_time:`/`until_time:`): la cota baja al segundo del tweet más viejo y el crawl termina; ni días saturados ni primeras horas perdidas | `lib/autoscroll.ts` (`nextBound`), `lib/queue.ts` (`startPlan`), `POST /progress` | vitest y tests; los operadores, real (10/11); **una captura entera, sin probar** |
 | Pausa del crawl con la pestaña oculta, con aviso en el popup | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest de `decideStep`; **sin prueba a mano** |
+| Espera a X: con un 429 o sin cupo, la captura espera al reset fuera de la búsqueda y sigue sola; con pocas búsquedas, reparte las que quedan | `lib/rate.ts`, `capture-main.content.ts`, `autoscroll.content.ts`, `background.ts`, estado `waiting` de la cola | vitest de `decideRate` y `waitStep`; tests de la cola; **sin probar contra x.com** |
 | Cambio de forma de x.com: `rejected` y `format_changed` en `/ingest`, ejemplo en el log, corte del crawl | `service/ingest.py`, `lib/ingest.ts` | tests con una página de forma desconocida; vitest |
 | CSV para Excel en castellano desde `/export` y el popup | `service/schemas.py`, popup | tests (BOM y `;`); **sin abrirlo en Excel** |
 | Un solo registro del tope: carpeta de datos por usuario, `.env` del repo, mudanza de `data/`, no arranca si ya corre otro xport | `config.py`, `datadir.py`, `service/app.py` | tests (la CLI desde dos carpetas, la mudanza, la suma de dos registros, el segundo servicio) |
@@ -519,7 +539,7 @@ Falta pasarla por un navegador y lo que dice cada punto:
    en `queue.db`, y `tweet-extractor capture`; el «Capturar ▶» del popup también encola. Falta la prueba a mano: dos
    cuentas encoladas desde la página que salgan en dos CSV sin tocar nada en el medio. Si la pestaña de la cola se
    cierra, el background la vuelve a abrir; si la persona la usa para otra cosa, la captura queda en curso sin avanzar
-   hasta que la cancele (lo resuelve el navegador invisible, punto 13). El estado «esperando a X» llega con el punto 11.
+   hasta que la cancele (lo resuelve el navegador invisible, punto 13). El estado «esperando a X» llegó con el punto 11.
 8. **La página local.** Hecha (`service/page/`, sin build), con el chequeo de `Origin`, las fechas inclusivas con
    atajos, el avance por captura y el tope con su resumen diario. Falta abrirla en un navegador de verdad. El contador
    «Capturado» del popup sigue como estaba, hasta que el popup se vaya.
@@ -531,24 +551,27 @@ Falta pasarla por un navegador y lo que dice cada punto:
     (la búsqueda no lo pide; hay que abrir el perfil) y mapearlo en `mappers/` para distinguir los tres casos. Los tests
     necesitan respuestas reales de x.com, así que va junto con la prueba del punto 6. Mediano.
 
-### Fase 4: el crawl
+### Fase 4: el crawl (en el código el 10 de noviembre; falta probarla contra x.com)
 
-11. **Esperar a X en vez de insistir.** Por qué: cuando X frena la búsqueda por horas, el crawl recarga cada 60 s sin fin,
-    y hoy hay que volver más tarde y apretar «Capturar». La Fase 2 mostró que es más seguido de lo que creía: el tope es
-    de 50 búsquedas cada 15 minutos, cada recarga del crawl gasta una, y con el 429 x.com reintenta cada pocos segundos.
-    Cómo: el parche de `fetch` ya ve la respuesta de
-    `SearchTimeline`; que pase también el status y los encabezados de rate limit, que no es interpretar GraphQL (la regla
-    4 se mantiene). Ante un 429, la captura queda «esperando a X hasta las 18:40» y retoma sola; con
-    `x-rate-limit-remaining` bajo, afloja el ritmo antes. Listo cuando: test de la decisión y una captura que pase por un
-    429. Mediano.
-12. **Partir los días saturados por hora.** Por qué: hoy, de un día con más tweets de los que muestra la búsqueda, se
-    pierde la cola sin aviso; y la Fase 2 mostró que `since:`/`until:` van en la hora de quien busca, así que se pierden
-    también las primeras horas (UTC) del día de inicio. Por eso la búsqueda entera pasa a `since_time:`/`until_time:`, en
-    segundos UTC, que la Fase 2 probó que andan. Cómo: el crawl achica el límite a la hora del tweet más viejo cargado (el `datetime` que el
-    DOM ya muestra) con `until_time:`, en vez de a su día; no queda cola que perder, se solapa menos (menos accesos
-    gastados) y sobra el umbral de 800. `/progress` devuelve la hora y no el día. Si la prueba del punto 6 dice que esos
-    operadores no andan, el plan B es que el export diga qué días pueden estar incompletos. Listo cuando: un día con más
-    de mil tweets sale entero. Mediano.
+Está en el código y con tests (ver «Cómo lo fui construyendo»). La captura que la iba a probar contra x.com quedó a
+medias, así que siguen abiertos los dos «listo cuando». Los números siguen, porque el resto del plan los cita.
+
+11. **Esperar a X en vez de insistir.** Hecho: el parche de `fetch` y XHR pasa aparte el status y los `x-rate-limit-*`
+    de cada respuesta de `SearchTimeline` (HTTP, no GraphQL: la regla 4 se mantiene), y `decideRate` (`lib/rate.ts`)
+    decide. Ante un 429, o con el cupo en cero, el crawl guarda hasta dónde llegó y hasta cuándo espera: el reset más
+    15 s, y como mínimo un minuto después del 429, por si el reloj local está adelantado. El background saca la pestaña
+    de la búsqueda a la página local, para que x.com no siga reintentando, y la vuelve a la búsqueda cuando pasa la hora
+    (lo mira en la vuelta de la cola, cada medio minuto). La captura queda «esperando a X hasta las 18:40» (`waiting`,
+    con `resume_at`) en la cola, la página y el popup, y no se notifica: sigue sola. Con menos de 10 búsquedas en el
+    cupo, el crawl reparte las que quedan hasta el reset, con una espera de hasta dos minutos por respuesta. Falta: una
+    captura que pase por un 429.
+12. **Partir los días saturados por hora.** Hecho, y al segundo: la búsqueda pasa a `from:<cuenta> since_time:<s>
+    until_time:<s>`, en segundos UTC, y cuando se asienta antes de `since` la cota baja al segundo del tweet más viejo
+    cargado más uno: lo re-incluye, así no se pierde otro del mismo segundo, sea `until_time:` exclusivo o no. Si una
+    búsqueda no trae nada más viejo que ese tweet, el rango terminó (con un «Reintentar» a la vista, en cambio, recarga).
+    `/progress` devuelve la hora del más viejo y ya no `oldest_count`, y la reanudación arranca ahí. Se fueron el umbral
+    de 800 y el salteo de días, y con ellos las primeras horas (UTC) del día de inicio que se perdían. Falta: un día con
+    más de mil tweets que salga entero.
 
 ### Fase 5: el navegador invisible
 
@@ -583,7 +606,7 @@ Falta pasarla por un navegador y lo que dice cada punto:
 ### Preguntas que estaban abiertas, ya decididas
 
 - **Historia del registro:** un resumen por día, aparte de la ventana (punto 8).
-- **Días saturados:** se parten por hora (punto 12); el aviso en el export, solo si eso no anda.
+- **Días saturados:** ya no hay: la búsqueda va al segundo y se achica al tweet más viejo cargado (punto 12).
 - **Estado de los trabajos del servicio:** `/jobs` no se persiste mientras ningún proveedor del servidor ande; la cola
   sí (punto 7).
 - **Qué cuenta como «link a un documento»:** todas las URLs externas. Filtrar después en la planilla es fácil, y filtrar

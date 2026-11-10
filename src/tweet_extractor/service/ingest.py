@@ -119,7 +119,7 @@ async def export(body: ExportRequest, svc: SvcDep) -> ExportResult:
     # Capturados en el rango que NO entran al CSV = replies a terceros (la política deja
     # self-threads y descarta conversaciones ajenas). `total_en_rango - exportados`: el
     # total cuenta TODO lo guardado en rango; `exported` ya aplicó la política.
-    _, total_in_range, _ = await svc.store.account_extent(
+    _, total_in_range = await svc.store.account_extent(
         body.account, since=body.since_utc(), until=body.until_utc()
     )
     return ExportResult(
@@ -134,19 +134,14 @@ async def export(body: ExportRequest, svc: SvcDep) -> ExportResult:
 @router.post("/progress", response_model=ProgressResult)
 async def progress(body: ProgressRequest, svc: SvcDep) -> ProgressResult:
     """Frente de reanudación: el tweet más viejo capturado de una cuenta en
-    `[since, until)` (y cuántos hay). La extensión reanuda la búsqueda desde ese día
-    en vez de re-pedir desde `until`. La captura va del más nuevo al más viejo, así
-    que el más viejo guardado = hasta dónde se llegó; como x.com frena la búsqueda a
-    ~1000 y obliga a volver más tarde, retomar no debe regastar ese cupo."""
-    oldest, captured, oldest_day = await svc.store.account_extent(
+    `[since, until)`, al segundo (y cuántos hay). La extensión reanuda la búsqueda
+    desde ese momento en vez de re-pedir desde `until`. La captura va del más nuevo al
+    más viejo, así que el más viejo guardado = hasta dónde se llegó; como X frena la
+    búsqueda y obliga a volver más tarde, retomar no debe regastar ese cupo."""
+    oldest, captured = await svc.store.account_extent(
         body.account, since=body.since_utc(), until=body.until_utc()
     )
-    return ProgressResult(
-        account=body.account,
-        oldest=oldest.date() if oldest else None,
-        captured=captured,
-        oldest_count=oldest_day,
-    )
+    return ProgressResult(account=body.account, oldest=oldest, captured=captured)
 
 
 @router.post("/reset", response_model=ResetResult)

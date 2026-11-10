@@ -165,10 +165,12 @@ const STATES = {
   queued: 'En cola',
   running: 'En curso',
   paused: 'En pausa',
+  waiting: 'Esperando a X',
   done: 'Terminada',
   stopped: 'Cortada',
 };
-const ORDER = { running: 0, paused: 0, queued: 1, done: 2, stopped: 2 };
+const ORDER = { running: 0, paused: 0, waiting: 0, queued: 1, done: 2, stopped: 2 };
+const ACTIVE = ['running', 'paused', 'waiting'];
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -218,11 +220,17 @@ function captureItem(c) {
   if (c.state === 'paused') {
     lines.push(el('p', {}, 'Su pestaña de x.com quedó oculta: volvé a esa pestaña para que siga.'));
   }
+  if (c.state === 'waiting') {
+    const when = c.resume_at ? ` hasta las ${showTime(c.resume_at)}` : '';
+    lines.push(
+      el('p', {}, `X frenó la búsqueda por un rato: espera${when} y sigue sola. No hace falta tocar nada.`),
+    );
+  }
   if (c.note) lines.push(el('p', { class: c.state === 'stopped' ? 'error' : '' }, c.note));
-  if (c.last_page_at && (c.state === 'running' || c.state === 'paused')) {
+  if (c.last_page_at && ACTIVE.includes(c.state)) {
     lines.push(el('p', { class: 'hint' }, `Última página: ${showTime(c.last_page_at)}.`));
   }
-  if (c.state === 'running' || c.state === 'paused') {
+  if (ACTIVE.includes(c.state)) {
     const fill = el('div');
     fill.style.width = `${c.percent}%`;
     lines.push(el('div', { class: 'bar', 'aria-hidden': 'true' }, fill));
@@ -231,7 +239,7 @@ function captureItem(c) {
   if (c.download_url) {
     actions.push(el('a', { href: c.download_url, download: c.csv }, 'Bajar el CSV'));
   }
-  if (c.state === 'queued' || c.state === 'running' || c.state === 'paused') {
+  if (c.state === 'queued' || ACTIVE.includes(c.state)) {
     const b = el('button', { type: 'button' }, 'Cancelar');
     b.addEventListener('click', () => void cancel(c));
     actions.push(b);

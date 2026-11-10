@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
+
+import aiosqlite
 
 from tweet_extractor.storage.queue import CaptureQueue, CaptureState
 
@@ -87,3 +89,61 @@ async def test_sobrevive_a_un_reinicio(tmp_path: Path) -> None:
         assert cap is not None and cap.id == a.id
         assert (cap.encoding, cap.delimiter) == ("utf-8-sig", ";")
         assert cap.last_page_at is not None
+
+
+async def test_esperando_a_x_sigue_siendo_la_que_va(tmp_path: Path) -> None:
+    # Punto 11 de docs/PLAN.md: X frenó la búsqueda; la captura espera y sigue sola.
+    q = await _queue(tmp_path)
+    try:
+        a, b = await q.add(["a", "b"], SINCE, UNTIL, encoding="utf-8", delimiter=",")
+        await q.claim_next()
+        at = datetime(2026, 11, 10, 18, 40, tzinfo=UTC)
+        cap, changed = await q.set_state(a.id, CaptureState.WAITING, resume_at=at)
+        assert changed and cap is not None and cap.state == CaptureState.WAITING
+        assert cap.resume_at == at
+        # Mientras espera, la que va es la misma: la de atrás no arranca.
+        took = await q.claim_next()
+        assert took is not None and took.id == a.id
+        assert (await q.active()) is not None
+        # Otra espera, hasta otra hora, también cuenta.
+        later = datetime(2026, 11, 10, 18, 55, tzinfo=UTC)
+        cap, changed = await q.set_state(a.id, CaptureState.WAITING, resume_at=later)
+        assert changed and cap is not None and cap.resume_at == later
+        # Al seguir, la hora se borra.
+        cap, changed = await q.set_state(a.id, CaptureState.RUNNING, resume_at=later)
+        assert changed and cap is not None and cap.resume_at is None
+    finally:
+        await q.close()
+
+
+async def test_una_cola_vieja_recibe_la_columna_nueva(tmp_path: Path) -> None:
+    # Una queue.db de la Fase 3, sin `resume_at`: al abrirse se le suma, sin perder nada.
+    path = tmp_path / "queue.db"
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            "CREATE TABLE captures (id INTEGER PRIMARY KEY AUTOINCREMENT, account TEXT NOT NULL,"
+            " since TEXT NOT NULL, until TEXT NOT NULL, encoding TEXT NOT NULL,"
+            " delimiter TEXT NOT NULL, state TEXT NOT NULL, note TEXT, created_at TEXT NOT NULL,"
+            " started_at TEXT, finished_at TEXT, last_page_at TEXT, csv TEXT, exported INTEGER,"
+            " excluded_replies INTEGER)"
+        )
+        await db.execute(
+            "INSERT INTO captures(account, since, until, encoding, delimiter, state, created_at)"
+            " VALUES('vieja', '2024-01-01', '2025-01-01', 'utf-8', ',', 'queued',"
+            " '2026-11-09T00:00:00+00:00')"
+        )
+        await db.commit()
+    q = CaptureQueue(path)
+    await q.setup()
+    try:
+        (old,) = await q.recent()
+        assert old.account == "vieja" and old.resume_at is None
+        await q.claim_next()
+        at = datetime(2026, 11, 10, 18, 40, tzinfo=UTC)
+        cap, _ = await q.set_state(old.id, CaptureState.WAITING, resume_at=at)
+        assert cap is not None and cap.resume_at == at
+    finally:
+        await q.close()
+    again = CaptureQueue(path)  # abrirla otra vez no intenta sumarla de nuevo
+    await again.setup()
+    await again.close()

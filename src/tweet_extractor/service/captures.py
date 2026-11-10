@@ -30,20 +30,21 @@ def _thousands(n: int) -> str:
     return f"{n:,}".replace(",", ".")
 
 
-def _percent(cap: Capture, oldest: date | None) -> int:
+def _percent(cap: Capture, oldest: datetime | None) -> int:
     """Qué parte del rango ya cubre la captura: va del más nuevo al más viejo, así que lo
-    cubierto es de `oldest` a `until`."""
+    cubierto es de `oldest` a `until`, al segundo (un rango de un día también avanza)."""
     if cap.state == CaptureState.DONE:
         return 100
     if oldest is None:
         return 0
-    total = (cap.until - cap.since).days
-    covered = (cap.until - oldest).days
-    return max(0, min(99, covered * 100 // total))
+    until = _utc(cap.until)
+    total = (until - _utc(cap.since)).total_seconds()
+    covered = (until - oldest).total_seconds()
+    return max(0, min(99, int(covered * 100 // total)))
 
 
 async def _out(svc: SvcDep, cap: Capture) -> CaptureOut:
-    oldest_dt, captured, _ = await svc.store.account_extent(
+    oldest_dt, captured = await svc.store.account_extent(
         cap.account, since=_utc(cap.since), until=_utc(cap.until)
     )
     oldest = oldest_dt.date() if oldest_dt else None
@@ -60,13 +61,14 @@ async def _out(svc: SvcDep, cap: Capture) -> CaptureOut:
         started_at=cap.started_at,
         finished_at=cap.finished_at,
         last_page_at=cap.last_page_at,
+        resume_at=cap.resume_at,
         csv=cap.csv,
         download_url=f"/captures/{cap.id}/csv" if cap.csv else None,
         exported=cap.exported,
         excluded_replies=cap.excluded_replies,
         oldest=oldest,
         captured=captured,
-        percent=_percent(cap, oldest),
+        percent=_percent(cap, oldest_dt),
     )
 
 
@@ -74,7 +76,7 @@ async def _finish(svc: SvcDep, cap: Capture) -> Capture:
     """Exporta el CSV de una captura que terminó y avisa. Sin un solo tweet en el rango no
     hay CSV que valga: se dice por qué puede ser (punto 10)."""
     since, until = _utc(cap.since), _utc(cap.until)
-    _, total, _ = await svc.store.account_extent(cap.account, since=since, until=until)
+    _, total = await svc.store.account_extent(cap.account, since=since, until=until)
     title = f"Terminó la captura de @{cap.account}"
     if total == 0:
         cap = await svc.queue.record_export(
@@ -132,10 +134,13 @@ async def next_capture(svc: SvcDep) -> CaptureOut | Response:
 
 @router.post("/captures/{capture_id}/state", response_model=CaptureOut)
 async def report_state(capture_id: int, body: CaptureReport, svc: SvcDep) -> CaptureOut:
-    """Lo que avisa la extensión (en curso, en pausa, terminada, cortada) o la persona al
-    cancelarla. Terminada: el servicio exporta el CSV y lo notifica. Cortada: se notifica
-    el motivo, salvo que la haya cortado la persona."""
-    cap, changed = await svc.queue.set_state(capture_id, CaptureState(body.state), body.note)
+    """Lo que avisa la extensión (en curso, en pausa, esperando a X, terminada, cortada) o
+    la persona al cancelarla. Terminada: el servicio exporta el CSV y lo notifica. Cortada:
+    se notifica el motivo, salvo que la haya cortado la persona. Esperando a X no se
+    notifica: sigue sola."""
+    cap, changed = await svc.queue.set_state(
+        capture_id, CaptureState(body.state), body.note, body.resume_at
+    )
     if cap is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no hay captura {capture_id}")
     if changed and cap.state == CaptureState.DONE:

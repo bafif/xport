@@ -7,8 +7,9 @@ datos para sobrevivir a un reinicio, y la escriben dos procesos (el servicio y l
 que lee y decide va en una transacción `BEGIN IMMEDIATE`.
 
 Estados: `queued` (en cola), `running` (en curso), `paused` (en pausa: su pestaña quedó
-oculta), `done` (terminada) y `stopped` (cortada, con su motivo en `note`). Una terminada o
-cortada no cambia más: un aviso tardío de la extensión no la revive.
+oculta), `waiting` (X frenó la búsqueda: sigue sola en `resume_at`, punto 11), `done`
+(terminada) y `stopped` (cortada, con su motivo en `note`). Una terminada o cortada no cambia
+más: un aviso tardío de la extensión no la revive.
 """
 
 from __future__ import annotations
@@ -39,26 +40,32 @@ CREATE TABLE IF NOT EXISTS captures (
     last_page_at     TEXT,
     csv              TEXT,           -- nombre del CSV en captures_dir, al terminar
     exported         INTEGER,
-    excluded_replies INTEGER
+    excluded_replies INTEGER,
+    resume_at        TEXT            -- esperando a X: cuándo sigue (ISO 8601 UTC)
 );
 CREATE INDEX IF NOT EXISTS idx_captures_state ON captures(state, id);
 """
 
 _COLUMNS = (
     "id, account, since, until, encoding, delimiter, state, note, created_at, started_at, "
-    "finished_at, last_page_at, csv, exported, excluded_replies"
+    "finished_at, last_page_at, csv, exported, excluded_replies, resume_at"
 )
+
+# Columnas que se sumaron después de la primera versión de la tabla: una cola vieja las
+# recibe al abrirse.
+_ADDED = {"resume_at": "TEXT"}
 
 
 class CaptureState(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     PAUSED = "paused"
+    WAITING = "waiting"
     DONE = "done"
     STOPPED = "stopped"
 
 
-ACTIVE = (CaptureState.RUNNING, CaptureState.PAUSED)
+ACTIVE = (CaptureState.RUNNING, CaptureState.PAUSED, CaptureState.WAITING)
 FINISHED = (CaptureState.DONE, CaptureState.STOPPED)
 _UNFINISHED = (CaptureState.QUEUED, *ACTIVE)
 
@@ -80,6 +87,7 @@ class Capture:
     csv: str | None
     exported: int | None
     excluded_replies: int | None
+    resume_at: datetime | None = None
 
 
 def _now() -> str:
@@ -107,6 +115,7 @@ def _capture(row: Sequence[object]) -> Capture:
         csv=None if row[12] is None else str(row[12]),
         exported=None if row[13] is None else int(str(row[13])),
         excluded_replies=None if row[14] is None else int(str(row[14])),
+        resume_at=_when(None if row[15] is None else str(row[15])),
     )
 
 
@@ -130,6 +139,16 @@ class CaptureQueue:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         db = await self._db()
         await db.executescript(_SCHEMA)
+        cur = await db.execute("PRAGMA table_info(captures)")
+        have = {str(row[1]) for row in await cur.fetchall()}
+        for column, kind in _ADDED.items():
+            if column in have:
+                continue
+            try:
+                await db.execute(f"ALTER TABLE captures ADD COLUMN {column} {kind}")
+            except aiosqlite.OperationalError as exc:
+                if "duplicate column" not in str(exc):  # la sumó el otro proceso
+                    raise
         await db.commit()
 
     async def close(self) -> None:
@@ -183,7 +202,8 @@ class CaptureQueue:
             for account in accounts:
                 same = await self._fetch(
                     db,
-                    f"account = ? AND since = ? AND until = ? AND state IN ({_marks(3)})"
+                    "account = ? AND since = ? AND until = ?"
+                    f" AND state IN ({_marks(len(_UNFINISHED))})"
                     " ORDER BY id LIMIT 1",
                     (account, since.isoformat(), until.isoformat(), *_UNFINISHED),
                 )
@@ -219,16 +239,20 @@ class CaptureQueue:
         return found[0] if found else None
 
     async def active(self) -> Capture | None:
-        """La captura en curso o en pausa, si hay."""
+        """La captura en curso, en pausa o esperando a X, si hay."""
         db = await self._db()
-        found = await self._fetch(db, f"state IN ({_marks(2)}) ORDER BY id LIMIT 1", ACTIVE)
+        found = await self._fetch(
+            db, f"state IN ({_marks(len(ACTIVE))}) ORDER BY id LIMIT 1", ACTIVE
+        )
         return found[0] if found else None
 
     async def claim_next(self) -> Capture | None:
         """La que tiene que crawlear la extensión: la que está en curso o, si no hay, la más
         vieja de la cola, que pasa a en curso. `None` si no hay nada que hacer."""
         async with self._write() as db:
-            found = await self._fetch(db, f"state IN ({_marks(2)}) ORDER BY id LIMIT 1", ACTIVE)
+            found = await self._fetch(
+                db, f"state IN ({_marks(len(ACTIVE))}) ORDER BY id LIMIT 1", ACTIVE
+            )
             if found:
                 return found[0]
             queued = await self._fetch(db, "state = ? ORDER BY id LIMIT 1", (CaptureState.QUEUED,))
@@ -241,11 +265,20 @@ class CaptureQueue:
             return (await self._fetch(db, "id = ?", (queued[0].id,)))[0]
 
     async def set_state(
-        self, capture_id: int, state: CaptureState, note: str | None = None
+        self,
+        capture_id: int,
+        state: CaptureState,
+        note: str | None = None,
+        resume_at: datetime | None = None,
     ) -> tuple[Capture | None, bool]:
         """Pasa una captura a `state`. Devuelve la captura y si cambió: una terminada o
         cortada no cambia más, una en cola solo puede cortarse (cancelarse) y `queued` no
-        es un destino. `(None, False)` si no existe."""
+        es un destino. `resume_at` vale solo para `waiting` (otra espera a X, aunque ya
+        estuviera esperando, cuenta como cambio); en cualquier otro estado se borra.
+        `(None, False)` si no existe."""
+        when = resume_at.astimezone(UTC).isoformat() if resume_at is not None else None
+        if state != CaptureState.WAITING:
+            when = None
         async with self._write() as db:
             found = await self._fetch(db, "id = ?", (capture_id,))
             if not found:
@@ -254,13 +287,14 @@ class CaptureQueue:
             allowed = (cur.state in ACTIVE and state != CaptureState.QUEUED) or (
                 cur.state == CaptureState.QUEUED and state == CaptureState.STOPPED
             )
-            if not allowed or cur.state == state:
+            same_wait = cur.resume_at == _when(when)
+            if not allowed or (cur.state == state and same_wait):
                 return cur, False
             finished = _now() if state in FINISHED else None
             await db.execute(
-                "UPDATE captures SET state = ?, note = COALESCE(?, note), finished_at = ?"
-                " WHERE id = ?",
-                (state, note, finished, capture_id),
+                "UPDATE captures SET state = ?, note = COALESCE(?, note), finished_at = ?,"
+                " resume_at = ? WHERE id = ?",
+                (state, note, finished, when, capture_id),
             )
             return (await self._fetch(db, "id = ?", (capture_id,)))[0], True
 
@@ -286,7 +320,8 @@ class CaptureQueue:
         """Anota que entró una página de `account`: la hora de la última, para la página."""
         db = await self._db()
         await db.execute(
-            f"UPDATE captures SET last_page_at = ? WHERE account = ? AND state IN ({_marks(2)})",
+            "UPDATE captures SET last_page_at = ? WHERE account = ?"
+            f" AND state IN ({_marks(len(ACTIVE))})",
             (_now(), account, *ACTIVE),
         )
         await db.commit()

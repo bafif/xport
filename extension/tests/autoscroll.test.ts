@@ -2,20 +2,26 @@ import { describe, expect, it } from 'vitest';
 
 import {
   blankBackoff,
-  dayAfter,
+  crawlUrl,
+  dayStart,
   decideStep,
+  epochSeconds,
   FRESH_COUNTERS,
   isValidDate,
   MAX_LOADING_WAITS,
   MAX_RETRIES,
   MAX_STALE,
   matchesSearch,
-  nextUntil,
+  nextBound,
   pausedNotice,
   reachedSince,
   searchQuery,
   searchUrl,
+  untilTime,
 } from '../lib/autoscroll';
+
+const JAN_1 = 1735689600; // 2025-01-01T00:00:00Z
+const FEB_1 = 1738368000; // 2025-02-01T00:00:00Z
 
 describe('isValidDate', () => {
   it('acepta fechas reales y rechaza las que Date normalizaría', () => {
@@ -26,38 +32,49 @@ describe('isValidDate', () => {
   });
 });
 
-describe('dayAfter', () => {
-  it('cruza meses y años en UTC', () => {
-    expect(dayAfter('2025-12-31')).toBe('2026-01-01');
-    expect(dayAfter('2024-02-28')).toBe('2024-02-29');
+describe('segundos UTC', () => {
+  it('el comienzo de un día y el datetime de x.com', () => {
+    expect(dayStart('2025-01-01')).toBe(JAN_1);
+    expect(dayStart('2025-02-01')).toBe(FEB_1);
+    expect(epochSeconds('2025-01-01T00:00:59.000Z')).toBe(JAN_1 + 59);
+    expect(epochSeconds('no es una fecha')).toBeNull();
+  });
+  it('un crawl viejo, sin cota en segundos, busca hasta el fin del rango', () => {
+    expect(untilTime({ account: 'nasa', since: '2025-01-01', until: '2025-02-01' })).toBe(FEB_1);
+    expect(
+      untilTime({ account: 'nasa', since: '2025-01-01', until: '2025-02-01', untilTime: JAN_1 + 7 }),
+    ).toBe(JAN_1 + 7);
   });
 });
 
-describe('nextUntil', () => {
-  // X toma adentro el día de `until:` (medido el 10/11/2026).
-  it('re-incluye el día más viejo cargado para no perder su cola', () => {
-    expect(nextUntil('2025-03-10', '2025-04-01')).toBe('2025-03-10');
+describe('nextBound', () => {
+  it('baja la cota al segundo del tweet más viejo, re-incluyéndolo', () => {
+    // Un día con más tweets de los que muestra una búsqueda: la pared cae a las 14:00 y la
+    // búsqueda siguiente arranca ahí, no al otro día (punto 12).
+    const wall = dayStart('2025-01-10') + 14 * 3600;
+    expect(nextBound(wall, dayStart('2025-01-11'))).toBe(wall + 1);
   });
-  it('si la cota no baja (un día saturado), pasa al día anterior', () => {
-    expect(nextUntil('2025-03-10', '2025-03-10')).toBe('2025-03-09');
+  it('si la búsqueda no trajo nada más viejo que el re-incluido, terminó', () => {
+    expect(nextBound(JAN_1 + 99, JAN_1 + 100)).toBeNull();
+    expect(nextBound(JAN_1 + 100, JAN_1 + 100)).toBeNull();
   });
-  it('la cota baja siempre, aunque el más viejo caiga después de ella', () => {
-    // Un tuit de la noche (UTC) que en la hora de quien busca es del día anterior.
-    expect(nextUntil('2025-03-11', '2025-03-10')).toBe('2025-03-09');
-    let until = '2025-04-01';
-    for (const oldest of ['2025-03-20', '2025-03-20', '2025-03-21', '2025-03-19']) {
-      const next = nextUntil(oldest, until);
-      expect(next < until).toBe(true);
+  it('la cota baja siempre: el crawl termina', () => {
+    let until: number | null = FEB_1;
+    for (const oldest of [FEB_1 - 3600, FEB_1 - 7200, FEB_1 - 7201, FEB_1 - 7200]) {
+      const next = nextBound(oldest, until as number);
+      if (next === null) break;
+      expect(next).toBeLessThan(until as number);
       until = next;
     }
+    expect(until).toBe(FEB_1 - 7200);
   });
 });
 
 describe('reachedSince', () => {
   it('termina cuando lo más viejo cargado llega al inicio del rango', () => {
-    expect(reachedSince('2025-01-01', '2025-01-01')).toBe(true);
-    expect(reachedSince('2024-12-31', '2025-01-01')).toBe(true);
-    expect(reachedSince('2025-01-02', '2025-01-01')).toBe(false);
+    expect(reachedSince(JAN_1, JAN_1)).toBe(true);
+    expect(reachedSince(JAN_1 - 1, JAN_1)).toBe(true);
+    expect(reachedSince(JAN_1 + 1, JAN_1)).toBe(false);
   });
 });
 
@@ -109,18 +126,19 @@ describe('blankBackoff', () => {
 });
 
 describe('búsqueda', () => {
-  it('arma la query y la URL de la pestaña "Latest"', () => {
-    expect(searchQuery('nasa', '2025-01-01', '2025-02-01')).toBe(
-      'from:nasa since:2025-01-01 until:2025-02-01',
+  it('arma la query al segundo y en UTC, y la URL de la pestaña "Latest"', () => {
+    expect(searchQuery('nasa', JAN_1, FEB_1)).toBe(
+      `from:nasa since_time:${JAN_1} until_time:${FEB_1}`,
     );
-    const url = new URL(searchUrl('nasa', '2025-01-01', '2025-02-01'));
-    expect(url.searchParams.get('q')).toBe('from:nasa since:2025-01-01 until:2025-02-01');
+    const url = new URL(searchUrl('nasa', JAN_1, FEB_1));
+    expect(url.searchParams.get('q')).toBe(`from:nasa since_time:${JAN_1} until_time:${FEB_1}`);
     expect(url.searchParams.get('f')).toBe('live');
   });
   it('solo arranca en la pestaña que es la búsqueda del crawl', () => {
-    const state = { account: 'nasa', since: '2025-01-01', until: '2025-02-01' };
-    expect(matchesSearch(searchUrl('nasa', '2025-01-01', '2025-02-01'), state)).toBe(true);
-    expect(matchesSearch(searchUrl('nasa', '2025-01-01', '2025-01-15'), state)).toBe(false);
+    const state = { account: 'nasa', since: '2025-01-01', until: '2025-02-01', untilTime: FEB_1 - 60 };
+    expect(crawlUrl(state)).toBe(searchUrl('nasa', JAN_1, FEB_1 - 60));
+    expect(matchesSearch(searchUrl('nasa', JAN_1, FEB_1 - 60), state)).toBe(true);
+    expect(matchesSearch(searchUrl('nasa', JAN_1, FEB_1), state)).toBe(false);
     expect(matchesSearch('https://x.com/home', state)).toBe(false);
     expect(matchesSearch('no es una url', state)).toBe(false);
   });

@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 
-import { type CaptureOut, XportClient } from '../lib/api';
-import { AUTOSCROLL_MSG, type CrawlState, searchUrl } from '../lib/autoscroll';
+import { type CaptureOut, type CaptureReport, XportClient } from '../lib/api';
+import { AUTOSCROLL_MSG, crawlUrl, type CrawlState } from '../lib/autoscroll';
 import {
   accountFromUrl,
   CAPTURE_SOURCE,
@@ -26,6 +26,7 @@ import {
   reportedState,
   startPlan,
   type StartPlan,
+  waitStep,
 } from '../lib/queue';
 
 // Relay del patrón C: recibe las capturas del bridge, las batchea por cuenta y las
@@ -196,11 +197,15 @@ export default defineBackground(() => {
 
   async function report(
     id: number,
-    state: 'running' | 'paused' | 'done' | 'stopped',
+    state: 'running' | 'paused' | 'waiting' | 'done' | 'stopped',
     note?: string,
+    resumeAt?: number,
   ): Promise<void> {
+    const body: CaptureReport = { state };
+    if (note) body.note = note;
+    if (resumeAt !== undefined) body.resume_at = new Date(resumeAt).toISOString();
     try {
-      await (await client()).captureState(id, note ? { state, note } : { state });
+      await (await client()).captureState(id, body);
     } catch (err) {
       console.warn('[xport] no pude avisarle al servicio el estado de la captura', id, err);
     }
@@ -225,10 +230,10 @@ export default defineBackground(() => {
   });
   void serial(pollQueue);
 
-  browser.runtime.onMessage.addListener((msg: unknown) => {
+  browser.runtime.onMessage.addListener((msg: unknown, sender: { tab?: { id?: number } }) => {
     const m = msg as { type?: unknown } | null;
     if (m?.type === QUEUE_MSG) return serial(pollQueue);
-    if (m?.type === CRAWL_MSG) return serial(() => onCrawlEvent(msg as CrawlMsg));
+    if (m?.type === CRAWL_MSG) return serial(() => onCrawlEvent(msg as CrawlMsg, sender.tab?.id));
     return undefined; // otros mensajes: no respondemos
   });
 
@@ -247,7 +252,7 @@ export default defineBackground(() => {
         if (next) await startCapture(api, next);
         return;
       case 'keep':
-        if (crawl?.captureId !== undefined) await ensureTab(crawl);
+        if (crawl) await keepCrawl(crawl);
         return;
       case 'stop-crawl':
         console.debug('[xport] la captura ya no va (cancelada o terminada): corto el crawl');
@@ -273,10 +278,11 @@ export default defineBackground(() => {
     const crawl: CrawlState = {
       account: cap.account,
       since: cap.since,
-      until: plan.until,
+      until: cap.until,
+      untilTime: plan.untilTime,
       captureId: cap.id,
     };
-    console.debug('[xport] arranco la captura', cap.id, `@${cap.account}`, crawl.since, '→', crawl.until);
+    console.debug('[xport] arranco la captura', cap.id, `@${cap.account}`, crawlUrl(crawl));
     await browser.storage.local.remove(STORAGE_PAUSED);
     await browser.storage.local.set({ [STORAGE_CRAWL]: crawl, [STORAGE_STATUS]: plan.message });
     await openSearch(crawl);
@@ -285,7 +291,7 @@ export default defineBackground(() => {
   /** Abre la búsqueda del crawl. Reusa la pestaña de la captura anterior si sigue en una
    *  búsqueda de captura (así no se apilan pestañas); si no, abre otra. */
   async function openSearch(crawl: CrawlState): Promise<void> {
-    const url = searchUrl(crawl.account, crawl.since, crawl.until);
+    const url = crawlUrl(crawl);
     const prev = (await browser.storage.local.get(STORAGE_QUEUE_TAB))[STORAGE_QUEUE_TAB];
     if (typeof prev === 'number') {
       try {
@@ -315,15 +321,62 @@ export default defineBackground(() => {
       }
     }
     console.debug('[xport] la pestaña de la captura no está: la vuelvo a abrir');
-    const tab = await browser.tabs.create({
-      url: searchUrl(crawl.account, crawl.since, crawl.until),
-    });
+    const tab = await browser.tabs.create({ url: crawlUrl(crawl) });
     await browser.storage.local.set({ [STORAGE_QUEUE_TAB]: tab.id });
   }
 
-  async function onCrawlEvent(m: CrawlMsg): Promise<void> {
+  /** Un crawl que sigue: si espera a X, nada hasta la hora; pasada la hora, vuelve a la
+   *  búsqueda donde iba (punto 11 de docs/PLAN.md). Si no, que su pestaña siga abierta. */
+  async function keepCrawl(crawl: CrawlState): Promise<void> {
+    switch (waitStep(crawl, Date.now())) {
+      case 'waiting':
+        return;
+      case 'resume': {
+        const resumed: CrawlState = { ...crawl };
+        delete resumed.waitUntil;
+        console.debug('[xport] pasó la espera a X: retomo', crawlUrl(resumed));
+        await browser.storage.local.set({ [STORAGE_CRAWL]: resumed });
+        await browser.storage.local.remove(STORAGE_PAUSED);
+        if (resumed.captureId !== undefined) await report(resumed.captureId, 'running');
+        await showSearch(resumed);
+        return;
+      }
+      case 'none':
+        if (crawl.captureId !== undefined) await ensureTab(crawl);
+        return;
+    }
+  }
+
+  /** Lleva la pestaña de la captura a la búsqueda del crawl, o abre otra si ya no está. */
+  async function showSearch(crawl: CrawlState): Promise<void> {
+    const id = (await browser.storage.local.get(STORAGE_QUEUE_TAB))[STORAGE_QUEUE_TAB];
+    if (typeof id === 'number') {
+      try {
+        await browser.tabs.update(id, { url: crawlUrl(crawl) });
+        return;
+      } catch {
+        // se cerró
+      }
+    }
+    const tab = await browser.tabs.create({ url: crawlUrl(crawl) });
+    await browser.storage.local.set({ [STORAGE_QUEUE_TAB]: tab.id });
+  }
+
+  /** Mientras espera a X, la pestaña deja la búsqueda: si no, x.com reintenta cada pocos
+   *  segundos y cada intento es otro 429. Va a la página local, que muestra hasta cuándo. */
+  async function parkTab(tabId: number): Promise<void> {
+    try {
+      await browser.tabs.update(tabId, { url: `${await getBase()}/` });
+      await browser.storage.local.set({ [STORAGE_QUEUE_TAB]: tabId });
+    } catch (err) {
+      console.warn('[xport] no pude sacar la pestaña de la búsqueda mientras espero a X', err);
+    }
+  }
+
+  async function onCrawlEvent(m: CrawlMsg, tabId: number | undefined): Promise<void> {
+    if (m.event === 'waiting' && tabId !== undefined) await parkTab(tabId);
     if (typeof m.captureId !== 'number') return;
-    await report(m.captureId, reportedState(m.event));
+    await report(m.captureId, reportedState(m.event), undefined, m.resumeAt);
   }
 
   async function captureEnabled(): Promise<boolean> {

@@ -92,9 +92,10 @@ It is not sent anywhere else. «Borrar capturado 🗑» deletes
 what was captured for one account; the cap's ledger is never deleted. Capture with an X account you can afford to lose:
 X may limit accounts that download many tweets.
 
-For now it only captures through X's search, which returns at most about a thousand results per search. If a single
-day has more than 800 tweets, the extension keeps what X gave it for that day and moves on to earlier days: the rest of
-that day is not included.
+For now it only captures through X's search, which stalls at about a thousand results and allows about 50 searches
+every 15 minutes per X account. When a search stalls, the next one starts at the second of the oldest tweet it loaded,
+so a day with many tweets comes out whole. When the searches run out, the capture shows «Esperando a X» (waiting for X)
+until the time X gives and then carries on by itself from where it was.
 
 If the popup says it will not start because the service does not answer, start the service (see [Usage](#usage)) or
 install the automatic start (see [Install](#install)). If it says the cap is full, wait: the popup shows how much is
@@ -211,7 +212,8 @@ needs none of them: it uses the browser's session. Relative paths hang from the 
 The cap (900,000) and the window (24 hours) are deliberately not in this list: they are constants in the code and no
 variable changes them.
 
-X's search is `from:<account> since:<from> until:<to>`, with days in UTC: `since` is included and `until` is not. Of
+X's search is `from:<account> since_time:<from> until_time:<to>`, in UTC seconds: the start day is included in full
+and the end day is not (`since:` and `until:` take days in the searcher's time zone). Of
 the replies, the CSV keeps those that hang from a conversation the same account started. If that first tweet falls
 outside the range and was never captured, its replies inside the range are left out too.
 

@@ -153,12 +153,12 @@ def test_progress_sin_datos(tmp_path: Path) -> None:
         )
         assert r.status_code == 200
         body = r.json()
-        assert body == {"account": "nasa", "oldest": None, "captured": 0, "oldest_count": 0}
+        assert body == {"account": "nasa", "oldest": None, "captured": 0}
 
 
 def test_progress_devuelve_el_mas_viejo_en_rango(tmp_path: Path) -> None:
     # El frente de reanudación = MIN(created_at) dentro del rango; lo de marzo (fuera de
-    # rango) no cuenta ni mueve el frente. `oldest_count` = tuits del día del más viejo.
+    # rango) no cuenta ni mueve el frente.
     with TestClient(create_app(make_settings(tmp_path))) as client:
         page = search_response(
             [
@@ -172,30 +172,27 @@ def test_progress_devuelve_el_mas_viejo_en_rango(tmp_path: Path) -> None:
             "/progress", json={"account": "@someuser", "since": "2023-01-01", "until": "2023-02-01"}
         ).json()
         assert body["account"] == "someuser"  # handle limpio
-        assert body["oldest"] == "2023-01-04"  # día del más viejo dentro del rango
+        assert body["oldest"] == "2023-01-04T00:00:00Z"  # el más viejo dentro del rango
         assert body["captured"] == 2  # el de marzo queda afuera
-        assert body["oldest_count"] == 1  # solo el id "2" cae el 2023-01-04
 
 
-def test_progress_cuenta_tuits_del_dia_mas_viejo(tmp_path: Path) -> None:
-    # `oldest_count` detecta un día saturado: cuenta SOLO los del día del más viejo (no
-    # los de días más nuevos), para que la extensión decida si saltear ese día.
+def test_progress_da_la_hora_del_mas_viejo(tmp_path: Path) -> None:
+    # Punto 12 de docs/PLAN.md: la extensión retoma al segundo del más viejo, no al día.
+    # Un día con más tweets de los que muestra una búsqueda sigue a media tarde, no al
+    # día siguiente (antes se salteaba su resto).
     with TestClient(create_app(make_settings(tmp_path))) as client:
         page = search_response(
             [
-                tweet_entry("a", created_at="Wed Jan 04 06:00:00 +0000 2023"),  # día del más viejo
-                tweet_entry("b", created_at="Wed Jan 04 09:00:00 +0000 2023"),  # mismo día
-                tweet_entry("c", created_at="Wed Jan 04 18:00:00 +0000 2023"),  # mismo día
-                tweet_entry("d", created_at="Fri Jan 06 09:00:00 +0000 2023"),  # día más nuevo
+                tweet_entry("a", created_at="Wed Jan 04 14:07:31 +0000 2023"),  # el más viejo
+                tweet_entry("b", created_at="Wed Jan 04 18:00:00 +0000 2023"),
+                tweet_entry("c", created_at="Fri Jan 06 09:00:00 +0000 2023"),
             ]
         )
         post_ingest(client, [page])
         body = client.post(
             "/progress", json={"account": "someuser", "since": "2023-01-01", "until": "2023-02-01"}
         ).json()
-        assert body["oldest"] == "2023-01-04"
-        assert body["captured"] == 4
-        assert body["oldest_count"] == 3  # a, b, c son del 2023-01-04; d (06) no
+        assert body == {"account": "someuser", "oldest": "2023-01-04T14:07:31Z", "captured": 3}
 
 
 def test_export_reporta_replies_a_terceros_excluidos(tmp_path: Path) -> None:

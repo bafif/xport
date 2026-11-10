@@ -118,8 +118,9 @@ class CaptureCreate(_DateRange, _CsvFormat):
 class CaptureReport(BaseModel):
     """Body de `POST /captures/{id}/state`: lo que avisa la extensión, el popup o la página."""
 
-    state: Literal["running", "paused", "done", "stopped"]
+    state: Literal["running", "paused", "waiting", "done", "stopped"]
     note: str | None = Field(default=None, max_length=500)  # el motivo, si se cortó
+    resume_at: datetime | None = None  # `waiting`: cuándo vuelve a buscar (punto 11)
     by_user: bool = False  # la cortó la persona: no hace falta avisarle
 
 
@@ -138,6 +139,7 @@ class CaptureOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     last_page_at: datetime | None  # la última página que entró por /ingest
+    resume_at: datetime | None  # esperando a X: cuándo sigue sola
     csv: str | None
     download_url: str | None
     exported: int | None
@@ -299,13 +301,12 @@ class ExportResult(BaseModel):
 
 class ProgressResult(BaseModel):
     """Frente de reanudación de la captura in-page (patrón C): hasta dónde se llegó
-    en `[since, until)`. La extensión retoma la búsqueda desde `oldest` en vez de
-    re-pedir desde `until` (x.com corta a ~1000 y hay que volver más tarde)."""
+    en `[since, until)`. La extensión retoma la búsqueda desde `oldest`, al segundo, en
+    vez de re-pedir desde `until` (X frena la búsqueda y hay que volver más tarde)."""
 
     account: str
-    oldest: date | None  # día del tweet más viejo capturado en el rango (None si no hay)
+    oldest: datetime | None  # el tweet más viejo capturado en el rango, UTC (None si no hay)
     captured: int  # cuántos tweets hay guardados en el rango
-    oldest_count: int  # cuántos caen en el DÍA del más viejo (alto ⇒ día saturado, ~tope de X)
 
 
 class ResetRequest(BaseModel):

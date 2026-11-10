@@ -90,11 +90,10 @@ No se manda a ningún otro lado. «Borrar capturado 🗑» borra lo
 de una cuenta; el registro del tope no se borra nunca. Conviene capturar con una cuenta de X que puedas perder: X puede
 limitar las cuentas que bajan muchos tweets.
 
-Por ahora captura solo desde la búsqueda de X, que entrega como mucho unos mil resultados por búsqueda y unas 50
-búsquedas cada 15 minutos. X toma las fechas de la búsqueda en tu hora y no en UTC, así que del primer día del rango
-pueden faltar las primeras horas (en Argentina, de 0 a 3 UTC). Si un solo día
-tiene más de 800 tweets, la extensión se queda con lo que X le dio de ese día y sigue con los anteriores: el resto de
-ese día no entra.
+Por ahora captura solo desde la búsqueda de X, que se frena en unos mil resultados y deja hacer unas 50 búsquedas
+cada 15 minutos por cuenta de X. Cuando una búsqueda se frena, la siguiente arranca en el segundo del tweet más viejo
+que cargó, así que un día con muchos tweets sale entero. Cuando se acaban las búsquedas, la captura queda «esperando a
+X» hasta la hora que X indica y sigue sola desde donde iba.
 
 Si el popup dice que no arranca la captura porque el servicio no responde, levantalo (ver [Uso](#uso)) o instalá el
 arranque automático (ver [Instalar](#instalar)). Si dice que el tope está lleno, esperá: el popup muestra cuánto queda.
@@ -212,7 +211,8 @@ necesita ninguna: usa la sesión del navegador. Las rutas relativas cuelgan de l
 El tope (900.000) y la ventana (24 horas) no están en esta lista a propósito: son constantes del código y ninguna
 variable los cambia.
 
-La búsqueda de X es `from:<cuenta> since:<desde> until:<hasta>`, con días en UTC: `since` entra y `until` no. De las
+La búsqueda de X es `from:<cuenta> since_time:<desde> until_time:<hasta>`, en segundos UTC: el día de inicio entra
+entero y el de fin no (`since:` y `until:` toman días en la hora de quien busca). De las
 respuestas, el CSV se queda con las que cuelgan de una conversación que empezó la misma cuenta. Si ese primer tweet cae
 fuera del rango y nunca se capturó, sus respuestas dentro del rango también quedan afuera.
 

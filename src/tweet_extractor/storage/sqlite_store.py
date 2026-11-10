@@ -195,19 +195,14 @@ class SqliteStore:
         *,
         since: datetime | None = None,
         until: datetime | None = None,
-    ) -> tuple[datetime | None, int, int]:
-        """El tweet más viejo (`MIN(created_at)`) de una cuenta en `[since, until)`,
-        cuántos hay guardados, y cuántos caen en el DÍA del más viejo. Es el FRENTE
-        para reanudar la captura in-page entre sesiones: la captura va del más nuevo al
-        más viejo, así que el más viejo guardado marca hasta dónde se llegó. Retomar
-        arranca la búsqueda en ese día en vez de re-pedir desde `until` — clave porque
-        x.com frena la búsqueda a ~1000 y obliga a volver más tarde: re-pedir lo ya
-        capturado regastaría ese cupo (y presupuesto del gate).
-
-        El conteo del día más viejo detecta un día SATURADO (~tope de x.com en una sola
-        jornada): si es alto, ese día no va a rendir más y reanudar re-incluyéndolo
-        dejaría el crawl trabado ahí entre sesiones — la extensión lo saltea. Devuelve
-        `(oldest | None, count, oldest_day_count)`."""
+    ) -> tuple[datetime | None, int]:
+        """El tweet más viejo (`MIN(created_at)`) de una cuenta en `[since, until)` y
+        cuántos hay guardados. Es el FRENTE para reanudar la captura in-page entre
+        sesiones: la captura va del más nuevo al más viejo, así que el más viejo guardado
+        marca hasta dónde se llegó, al segundo. Retomar arranca la búsqueda ahí en vez de
+        re-pedir desde `until` — clave porque X frena la búsqueda (50 cada 15 minutos) y
+        obliga a volver más tarde: re-pedir lo ya capturado regastaría ese cupo (y
+        presupuesto del gate). Devuelve `(oldest | None, count)`."""
         clauses = ["account = ?"]
         params: list[object] = [account]
         if since is not None:
@@ -223,16 +218,8 @@ class SqliteStore:
         )
         row = await cur.fetchone()
         if row is None or not row[1]:
-            return None, 0, 0
-        oldest, total = datetime.fromisoformat(row[0]), int(row[1])
-        # substr(created_at,1,10) = "YYYY-MM-DD" (el ISO empieza por la fecha): tuits del
-        # mismo día que el más viejo. El día queda dentro del rango (oldest es el MIN).
-        cur2 = await db.execute(
-            f"SELECT COUNT(*) FROM tweets WHERE {where} AND substr(created_at, 1, 10) = ?",
-            [*params, row[0][:10]],
-        )
-        day_row = await cur2.fetchone()
-        return oldest, total, int(day_row[0]) if day_row else 0
+            return None, 0
+        return datetime.fromisoformat(row[0]), int(row[1])
 
     async def account_ids(self, account: str) -> set[str]:
         """Los ids propios de la cuenta (el `own_ids` de la política de replies).

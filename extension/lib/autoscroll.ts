@@ -1,11 +1,12 @@
-// Contrato del crawl adaptativo (patrón C). El popup abre la búsqueda del rango
-// COMPLETO `from:user since: until:`; el content script scrollea hasta el fondo y,
-// cuando x.com deja de entregar resultados ANTES de llegar a `since` (el tope de
-// ~1000 del search en vivo, o un error de paginación), encoge la cota superior al día
-// del tweet más viejo cargado y re-busca desde ahí hacia atrás — repitiendo hasta
-// cubrir todo `[since, until)`. Se adapta a la densidad real (sin ventanas fijas) y no
-// choca la pared. Distingue "fin de resultados" de "pared/red caída" por si alcanzó
-// `since`, y espera/recarga ante carga lenta o vacía.
+// Contrato del crawl adaptativo (patrón C). El background abre la búsqueda del rango
+// COMPLETO `from:user since_time: until_time:` (segundos UTC); el content script scrollea
+// hasta el fondo y, cuando x.com deja de entregar resultados ANTES de llegar a `since` (el
+// tope de ~1000 del search en vivo, o un error de paginación), encoge la cota superior al
+// SEGUNDO del tweet más viejo cargado y re-busca desde ahí hacia atrás, repitiendo hasta
+// cubrir todo `[since, until)`. Como la cota es al segundo y no al día, un día con más tweets
+// de los que muestra una búsqueda sale entero (punto 12 de docs/PLAN.md). Si una búsqueda no
+// trae nada más viejo que el tweet que re-incluye, el rango terminó. Espera/recarga ante
+// carga lenta o vacía, y ante el rate limit de X espera al reset (lib/rate.ts).
 
 export const AUTOSCROLL_MSG = 'xport-autoscroll' as const;
 
@@ -26,19 +27,12 @@ export const AUTOSTART_SETTLE_MS = 2500; // espera tras (re)cargar la búsqueda 
 export const MAX_LOADING_WAITS = 10; // ~12 s tolerando el spinner (conexión lenta) antes de asentar
 export const MAX_RETRIES = 3; // clicks al "Reintentar" de x.com ante un error de paginación
 export const RETRY_WAIT_MS = 2500; // espera tras click en Reintentar
-// Carga EN BLANCO (ni tuits, ni "sin resultados", ni botón de error): error/red caída/rate-limit.
-// Se recarga INDEFINIDAMENTE con backoff exponencial acotado — no nos rendimos solos (solo
-// "Detener" corta): "no carga nada" es justo lo que hay que aguantar, no descartar. Distinto de
-// un día saturado (sí carga, los mismos ~1000), que se saltea en la reanudación (ver SATURATED_DAY).
+// Carga EN BLANCO (ni tuits, ni "sin resultados", ni botón de error) sin un 429 de por medio:
+// error o red caída. Se recarga INDEFINIDAMENTE con backoff exponencial acotado — no nos
+// rendimos solos (solo "Detener" corta): "no carga nada" es justo lo que hay que aguantar, no
+// descartar. El rate limit de X no pasa por acá: se espera al reset (lib/rate.ts).
 export const BLANK_BACKOFF_BASE_MS = 5_000;
 export const BLANK_BACKOFF_MAX_MS = 60_000;
-
-// Día SATURADO: si en el día del tweet más viejo ya hay >= este nº de tuits, ese día llegó al
-// tope de x.com (no rinde más). Reanudar re-incluyéndolo dejaría el crawl trabado ahí entre
-// sesiones, así que se saltea (se pierde su cola sub-diaria: inevitable a granularidad de día).
-// ALTO a propósito (cerca del tope ~1000): cargar pocos/ningún tuit NO es saturación — es
-// error/conexión, y eso se reintenta, no se saltea.
-export const SATURATED_DAY = 800;
 
 /** Lo que el crawl ve después de cada scroll. `hidden`: la pestaña estuvo oculta en algún
  *  momento del paso (otra pestaña adelante, la ventana minimizada o tapada). */
@@ -97,24 +91,44 @@ export function blankBackoff(attempt: number): number {
   return Math.min(BLANK_BACKOFF_BASE_MS * 2 ** Math.max(0, attempt - 1), BLANK_BACKOFF_MAX_MS);
 }
 
-const DAY_MS = 86_400_000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Estado del crawl: cota inferior fija `since` y cota superior `until` que se ENCOGE
- *  en cada narrow. `attempt` cuenta recargas en blanco consecutivas para el `until`
- *  actual (se descarta al narrowar o al cargar tuits). */
+/** Estado del crawl: el rango de la captura (`since` y `until`, días UTC) y la cota
+ *  superior `untilTime` (segundos UTC, exclusiva) que se ENCOGE en cada narrow. `attempt`
+ *  cuenta recargas en blanco consecutivas para la cota actual (se descarta al narrowar o al
+ *  cargar tuits). `waitUntil` (ms): el crawl espera a que X levante el rate limit; mientras,
+ *  la pestaña no está en la búsqueda y la retoma el background. */
 export interface CrawlState {
   account: string; // handle sin `@`
   since: string; // YYYY-MM-DD, fijo
-  until: string; // YYYY-MM-DD, exclusivo, se reduce al narrowar
+  until: string; // YYYY-MM-DD, exclusivo, fijo: el fin del rango de la captura
+  untilTime?: number; // cota de la búsqueda actual; sin ella, el fin del rango (un crawl viejo)
   attempt?: number;
   captureId?: number; // la captura de la cola que es este crawl (sin cola: un crawl viejo)
+  waitUntil?: number;
 }
 
-/** El estado para la búsqueda siguiente al narrowar: otra cota superior, y `attempt` de cero. */
-export function narrowed(state: CrawlState, until: string): CrawlState {
-  const next: CrawlState = { ...state, until };
+/** Segundos UTC del comienzo de un día `YYYY-MM-DD`. Puro y testeable. */
+export function dayStart(d: string): number {
+  return Date.parse(`${d}T00:00:00Z`) / 1000;
+}
+
+/** La cota inferior de la búsqueda, en segundos UTC: fija, el comienzo de `since`. */
+export function sinceTime(state: CrawlState): number {
+  return dayStart(state.since);
+}
+
+/** La cota superior de la búsqueda actual, en segundos UTC (exclusiva). */
+export function untilTime(state: CrawlState): number {
+  return state.untilTime ?? dayStart(state.until);
+}
+
+/** El estado para la búsqueda siguiente al narrowar: otra cota superior, sin `attempt` ni
+ *  espera. */
+export function narrowed(state: CrawlState, untilTime: number): CrawlState {
+  const next: CrawlState = { ...state, untilTime };
   delete next.attempt;
+  delete next.waitUntil;
   return next;
 }
 
@@ -126,59 +140,62 @@ export function isValidDate(s: string): boolean {
   return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s;
 }
 
-function iso(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
+/** Nueva cota superior tras asentarse una búsqueda, dado el segundo (UTC) del tweet más
+ *  viejo cargado (`oldest`) y la cota actual (`until`, exclusiva). La búsqueda siguiente
+ *  llega hasta `oldest + 1`: re-incluye ese tweet (el store deduplica) y no pierde otro del
+ *  mismo segundo, sea `until_time:` exclusivo o no. Si eso no baja la cota, la búsqueda no
+ *  trajo nada más viejo que el tweet que re-incluía: el rango está terminado y devuelve
+ *  `null`. Como la cota baja siempre, el crawl termina. Puro y testeable. */
+export function nextBound(oldest: number, until: number): number | null {
+  const next = oldest + 1;
+  return next < until ? next : null;
 }
 
-/** Día siguiente a `d` (YYYY-MM-DD, UTC). Puro y testeable. */
-export function dayAfter(d: string): string {
-  return iso(Date.parse(`${d}T00:00:00Z`) + DAY_MS);
-}
-
-/** Día anterior a `d` (YYYY-MM-DD, UTC). Puro y testeable. */
-export function dayBefore(d: string): string {
-  return iso(Date.parse(`${d}T00:00:00Z`) - DAY_MS);
-}
-
-/** Nueva cota superior tras toparse con la pared, dado el día (UTC) del tweet más viejo
- *  cargado (`oldest`) y la cota actual (`until`). X toma ADENTRO el día de `until:`, y en la
- *  hora de quien busca, no en UTC (lo midió la prueba de la Fase 2, el 10/11/2026): así que
- *  `until:<oldest>` ya re-incluye el día más viejo (solapa; el store deduplica) sin perder su
- *  cola. Si eso no baja la cota (el día más viejo ya es `until`: un día con más tuits de los
- *  que muestra la búsqueda, o uno de la noche que en la hora de quien busca cae el día
- *  anterior), pasa al día anterior a `until`: se pierde la cola de ese día, pero la cota baja
- *  SIEMPRE y el crawl termina. Antes caía a `oldest` creyéndolo exclusivo y, con la cota
- *  igual, recargaba la misma búsqueda sin fin. Puro y testeable. */
-export function nextUntil(oldest: string, until: string): string {
-  return oldest < until ? oldest : dayBefore(until);
-}
-
-/** `true` si cargar hasta `oldest` ya cubrió la cota inferior `since`: el rango está
- *  agotado, no hay nada más viejo que pedir dentro de lo pedido. Comparación
- *  lexicográfica de `YYYY-MM-DD` (= cronológica). Puro y testeable. */
-export function reachedSince(oldest: string, since: string): boolean {
+/** `true` si cargar hasta `oldest` (segundos) ya cubrió la cota inferior `since`: el rango
+ *  está agotado, no hay nada más viejo que pedir. Puro y testeable. */
+export function reachedSince(oldest: number, since: number): boolean {
   return oldest <= since;
 }
 
-/** La query `from:user since: until:` de un rango. `account` ya sin `@`. */
-export function searchQuery(account: string, since: string, until: string): string {
-  return `from:${account} since:${since} until:${until}`;
+/** Segundos UTC de un `datetime` ISO, como el que x.com pone en `<time>`; `null` si no es
+ *  una fecha. Puro y testeable. */
+export function epochSeconds(iso: string): number | null {
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
+}
+
+/** «2025-09-30 18:02 UTC», para los avisos. */
+export function showSeconds(s: number): string {
+  return `${new Date(s * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+/** La query de una búsqueda. `account` ya sin `@`; las cotas en segundos UTC. X toma
+ *  `since:`/`until:` como días en la hora de quien busca y deja adentro el de `until:` (lo
+ *  midió la Fase 2): `since_time:`/`until_time:` van al segundo y en UTC. */
+export function searchQuery(account: string, since: number, until: number): string {
+  return `from:${account} since_time:${since} until_time:${until}`;
 }
 
 /** URL de la búsqueda en modo "Latest" (cronológico, `f=live`). Puro y testeable. */
-export function searchUrl(account: string, since: string, until: string): string {
+export function searchUrl(account: string, since: number, until: number): string {
   return `https://x.com/search?q=${encodeURIComponent(searchQuery(account, since, until))}&f=live`;
 }
 
-/** `true` si `url` es una búsqueda de captura de xport (`from:x since:… until:…` en «Más
- *  reciente»), sea cual sea: así el background sabe que esa pestaña es suya y la reusa. */
+/** La búsqueda que toca para un estado del crawl. */
+export function crawlUrl(state: CrawlState): string {
+  return searchUrl(state.account, sinceTime(state), untilTime(state));
+}
+
+/** `true` si `url` es una búsqueda de captura de xport (`from:x since_time:… until_time:…`
+ *  en «Más reciente»), sea cual sea: así el background sabe que esa pestaña es suya y la
+ *  reusa. */
 export function isCaptureSearch(url: string): boolean {
   try {
     const u = new URL(url);
     return (
       /(^|\.)(x|twitter)\.com$/.test(u.hostname) &&
       u.pathname === '/search' &&
-      /^from:\w+ since:\d{4}-\d{2}-\d{2} until:\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('q') ?? '')
+      /^from:\w+ since_time:\d+ until_time:\d+$/.test(u.searchParams.get('q') ?? '')
     );
   } catch {
     return false;
@@ -190,7 +207,8 @@ export function isCaptureSearch(url: string): boolean {
 export function matchesSearch(url: string, state: CrawlState): boolean {
   try {
     return (
-      new URL(url).searchParams.get('q') === searchQuery(state.account, state.since, state.until)
+      new URL(url).searchParams.get('q') ===
+      searchQuery(state.account, sinceTime(state), untilTime(state))
     );
   } catch {
     return false;

@@ -173,7 +173,8 @@ ol > li {
   color: var(--accent);
 }
 
-.state.paused {
+.state.paused,
+.state.waiting {
   color: var(--warn);
 }
 

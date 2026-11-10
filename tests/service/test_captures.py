@@ -68,6 +68,7 @@ def test_dos_cuentas_encoladas_salen_en_dos_csv(tmp_path: Path) -> None:
         (listed,) = [c for c in client.get("/captures").json() if c["id"] == uno["id"]]
         assert listed["captured"] == 2 and listed["oldest"] == "2023-01-04"
         assert listed["percent"] == 90  # del 4/1 al 1/2: 28 de 31 días
+        assert listed["resume_at"] is None
         assert listed["last_page_at"] is not None
         # Mientras la primera sigue, la siguiente es la misma.
         assert client.post("/captures/next").json()["id"] == uno["id"]
@@ -117,6 +118,23 @@ def test_un_corte_avisa_y_una_cancelacion_no(tmp_path: Path) -> None:
             ("Se cortó la captura de @a", "x.com cambió el formato de los datos", None)
         ]
         assert client.post("/captures/999/state", json={"state": "done"}).status_code == 404
+
+
+def test_esperando_a_x_sigue_sola(tmp_path: Path) -> None:
+    # Punto 11 de docs/PLAN.md: X frenó la búsqueda. La captura queda «esperando a X hasta
+    # las 18:40», sigue siendo la que va (la de atrás no arranca) y no se notifica: sigue sola.
+    sent = Sent()
+    with _client(tmp_path, sent) as client:
+        a, _ = client.post("/captures", json={"accounts": ["a", "b"], **RANGE}).json()
+        client.post("/captures/next")
+        waiting = _report(client, a["id"], "waiting", resume_at="2026-11-10T21:40:00Z")
+        assert waiting["state"] == "waiting"
+        assert waiting["resume_at"] == "2026-11-10T21:40:00Z"
+        assert client.post("/captures/next").json()["id"] == a["id"]
+        back = _report(client, a["id"], "running")
+        assert back["state"] == "running" and back["resume_at"] is None
+        time.sleep(0.05)
+        assert sent.items == []
 
 
 def test_con_el_tope_lleno_no_empieza_ninguna(tmp_path: Path) -> None:

@@ -66,12 +66,11 @@ export interface ExportResult {
 
 export interface ProgressResult {
   account: string;
-  oldest: string | null; // YYYY-MM-DD del tweet más viejo capturado en el rango, o null
+  oldest: string | null; // ISO 8601 UTC, al segundo: el tweet más viejo capturado en el rango
   captured: number; // cuántos tweets hay guardados en el rango
-  oldest_count: number; // cuántos caen en el DÍA del más viejo (alto ⇒ día saturado)
 }
 
-export type CaptureState = 'queued' | 'running' | 'paused' | 'done' | 'stopped';
+export type CaptureState = 'queued' | 'running' | 'paused' | 'waiting' | 'done' | 'stopped';
 
 export interface CaptureCreate {
   accounts: string[]; // una captura por cuenta
@@ -97,11 +96,13 @@ export interface CaptureOut {
   captured: number;
   percent: number;
   last_page_at: string | null;
+  resume_at: string | null; // esperando a X: cuándo sigue (ISO 8601)
 }
 
 export interface CaptureReport {
-  state: 'running' | 'paused' | 'done' | 'stopped';
+  state: 'running' | 'paused' | 'waiting' | 'done' | 'stopped';
   note?: string; // el motivo, si se cortó
+  resume_at?: string; // esperando a X: cuándo sigue (ISO 8601)
   by_user?: boolean; // la cortó la persona: el servicio no lo notifica
 }
 
