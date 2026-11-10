@@ -34,11 +34,22 @@ describe('dayAfter', () => {
 });
 
 describe('nextUntil', () => {
+  // X toma adentro el día de `until:` (medido el 10/11/2026).
   it('re-incluye el día más viejo cargado para no perder su cola', () => {
-    expect(nextUntil('2025-03-10', '2025-04-01')).toBe('2025-03-11');
+    expect(nextUntil('2025-03-10', '2025-04-01')).toBe('2025-03-10');
   });
-  it('si incluirlo no avanza (un solo día saturado), lo excluye para garantizar progreso', () => {
-    expect(nextUntil('2025-03-10', '2025-03-11')).toBe('2025-03-10');
+  it('si la cota no baja (un día saturado), pasa al día anterior', () => {
+    expect(nextUntil('2025-03-10', '2025-03-10')).toBe('2025-03-09');
+  });
+  it('la cota baja siempre, aunque el más viejo caiga después de ella', () => {
+    // Un tuit de la noche (UTC) que en la hora de quien busca es del día anterior.
+    expect(nextUntil('2025-03-11', '2025-03-10')).toBe('2025-03-09');
+    let until = '2025-04-01';
+    for (const oldest of ['2025-03-20', '2025-03-20', '2025-03-21', '2025-03-19']) {
+      const next = nextUntil(oldest, until);
+      expect(next < until).toBe(true);
+      until = next;
+    }
   });
 });
 

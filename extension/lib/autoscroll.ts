@@ -135,15 +135,22 @@ export function dayAfter(d: string): string {
   return iso(Date.parse(`${d}T00:00:00Z`) + DAY_MS);
 }
 
-/** Nueva cota superior tras toparse con la pared, dado el día del tweet más viejo
- *  cargado (`oldest`) y la cota actual (`until`). INCLUYE el día `oldest` (solapa ese
- *  día — el store deduplica) para no perder su cola sub-diaria. Si incluirlo no haría
- *  progreso (un único día con >~1000 tuits: `oldest+1 == until`), cae a `oldest`
- *  EXCLUSIVO para garantizar avance (acepta perder la cola de ese día; caso extremo).
- *  Puro y testeable. */
+/** Día anterior a `d` (YYYY-MM-DD, UTC). Puro y testeable. */
+export function dayBefore(d: string): string {
+  return iso(Date.parse(`${d}T00:00:00Z`) - DAY_MS);
+}
+
+/** Nueva cota superior tras toparse con la pared, dado el día (UTC) del tweet más viejo
+ *  cargado (`oldest`) y la cota actual (`until`). X toma ADENTRO el día de `until:`, y en la
+ *  hora de quien busca, no en UTC (lo midió la prueba de la Fase 2, el 10/11/2026): así que
+ *  `until:<oldest>` ya re-incluye el día más viejo (solapa; el store deduplica) sin perder su
+ *  cola. Si eso no baja la cota (el día más viejo ya es `until`: un día con más tuits de los
+ *  que muestra la búsqueda, o uno de la noche que en la hora de quien busca cae el día
+ *  anterior), pasa al día anterior a `until`: se pierde la cola de ese día, pero la cota baja
+ *  SIEMPRE y el crawl termina. Antes caía a `oldest` creyéndolo exclusivo y, con la cota
+ *  igual, recargaba la misma búsqueda sin fin. Puro y testeable. */
 export function nextUntil(oldest: string, until: string): string {
-  const inclusive = dayAfter(oldest);
-  return inclusive < until ? inclusive : oldest;
+  return oldest < until ? oldest : dayBefore(until);
 }
 
 /** `true` si cargar hasta `oldest` ya cubrió la cota inferior `since`: el rango está

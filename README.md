@@ -36,8 +36,8 @@ capturar, queda la última versión.
 Sin navegador hay dos caminos. Con una cuenta de X común está bloqueado desde junio de 2026: x.com cambió cómo firma los
 pedidos y twscrape dejó de poder hacerlo. Con la [API oficial de X](#con-la-api-oficial), que es paga, está implementado
 pero **no se probó contra la API real**: se armó con la documentación de X y respuestas fabricadas. Los cortes de la
-captura que se sumaron el 6 de noviembre de 2026 todavía no se probaron en un navegador, y la cola, la página local y las notificaciones
-del 10 de noviembre tampoco.
+captura del 6 de noviembre de 2026 y la cola del 10 se probaron el 10 de noviembre contra x.com, con Chrome sin ventana;
+la página local y las notificaciones todavía no se probaron en un navegador.
 
 ## Uso diario: la página
 
@@ -90,7 +90,9 @@ No se manda a ningún otro lado. «Borrar capturado 🗑» borra lo
 de una cuenta; el registro del tope no se borra nunca. Conviene capturar con una cuenta de X que puedas perder: X puede
 limitar las cuentas que bajan muchos tweets.
 
-Por ahora captura solo desde la búsqueda de X, que entrega como mucho unos mil resultados por búsqueda. Si un solo día
+Por ahora captura solo desde la búsqueda de X, que entrega como mucho unos mil resultados por búsqueda y unas 50
+búsquedas cada 15 minutos. X toma las fechas de la búsqueda en tu hora y no en UTC, así que del primer día del rango
+pueden faltar las primeras horas (en Argentina, de 0 a 3 UTC). Si un solo día
 tiene más de 800 tweets, la extensión se queda con lo que X le dio de ese día y sigue con los anteriores: el resto de
 ese día no entra.
 

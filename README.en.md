@@ -36,8 +36,8 @@ again, the latest version is kept.
 Without a browser there are two ways. With a regular X account it has been blocked since June 2026: x.com changed how
 it signs requests and twscrape can no longer do it. With the [official X API](#with-the-official-api), which is paid,
 it is implemented but **has not been tried against the real API**: it was built from X's documentation and made-up
-responses. The capture cut-offs added on 6 November 2026 have not been tried in a browser yet, and neither have the
-queue, the local page and the notifications from 10 November.
+responses. The capture cut-offs from 6 November 2026 and the queue from 10 November were tried against x.com on 10
+November, with Chrome without a window; the local page and the notifications have not been tried in a browser yet.
 
 ## Everyday use: the page
 

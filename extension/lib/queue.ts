@@ -6,7 +6,7 @@
 // X y en paralelo no rinde.
 
 import type { CaptureOut, ProgressResult } from './api';
-import { type CrawlState, dayAfter, SATURATED_DAY } from './autoscroll';
+import { type CrawlState, dayBefore, SATURATED_DAY } from './autoscroll';
 
 export const QUEUE_ALARM = 'xport-queue';
 export const POLL_MINUTES = 0.5; // el mínimo de Chrome para `alarms`
@@ -46,10 +46,11 @@ export function startPlan(prog: ProgressResult, since: string, until: string): S
   if (prog.oldest <= since) return { kind: 'done' };
   if (prog.oldest_count >= SATURATED_DAY) {
     // El día más viejo ya llegó al techo de X: re-incluirlo dejaría el crawl trabado ahí.
-    // Se excluye para avanzar (se pierde su cola, inevitable a granularidad de día).
+    // Se excluye para avanzar (se pierde su cola, inevitable a granularidad de día). X toma
+    // adentro el día de `until:`, así que excluirlo es pedir hasta el día anterior.
     return {
       kind: 'crawl',
-      until: prog.oldest,
+      until: dayBefore(prog.oldest),
       message:
         `Día ${prog.oldest} saturado (${prog.oldest_count} tuits, ~tope de X): salteo su ` +
         `resto y sigo más atrás con ${who}… (podés cerrar el popup)`,
@@ -57,7 +58,7 @@ export function startPlan(prog: ProgressResult, since: string, until: string): S
   }
   return {
     kind: 'crawl',
-    until: dayAfter(prog.oldest), // re-incluye el día más viejo (el store deduplica)
+    until: prog.oldest, // X incluye el día de `until:`: re-incluye el más viejo (el store deduplica)
     message:
       `Reanudando ${who} desde ${prog.oldest} (ya tenías ${prog.captured} tuits)… ` +
       '(podés cerrar el popup)',

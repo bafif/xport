@@ -39,12 +39,12 @@ describe('startPlan', () => {
 
   it('retoma re-incluyendo el día más viejo guardado', () => {
     const plan = startPlan(prog({ oldest: '2024-06-10', captured: 300 }), '2024-01-01', '2025-01-01');
-    expect(plan).toMatchObject({ kind: 'crawl', until: '2024-06-11' });
+    expect(plan).toMatchObject({ kind: 'crawl', until: '2024-06-10' });
   });
 
   it('saltea un día saturado', () => {
     const plan = startPlan(prog({ oldest: '2024-06-10', oldest_count: 950 }), '2024-01-01', '2025-01-01');
-    expect(plan).toMatchObject({ kind: 'crawl', until: '2024-06-10' });
+    expect(plan).toMatchObject({ kind: 'crawl', until: '2024-06-09' });
   });
 
   it('con el rango entero, no hay nada que crawlear', () => {

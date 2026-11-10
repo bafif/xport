@@ -329,12 +329,22 @@ o un Excel de verdad sigue abierto en «Pendiente»:
   tenga en la ventana, y la mudanza de un `data/` viejo suma también su historia.
 - La CLI tiene dos comandos: `extract` (el de antes, ahora con nombre) y `capture`.
 
+**10 de noviembre, más tarde: la Fase 2, probada contra x.com sin ventana.** Con Chrome Beta 158 en Linux, un perfil
+propio en la carpeta de datos de la cuenta que corre la prueba y una cuenta de X aparte. La
+extensión se cargó por `--remote-debugging-pipe` y la red se miró por el mismo canal, sin tocar la página. Lo que salió
+está en la Fase 2, más abajo. Lo más grave fue un error del crawl: X toma ADENTRO el día de `until:`, así que achicar a
+`until:<día más viejo>` no avanzaba cuando ese día era el más viejo, y el crawl recargaba la misma búsqueda sin fin. Lo vi
+pasar: gastó las 50 búsquedas de la ventana de X y siguió con un 429 cada cuatro segundos. `nextUntil` ahora baja la
+cota siempre (si no baja, pasa al día anterior), y la reanudación de `startPlan` pide hasta el día más viejo, no hasta el
+siguiente. El mismo mes que antes quedaba en bucle terminó entero en 11 búsquedas.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada
 en el código. Esa vez anduvo de punta a punta: el host levantó el servicio, los lotes entraron y el tope contó cada post
-visto. Lo que no ejercité en un navegador son los cortes mismos: el servicio caído a mitad de una captura, el popup sin
-servicio y el tope lleno. Tampoco lo de la Fase 1 (7 de noviembre): la pausa con la pestaña oculta, el corte por cambio
+visto. El 10 de noviembre, sin ventana y con la cola, probé los cortes (el servicio caído a mitad de una captura, el
+popup sin servicio y el tope lleno) y anduvieron. Lo de la Fase 1 (7 de noviembre) sigue sin prueba a mano: la pausa
+con la pestaña oculta, el corte por cambio
 de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Lo mismo la Fase 3
 (10 de noviembre): la cola, la página local y las notificaciones tienen tests y una prueba de humo contra el servicio,
 pero no pasaron por un navegador. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine y la
@@ -358,7 +368,8 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | CSV en streaming, atómico, `<account>_<since>_<until>.csv` | `storage/csv_exporter.py` | tests; real |
 | Captura in-page: parche de `fetch` y XHR, puente, relay en lotes de 20 páginas | `extension/entrypoints/` | real (junio y 6/11) |
 | Crawl adaptativo: scroll, «Reintentar», recarga con backoff, achique del rango, reanudación desde la base, salteo de días saturados | `autoscroll.content.ts`, `POST /progress` | real; funciones puras con vitest |
-| Cortes del crawl: sin servicio, tope lleno, 429, `over_cap`, rechazo, veinte páginas sin registrar | `lib/ingest.ts`, `background.ts`, popup | vitest de `decideIngest`; **no ejercitados en un navegador** |
+| Cortes del crawl: sin servicio, tope lleno, 429, `over_cap`, rechazo, veinte páginas sin registrar | `lib/ingest.ts`, `background.ts`, popup | vitest de `decideIngest`; real sin ventana (10/11): el servicio caído, el popup sin servicio y el tope lleno |
+| El crawl termina aunque X incluya el día de `until:` | `lib/autoscroll.ts` (`nextUntil`), `lib/queue.ts` (`startPlan`) | vitest; real sin ventana (10/11): el mes que quedaba en bucle terminó |
 | Pausa del crawl con la pestaña oculta, con aviso en el popup | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest de `decideStep`; **sin prueba a mano** |
 | Cambio de forma de x.com: `rejected` y `format_changed` en `/ingest`, ejemplo en el log, corte del crawl | `service/ingest.py`, `lib/ingest.ts` | tests con una página de forma desconocida; vitest |
 | CSV para Excel en castellano desde `/export` y el popup | `service/schemas.py`, popup | tests (BOM y `;`); **sin abrirlo en Excel** |
@@ -465,17 +476,39 @@ Falta lo que pide un navegador o un Excel de verdad:
    servicio viejo que siga corriendo no se detecta: después de actualizar hay que bajarlo (con Chrome, el native host
    lo deja vivo hasta reiniciar).
 
-### Fase 2: lo que falta probar
+### Fase 2: lo que falta probar (hecha el 10 de noviembre)
 
-5. **Los cortes en un navegador.** El camino feliz anduvo el 6 de noviembre; falta bajar el servicio a mitad de una
-   captura y ver que el crawl se corte, ver que el popup no arranque sin servicio y llenar el tope con un registro
-   precargado para ver el 429. Listo cuando: el resultado queda anotado acá. Chico.
-6. **Prueba del navegador invisible y de dos supuestos.** Un perfil propio de Chrome Beta con la extensión y una sesión
-   de X, lanzado con `--headless`: ¿carga la búsqueda, el scroll trae más, entran las capturas, queda entero un rango
-   conocido? Lo mismo con Edge, y en Windows y macOS cuando haya dónde. Además, a mano en x.com: si `since_time:` y
-   `until_time:` andan en «Más reciente» (punto 12) y si la web recibe `x-rate-limit-remaining` y `x-rate-limit-reset`
-   en `SearchTimeline` (punto 11). Listo cuando: el resultado queda acá y elige entre headless, Xvfb o la ventana. Chico;
-   necesita una sesión de X.
+Probada en Linux con Chrome Beta 158, sin ventana, una cuenta de X aparte y el servicio de la Fase 3 (ver «Cómo lo
+fui construyendo»). Los números siguen, porque el resto del plan los cita.
+
+5. **Los cortes en un navegador.** Andan los tres:
+   - Con el servicio caído a mitad de una captura, el crawl siguió 18 búsquedas más y cortó solo al juntar 20 páginas
+     sin registrar. Al volver el servicio, la cola retomó la captura desde lo guardado.
+   - El popup sin servicio no arranca y lo explica.
+   - Con el registro precargado a 10 accesos del tope, la primera página lo cruzó (quedó en 900.016, lo previsto para
+     lo que ya pasó en el navegador), el crawl se cortó con el aviso del tope y la cola no arrancó ninguna otra.
+
+   Un borde: lo que la extensión tiene en memoria sin mandar se pierde si el navegador se cierra en ese segundo y medio,
+   y esos accesos no llegan al tope. Son a lo sumo unas páginas; no lo arreglé.
+6. **El navegador invisible y los dos supuestos.**
+   - **Sin ventana anda.** La búsqueda carga, el scroll trae más y las capturas entran: septiembre de 2025 de @nasa, 54
+     tweets, en 11 búsquedas. Con ventana dentro de una pantalla virtual (`cage` sin pantalla real, el plan B de Linux)
+     también anda. Queda elegido headless. Edge no estaba instalado; Windows y macOS siguen sin probar.
+   - **La extensión no se instala con `--load-extension`:** Chrome 158 lo ignora, como decía la decisión del 7 de
+     noviembre. `Extensions.loadUnpacked` por `--remote-debugging-pipe` (con `--enable-unsafe-extension-debugging`) la
+     carga para esa ejecución, sin guardarla en el perfil. Es una alternativa a publicar en la Web Store para el
+     navegador que maneja el servicio, pero usa el canal de depuración: queda para decidir en el punto 13.
+   - **`x-rate-limit-*` llega** en `SearchTimeline`, que es del mismo origen (x.com), así que la página lo puede leer:
+     **50 búsquedas cada 15 minutos** por cuenta de X, y al agotarse, 429 con `remaining` en 0 (punto 11).
+   - **`since_time:` y `until_time:` andan** en «Más reciente», al segundo y en UTC (punto 12).
+   - **`since:` y `until:` no son lo que xport asumía.** X los toma como días en la hora de quien busca (UTC−3 en la
+     prueba) y deja adentro el día de `until:`. Medido con @Reuters: `since:2026-11-06` no trae nada antes de las 03:00
+     UTC del 6, y `until:2026-11-07` llega hasta las 02:59 UTC del 8. Tres consecuencias: las primeras horas (UTC) del
+     día de inicio no se piden nunca y se pierden sin aviso; se pide un día de más arriba, que el export descarta pero
+     gasta accesos; y el crawl podía quedar en bucle, ya arreglado (ver «Cómo lo fui construyendo»). Lo primero se
+     arregla pasando la búsqueda a `since_time:`/`until_time:` (punto 12).
+   - **Queda entero el rango:** el mes de @nasa salió igual las dos veces que se capturó (54 tweets) y llegó al primer
+     tweet del rango. No lo comparé tweet por tweet contra una captura con ventana.
 
 ### Fase 3: la cola y la página local (hecha el 10 de noviembre)
 
@@ -501,13 +534,17 @@ Falta pasarla por un navegador y lo que dice cada punto:
 ### Fase 4: el crawl
 
 11. **Esperar a X en vez de insistir.** Por qué: cuando X frena la búsqueda por horas, el crawl recarga cada 60 s sin fin,
-    y hoy hay que volver más tarde y apretar «Capturar». Cómo: el parche de `fetch` ya ve la respuesta de
+    y hoy hay que volver más tarde y apretar «Capturar». La Fase 2 mostró que es más seguido de lo que creía: el tope es
+    de 50 búsquedas cada 15 minutos, cada recarga del crawl gasta una, y con el 429 x.com reintenta cada pocos segundos.
+    Cómo: el parche de `fetch` ya ve la respuesta de
     `SearchTimeline`; que pase también el status y los encabezados de rate limit, que no es interpretar GraphQL (la regla
     4 se mantiene). Ante un 429, la captura queda «esperando a X hasta las 18:40» y retoma sola; con
     `x-rate-limit-remaining` bajo, afloja el ritmo antes. Listo cuando: test de la decisión y una captura que pase por un
     429. Mediano.
 12. **Partir los días saturados por hora.** Por qué: hoy, de un día con más tweets de los que muestra la búsqueda, se
-    pierde la cola sin aviso. Cómo: el crawl achica el límite a la hora del tweet más viejo cargado (el `datetime` que el
+    pierde la cola sin aviso; y la Fase 2 mostró que `since:`/`until:` van en la hora de quien busca, así que se pierden
+    también las primeras horas (UTC) del día de inicio. Por eso la búsqueda entera pasa a `since_time:`/`until_time:`, en
+    segundos UTC, que la Fase 2 probó que andan. Cómo: el crawl achica el límite a la hora del tweet más viejo cargado (el `datetime` que el
     DOM ya muestra) con `until_time:`, en vez de a su día; no queda cola que perder, se solapa menos (menos accesos
     gastados) y sobra el umbral de 800. `/progress` devuelve la hora y no el día. Si la prueba del punto 6 dice que esos
     operadores no andan, el plan B es que el export diga qué días pueden estar incompletos. Listo cuando: un día con más
@@ -516,7 +553,8 @@ Falta pasarla por un navegador y lo que dice cada punto:
 ### Fase 5: el navegador invisible
 
 13. **El servicio maneja el perfil de xport.** Cómo: arranca y para Chrome o Edge con `--user-data-dir=<datos>/browser`,
-    sin ventana mientras haya capturas en la cola y con lo que haya elegido el punto 6. Lo abre en una ventana chica y
+    sin ventana mientras haya capturas en la cola (el punto 6 eligió headless; la extensión se carga por el pipe de
+    depuración o se instala desde la Web Store, a decidir). Lo abre en una ventana chica y
     sin foco (`windows.create({ focused: false })`) para iniciar sesión, cuando X pide una verificación o cierra la
     sesión (lo nota porque la búsqueda redirige al login o porque no entran páginas), y como plan B donde el modo sin
     ventana no ande. El native host y el popup quedan mientras dure la transición y después se sacan. Listo cuando: una
