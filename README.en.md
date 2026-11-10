@@ -43,12 +43,12 @@ Chrome now runs inside cage.
 
 ## Everyday use: the page
 
-With the service running, `http://localhost:8000/` is xport's page (in Spanish). It opens in your usual browser and
-handles several accounts at once:
+With the service running, `http://localhost:8000/` is xport's page, in English or Spanish like the rest of xport. It
+opens in your usual browser and handles several accounts at once:
 
-1. **Accounts and dates:** one or more accounts, separated by commas or spaces. «Desde» (from) and «Hasta» (to) are
-   both included («hasta el 31/12/2025 inclusive»), and an empty «Hasta» means today. There are shortcuts: last month,
-   last year and a whole year. If the CSV is going to an Excel set to Spanish, tick «Para Excel en castellano».
+1. **Accounts and dates:** one or more accounts, separated by commas or spaces. «From» and «To» are both
+   included («from 2025-01-01 to 2025-12-31, inclusive»), and an empty «To» means today. There are shortcuts: last month,
+   last year and a whole year. If the CSV is going to an Excel set to Spanish, tick «For Excel set to Spanish».
 2. **Capture:** each account goes into the queue and they are captured one at a time (X throttles search per account,
    and in parallel it does not pay off). The service opens its own Chrome with the extension inside a virtual screen
    nobody sees, so you do not have to keep anything in view or touch the browser. The first time, and whenever X ends
@@ -57,7 +57,7 @@ handles several accounts at once:
    cannot use its Chrome (see [Install](#install)), the extension in your browser takes the queue as before: it opens
    the search in a tab and **that tab has to stay in view** while it captures.
 3. **Follow it:** each capture shows its state (queued, running, paused, done or stopped), how far back it got, how
-   much of the range it covers, how many tweets it has and when the last page came in. «Cancelar» takes it off the
+   much of the range it covers, how many tweets it has and when the last page came in. «Cancel» takes it off the
    queue; what was already stored stays.
 4. **The CSV:** when one finishes, the service builds its CSV by itself and says so with a system notification, which
    on Linux opens the file with a click. The link stays on the page. If the whole range ends without a single tweet,
@@ -76,31 +76,31 @@ date range, the cap usage and the link to the exported CSV.">
 
 1. **Open the popup:** click the xport icon. At the top it shows how many accesses the cap has counted in the last 24
    hours and how many are left.
-2. **Fill it in:** the account without `@`, and «Desde» (from) and «Hasta» (to) as `YYYY-MM-DD`. «Desde» is included;
-   «Hasta» is not.
-3. **Capture:** «Capturar ▶» puts the account in the same queue as the page and, if nothing else is running, opens X's
+2. **Fill it in:** the account without `@`, and «From» and «To» as `YYYY-MM-DD`. «From» is included; «To» is
+   not.
+3. **Capture:** «Capture ▶» puts the account in the same queue as the page and, if nothing else is running, opens X's
    search in a new tab and scrolls it by itself. You can close the popup. When it finishes, the service builds the CSV
    and says so with a notification, as with the page. If X stops
    returning results before the start date, the extension narrows the range and searches again until the whole range is
-   covered. «Detener ⏹» stops it. **That tab has to stay in view:** if you switch to another tab or minimize the
+   covered. «Stop ⏹» stops it. **That tab has to stay in view:** if you switch to another tab or minimize the
    window, the capture pauses (the popup says so) and carries on by itself when you come back.
-4. **Export:** open the popup again and press «Exportar CSV». A link to the file appears, with how many tweets it has.
-   If you will open it in an Excel set to Spanish (or any locale that uses the comma as decimal separator), tick «Para
-   Excel en castellano» first: the CSV comes out separated by `;` and with the BOM Excel needs to read accents. The
+4. **Export:** open the popup again and press «Export CSV». A link to the file appears, with how many tweets it has.
+   If you will open it in an Excel set to Spanish (or any locale that uses the comma as decimal separator), tick «For
+   Excel set to Spanish» first: the CSV comes out separated by `;` and with the BOM Excel needs to read accents. The
    popup remembers the box.
-5. **Carry on another day:** if X throttled the search, come back later and press «Capturar ▶» with the same dates. It
+5. **Carry on another day:** if X throttled the search, come back later and press «Capture ▶» with the same dates. It
    continues from the oldest tweet you already have, without asking again for what it downloaded.
 
 **It is private.** The extension uses the X session already open in your browser: your cookies never leave it. What it
 captures goes to the local service, which only listens on your computer, and stays in your xport data folder:
 `~/.local/share/xport` on Linux, `%LOCALAPPDATA%\xport` on Windows and `~/Library/Application Support/xport` on macOS.
-It is not sent anywhere else. «Borrar capturado 🗑» deletes
+It is not sent anywhere else. «Delete captured 🗑» deletes
 what was captured for one account; the cap's ledger is never deleted. Capture with an X account you can afford to lose:
 X may limit accounts that download many tweets.
 
 For now it only captures through X's search, which stalls at about a thousand results and allows about 50 searches
 every 15 minutes per X account. When a search stalls, the next one starts at the second of the oldest tweet it loaded,
-so a day with many tweets comes out whole. When the searches run out, the capture shows «Esperando a X» (waiting for X)
+so a day with many tweets comes out whole. When the searches run out, the capture shows «Waiting for X»
 until the time X gives and then carries on by itself from where it was.
 
 If the popup says it will not start because the service does not answer, start the service (see [Usage](#usage)) or
@@ -168,6 +168,9 @@ uv run tweet-extractor extract --account <account> --since 2025-01-01 --until 20
   included and `--until` is not (UTC days). Also: `--out-dir` (by default, `csv/` in the data folder), `--subwindow-days`, `--encoding` (`utf-8-sig` adds the
   BOM Excel expects) and `--delimiter` (`;` for an Excel set to a locale that uses the comma as decimal separator). If
   it stops, running it again skips the stretches it already finished.
+- Language: the popup and the page pick English or Spanish from the browser and have a selector at the top, which is
+  remembered. The CLI and the notifications follow the system language; `--lang en` or `--lang es` changes it in the
+  CLI, and `XPORT_LANG` in the service. The CSV is the same in both languages.
 
 ### With the official API
 

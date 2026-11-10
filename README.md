@@ -170,6 +170,9 @@ uv run tweet-extractor extract --account <cuenta> --since 2025-01-01 --until 202
   `--until` no (días UTC). Además: `--out-dir` (por defecto, `csv/` en la carpeta de datos), `--subwindow-days`, `--encoding` (`utf-8-sig` le agrega el BOM que Excel
   espera) y `--delimiter` (`;` para un Excel configurado en castellano). Si se corta, correrlo de nuevo saltea los
   tramos que ya terminó.
+- Idioma: el popup y la página eligen castellano o inglés según el navegador y tienen un selector arriba, que queda
+  recordado. La CLI y las notificaciones siguen el idioma del sistema; `--lang en` o `--lang es` lo cambia en la CLI,
+  y `XPORT_LANG` en el servicio. El CSV es el mismo en los dos idiomas.
 
 ### Con la API oficial
 
