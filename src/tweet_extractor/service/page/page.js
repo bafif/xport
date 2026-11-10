@@ -103,7 +103,11 @@ function show(day) {
 
 function showTime(stamp) {
   const when = new Date(stamp);
-  const hm = when.toLocaleTimeString(LOCALE(), { hour: '2-digit', minute: '2-digit' });
+  const options =
+    lang === 'es'
+      ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } // «18:40»
+      : { hour: 'numeric', minute: '2-digit' }; // «6:40 PM»
+  const hm = when.toLocaleTimeString(LOCALE(), options);
   return iso(when) === today() ? hm : `${show(iso(when))} ${hm}`;
 }
 
