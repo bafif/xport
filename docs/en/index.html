@@ -13,12 +13,31 @@
   <meta property="og:description" content="The tweets of an X account, between two dates, in a CSV. Without going over the cap in X's terms.">
   <meta property="og:image" content="https://bafif.github.io/xport/img/social.png">
   <meta name="twitter:card" content="summary_large_image">
+  <script>
+    // Language: Spanish if any of the browser's languages is Spanish; otherwise, this English page.
+    // The link to the other language saves the choice, which wins over detection. Search engines
+    // and visitors coming from the other version are never redirected, so there is no back and forth.
+    (function () {
+      var aca = "en", otra = "../";
+      var elegido = null;
+      try { elegido = localStorage.getItem("xport:idioma"); } catch (e) {}
+      var lista = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""];
+      var detectado = "en";
+      for (var i = 0; i < lista.length; i++) if (/^es(-|_|$)/i.test(lista[i] || "")) detectado = "es";
+      var quiere = elegido === "es" || elegido === "en" ? elegido : detectado;
+      var bot = /bot|crawl|spider|slurp|preview|lighthouse/i.test(navigator.userAgent);
+      var url = new URL(otra, location.href).href;
+      var previa = document.referrer.split(/[?#]/)[0];
+      var desdeLaOtra = previa === url || previa === url + "index.html";
+      if (quiere !== aca && !bot && !desdeLaOtra) location.replace(otra + location.hash);
+    })();
+  </script>
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
   <header>
     <a class="marca" href="./"><img src="../img/logo.svg" alt="" width="34" height="34">xport</a>
-    <a href="../" lang="es">Español</a>
+    <a href="../" lang="es" hreflang="es" data-idioma="es">Español</a>
   </header>
 
   <main>
@@ -42,13 +61,13 @@
     <h2>From the popup</h2>
     <div class="popup">
       <div class="marco esquina"><img src="../img/popup.png" width="360" height="616" loading="lazy"
-        alt="The xport popup with an example account, the date range, the cap usage and the link to the exported CSV. Its interface is in Spanish."></div>
+        alt="The xport popup, in Spanish in this screenshot, with an example account, the date range, the cap usage and the link to the exported CSV."></div>
       <ol>
-        <li><strong>Fill in</strong> the account without @ and the «Desde» (from) and «Hasta» (to) dates. The popup is
-          in Spanish.</li>
-        <li><strong>«Capturar ▶»</strong> opens the search in a tab and scrolls it by itself. X cuts each search at about
+        <li><strong>Fill in</strong> the account without @ and the «From» and «To» dates. The popup speaks English or
+          Spanish, whichever your browser uses, and has a selector at the top.</li>
+        <li><strong>«Capture ▶»</strong> opens the search in a tab and scrolls it by itself. X cuts each search at about
           a thousand results; the extension carries on from the last tweet it saw until the range is covered.</li>
-        <li><strong>«Exportar CSV»</strong> writes the file and says how many replies to other accounts it left out.</li>
+        <li><strong>«Export CSV»</strong> writes the file and says how many replies to other accounts it left out.</li>
         <li><strong>If X throttles the search,</strong> the capture waits until the time X gives and carries on by
           itself from where it was.</li>
       </ol>
@@ -94,6 +113,12 @@ account,2026-03-12T09:40:57+00:00,"This, yes.",,1899412345678901234,https://x.co
   </footer>
 
   <script>
+    // The language picked with the link is saved and wins over the browser's.
+    for (const a of document.querySelectorAll("a[data-idioma]")) {
+      a.addEventListener("click", () => {
+        try { localStorage.setItem("xport:idioma", a.dataset.idioma); } catch (e) {}
+      });
+    }
     // The repository comes from the page address (<owner>.github.io/<repo>/), so it also works in a fork.
     const [owner] = location.hostname.split(".");
     const [repo] = location.pathname.split("/").filter(Boolean);

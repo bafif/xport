@@ -13,12 +13,31 @@
   <meta property="og:description" content="Los tweets de una cuenta de X, entre dos fechas, en un CSV. Sin pasar el tope de los términos de X.">
   <meta property="og:image" content="https://bafif.github.io/xport/img/social.png">
   <meta name="twitter:card" content="summary_large_image">
+  <script>
+    // Idioma: castellano si alguno de los idiomas del navegador lo es; si no, la versión en inglés.
+    // El enlace al otro idioma guarda la elección, que manda sobre la detección. No redirige a los
+    // buscadores ni a quien llega desde la otra versión, así no hay idas y vueltas.
+    (function () {
+      var aca = "es", otra = "en/";
+      var elegido = null;
+      try { elegido = localStorage.getItem("xport:idioma"); } catch (e) {}
+      var lista = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""];
+      var detectado = "en";
+      for (var i = 0; i < lista.length; i++) if (/^es(-|_|$)/i.test(lista[i] || "")) detectado = "es";
+      var quiere = elegido === "es" || elegido === "en" ? elegido : detectado;
+      var bot = /bot|crawl|spider|slurp|preview|lighthouse/i.test(navigator.userAgent);
+      var url = new URL(otra, location.href).href;
+      var previa = document.referrer.split(/[?#]/)[0];
+      var desdeLaOtra = previa === url || previa === url + "index.html";
+      if (quiere !== aca && !bot && !desdeLaOtra) location.replace(otra + location.hash);
+    })();
+  </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
     <a class="marca" href="./"><img src="img/logo.svg" alt="" width="34" height="34">xport</a>
-    <a href="en/" lang="en">English</a>
+    <a href="en/" lang="en" hreflang="en" data-idioma="en">English</a>
   </header>
 
   <main>
@@ -45,7 +64,8 @@
       <div class="marco esquina"><img src="img/popup.png" width="360" height="616" loading="lazy"
         alt="El popup de xport con una cuenta de ejemplo, el rango de fechas, el uso del tope y el enlace al CSV exportado."></div>
       <ol>
-        <li><strong>Completás</strong> la cuenta sin @ y las fechas «Desde» y «Hasta».</li>
+        <li><strong>Completás</strong> la cuenta sin @ y las fechas «Desde» y «Hasta». El popup está en castellano o en
+          inglés, según tu navegador, y tiene un selector arriba.</li>
         <li><strong>«Capturar ▶»</strong> abre la búsqueda en una pestaña y la scrollea sola. X corta cada búsqueda en
           unos mil resultados; la extensión sigue desde el último tweet que vio hasta cubrir el rango.</li>
         <li><strong>«Exportar CSV»</strong> arma el archivo y dice cuántas respuestas a otras cuentas dejó afuera.</li>
@@ -93,6 +113,12 @@ cuenta,2026-03-12T09:40:57+00:00,"Esto, sí.",,1899412345678901234,https://x.com
   </footer>
 
   <script>
+    // El idioma elegido con el enlace queda guardado y manda sobre el del navegador.
+    for (const a of document.querySelectorAll("a[data-idioma]")) {
+      a.addEventListener("click", () => {
+        try { localStorage.setItem("xport:idioma", a.dataset.idioma); } catch (e) {}
+      });
+    }
     // El repo sale de la dirección de la página (<dueño>.github.io/<repo>/), así anda también en un fork.
     const [dueno] = location.hostname.split(".");
     const [repo] = location.pathname.split("/").filter(Boolean);
