@@ -2,10 +2,12 @@
 
 - `logo.svg`: el logo de xport, la X de bloques con la flecha que sale, redibujado en vector.
 - `flujo` (cómo funciona) y `tope` (la ventana de 24 horas), en castellano e inglés.
-- `social.svg`: la tarjeta que muestran GitHub y las redes cuando se comparte el link.
+- `social.svg` y `social.en.svg`: la tarjeta que muestran GitHub y las redes cuando se comparte el
+  link de la página en castellano o en inglés.
 
     python3 docs/img/generar.py
     rsvg-convert -w 1280 docs/img/social.svg -o docs/img/social.png
+    rsvg-convert -w 1280 docs/img/social.en.svg -o docs/img/social.en.png
     rsvg-convert -w 1024 -h 1024 docs/img/logo.svg -o extension/scripts/icon-master.png
     extension/scripts/make-icons.sh
 
@@ -93,6 +95,8 @@ TEXTOS = {
             "Every access is logged with its time and leaves the count after 24 hours. "
             "If it does not fit, the server waits and the extension stops."
         ),
+        "social": ["The tweets of an X account,", "between two dates, in a CSV."],
+        "social_datos": ("from:account  2026-01-01 → 2026-06-30", "account.csv"),
     },
 }
 
@@ -323,6 +327,7 @@ def social(t: dict) -> str:
 def main() -> None:
     (DIR / "logo.svg").write_text(logo(), encoding="utf-8")
     (DIR / "social.svg").write_text(social(TEXTOS["es"]), encoding="utf-8")
+    (DIR / "social.en.svg").write_text(social(TEXTOS["en"]), encoding="utf-8")
     for idioma, t in TEXTOS.items():
         (DIR / f"flujo.{idioma}.svg").write_text(flujo(t), encoding="utf-8")
         (DIR / f"tope.{idioma}.svg").write_text(tope(t), encoding="utf-8")

@@ -286,8 +286,8 @@ decisions:
   in a separate image.
 - Only FastAPI handles CORS; nginx adds no headers, so they are never duplicated.
 - The extension is built with [WXT](https://wxt.dev): one codebase for Chrome (MV3) and Firefox (MV2).
-- The images come from `docs/img/generar.py` (`python3 docs/img/generar.py`): the logo as a vector, the diagrams in
-  Spanish and English and the social card, so they are fixed in code and not in a drawing program. The extension's
+- The images come from `docs/img/generar.py` (`python3 docs/img/generar.py`): the logo as a vector, the diagrams and
+  the social card in Spanish and English, so they are fixed in code and not in a drawing program. The extension's
   icons come from the logo. `docs/img/popup.png` is the real popup with example data.
 - The look is X's in black ("Lights out"), with a touch of its own taken from the logo: the blue arrow corner marks
   what comes out, and the monospaced type is for data.

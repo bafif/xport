@@ -286,8 +286,8 @@ decisiones:
   uno, va en otra imagen.
 - El CORS lo maneja solo FastAPI; nginx no agrega encabezados, para no duplicarlos.
 - La extensión está hecha con [WXT](https://wxt.dev): un solo código para Chrome (MV3) y Firefox (MV2).
-- Las imágenes salen de `docs/img/generar.py` (`python3 docs/img/generar.py`): el logo en vector, los diagramas en
-  castellano y en inglés y la tarjeta para redes, así se corrigen en el código y no en un programa de dibujo. Los
+- Las imágenes salen de `docs/img/generar.py` (`python3 docs/img/generar.py`): el logo en vector, los diagramas y la
+  tarjeta para redes en castellano y en inglés, así se corrigen en el código y no en un programa de dibujo. Los
   íconos de la extensión salen del logo. `docs/img/popup.png` es el popup real con datos de ejemplo.
 - La estética es la de X en negro («Lights out»), con un toque propio que sale del logo: la esquina-flecha azul
   marca lo que sale y la letra monoespaciada va en los datos.
