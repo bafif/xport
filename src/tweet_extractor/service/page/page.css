@@ -225,3 +225,15 @@ td {
 details {
   margin-top: 0.75rem;
 }
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+#lang {
+  width: auto;
+  font-size: 0.9rem;
+}

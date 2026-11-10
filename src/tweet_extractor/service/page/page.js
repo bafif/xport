@@ -1,11 +1,60 @@
 // La página local de xport (punto 8 de docs/PLAN.md): encola capturas, muestra su avance y
-// el tope, y baja los CSV. Habla solo con el servicio que la sirve, en su mismo origen.
+// el tope, y baja los CSV. Habla solo con el servicio que la sirve, en su mismo origen. Todo
+// texto que se ve sale del catálogo del servicio con `t()`, en castellano o en inglés.
 // Las fechas del formulario son inclusivas («hasta el 31/12/2025 inclusive»); al servicio
 // el «hasta» le llega exclusivo, como en todo xport.
 
 const REFRESH_MS = 3000;
 const EXCEL_KEY = 'xport:excel';
+const LANG_KEY = 'xport:lang';
 const EXCEL_ES = { encoding: 'utf-8-sig', delimiter: ';' };
+
+// --- Idioma ---------------------------------------------------------------------------
+// Castellano si alguno de los idiomas del navegador lo es; si no, inglés. Lo que la persona
+// elige en el selector se guarda y manda sobre eso. Los textos son los del servicio
+// (`/i18n/<idioma>`, el mismo catálogo que usan sus mensajes).
+
+function detectLang(languages) {
+  return languages.some((l) => /^es(-|_|$)/i.test(l || '')) ? 'es' : 'en';
+}
+
+function savedLang() {
+  try {
+    const v = localStorage.getItem(LANG_KEY);
+    return v === 'es' || v === 'en' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+let lang =
+  savedLang() ??
+  detectLang(navigator.languages?.length ? navigator.languages : [navigator.language]);
+let strings = {};
+
+async function loadStrings() {
+  const res = await fetch(`/i18n/${lang}`);
+  strings = await res.json();
+}
+
+/** El texto de `key` con sus `{valores}`. */
+function t(key, params = {}) {
+  return (strings[key] ?? key).replace(/\{(\w+)\}/g, (m, name) =>
+    name in params ? String(params[name]) : m,
+  );
+}
+
+/** Un aviso guardado por el servicio (`{key, params}`), en el idioma de la página. */
+function note(n) {
+  if (!n) return '';
+  const params = {};
+  for (const [k, v] of Object.entries(n.params ?? {})) {
+    params[k] = typeof v === 'object' && v ? note(v) : typeof v === 'number' ? num(v) : v;
+  }
+  return t(n.key, params);
+}
+
+const LOCALE = () => (lang === 'es' ? 'es-AR' : 'en-US');
 
 const $ = (id) => document.getElementById(id);
 const form = $('form');
@@ -47,17 +96,18 @@ function addMonths(day, n) {
 }
 
 function show(day) {
+  if (lang !== 'es') return day; // AAAA-MM-DD: sin la duda de mes/día
   const [y, m, d] = day.split('-');
   return `${d}/${m}/${y}`;
 }
 
 function showTime(stamp) {
-  const t = new Date(stamp);
-  const hm = t.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-  return iso(t) === today() ? hm : `${show(iso(t))} ${hm}`;
+  const when = new Date(stamp);
+  const hm = when.toLocaleTimeString(LOCALE(), { hour: '2-digit', minute: '2-digit' });
+  return iso(when) === today() ? hm : `${show(iso(when))} ${hm}`;
 }
 
-const num = (n) => n.toLocaleString('es-AR');
+const num = (n) => n.toLocaleString(LOCALE());
 
 // --- Formulario -----------------------------------------------------------------------
 
@@ -68,11 +118,11 @@ function untilInclusive() {
 function renderRange() {
   const since = sinceInput.value;
   const until = untilInput.value;
-  let text = '«Hasta» vacío quiere decir hoy.';
+  let text = t('page.range_empty');
   if (since) {
     text = until
-      ? `Del ${show(since)} al ${show(until)}, los dos inclusive.`
-      : `Del ${show(since)} hasta hoy inclusive.`;
+      ? t('page.range', { since: show(since), until: show(until) })
+      : t('page.range_today', { since: show(since) });
   }
   $('range').textContent = text;
 }
@@ -92,8 +142,12 @@ for (const button of document.querySelectorAll('[data-months]')) {
 }
 
 const thisYear = new Date().getFullYear();
-for (let y = thisYear; y > thisYear - 8; y--) {
-  yearSelect.add(new Option(y === thisYear ? `${y} (hasta hoy)` : String(y), String(y)));
+function fillYears() {
+  while (yearSelect.options.length > 1) yearSelect.remove(1);
+  for (let y = thisYear; y > thisYear - 8; y--) {
+    const label = y === thisYear ? t('page.year_to_date', { year: y }) : String(y);
+    yearSelect.add(new Option(label, String(y)));
+  }
 }
 yearSelect.addEventListener('change', () => {
   const y = Number(yearSelect.value);
@@ -121,10 +175,10 @@ form.addEventListener('submit', async (event) => {
   const accounts = accountsInput.value.trim();
   const since = sinceInput.value;
   const last = untilInclusive();
-  if (!accounts) return say('Escribí al menos una cuenta.', true);
-  if (!since) return say('Elegí desde qué fecha.', true);
-  if (since > last) return say('«Desde» tiene que ser anterior a «Hasta».', true);
-  if (last > today()) return say('«Hasta» no puede ser una fecha que todavía no pasó.', true);
+  if (!accounts) return say(t('page.need_accounts'), true);
+  if (!since) return say(t('page.need_since'), true);
+  if (since > last) return say(t('page.order'), true);
+  if (last > today()) return say(t('page.future'), true);
   try {
     const body = { accounts: [accounts], since, until: addDays(last, 1) };
     const caps = await api('/captures', {
@@ -132,7 +186,7 @@ form.addEventListener('submit', async (event) => {
       body: JSON.stringify({ ...body, ...(excelInput.checked ? EXCEL_ES : {}) }),
     });
     const names = caps.map((c) => `@${c.account}`).join(', ');
-    say(`En la cola: ${names}. La extensión las toma de a una.`);
+    say(t('page.queued', { names }));
     accountsInput.value = '';
     await refresh();
   } catch (err) {
@@ -145,14 +199,18 @@ form.addEventListener('submit', async (event) => {
 async function api(path, init = {}) {
   const res = await fetch(path, {
     ...init,
-    headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+    headers: {
+      'content-type': 'application/json',
+      'accept-language': lang,
+      ...(init.headers ?? {}),
+    },
   });
   if (res.status === 204) return null;
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const detail = body?.detail;
     const text = Array.isArray(detail)
-      ? detail.map((d) => String(d.msg).replace(/^Value error, /, '')).join('. ')
+      ? detail.map((d) => String(d.msg)).join('. ')
       : detail || `${res.status} ${res.statusText}`;
     throw new Error(text);
   }
@@ -161,14 +219,6 @@ async function api(path, init = {}) {
 
 // --- Capturas -------------------------------------------------------------------------
 
-const STATES = {
-  queued: 'En cola',
-  running: 'En curso',
-  paused: 'En pausa',
-  waiting: 'Esperando a X',
-  done: 'Terminada',
-  stopped: 'Cortada',
-};
 const ORDER = { running: 0, paused: 0, waiting: 0, queued: 1, done: 2, stopped: 2 };
 const ACTIVE = ['running', 'paused', 'waiting'];
 
@@ -185,26 +235,24 @@ function el(tag, attrs = {}, ...children) {
 function progressText(c) {
   if (c.state === 'done') {
     if (c.csv === null) return null;
-    const left =
-      c.excluded_replies > 0
-        ? ` No incluye ${num(c.excluded_replies)} respuestas a otras cuentas: el CSV trae los ` +
-          'tweets propios y los hilos propios.'
-        : '';
-    return `${num(c.exported)} tweets en el CSV.${left}`;
+    const exported = t('page.exported', { count: num(c.exported) });
+    return c.excluded_replies > 0
+      ? `${exported} ${t('page.excluded', { count: num(c.excluded_replies) })}`
+      : exported;
   }
   if (c.state === 'queued') {
-    return c.captured > 0 ? `Ya hay ${num(c.captured)} tweets guardados de antes.` : null;
+    return c.captured > 0 ? t('page.saved_before', { count: num(c.captured) }) : null;
   }
-  if (c.oldest === null) return c.state === 'stopped' ? null : 'Todavía no entró ningún tweet.';
-  return `Vas por el ${show(c.oldest)}: ${c.percent} % del rango, ${num(c.captured)} tweets.`;
+  if (c.oldest === null) return c.state === 'stopped' ? null : t('page.nothing_yet');
+  return t('page.progress', { date: show(c.oldest), percent: c.percent, count: num(c.captured) });
 }
 
 async function cancel(c) {
-  if (!confirm(`¿Cancelar la captura de @${c.account}? Lo que ya se guardó queda.`)) return;
+  if (!confirm(t('page.cancel_confirm', { account: c.account }))) return;
   try {
     await api(`/captures/${c.id}/state`, {
       method: 'POST',
-      body: JSON.stringify({ state: 'stopped', note: 'La cancelaste.', by_user: true }),
+      body: JSON.stringify({ state: 'stopped', note: { key: 'note.cancelled' }, by_user: true }),
     });
   } catch (err) {
     alert(err.message);
@@ -218,17 +266,22 @@ function captureItem(c) {
   const progress = progressText(c);
   if (progress) lines.push(el('p', {}, progress));
   if (c.state === 'paused') {
-    lines.push(el('p', {}, 'Su pestaña de x.com quedó oculta: volvé a esa pestaña para que siga.'));
+    lines.push(el('p', {}, t('page.paused')));
   }
   if (c.state === 'waiting') {
-    const when = c.resume_at ? ` hasta las ${showTime(c.resume_at)}` : '';
     lines.push(
-      el('p', {}, `X frenó la búsqueda por un rato: espera${when} y sigue sola. No hace falta tocar nada.`),
+      el(
+        'p',
+        {},
+        c.resume_at
+          ? t('page.waiting_until', { time: showTime(c.resume_at) })
+          : t('page.waiting'),
+      ),
     );
   }
-  if (c.note) lines.push(el('p', { class: c.state === 'stopped' ? 'error' : '' }, c.note));
+  if (c.note) lines.push(el('p', { class: c.state === 'stopped' ? 'error' : '' }, note(c.note)));
   if (c.last_page_at && ACTIVE.includes(c.state)) {
-    lines.push(el('p', { class: 'hint' }, `Última página: ${showTime(c.last_page_at)}.`));
+    lines.push(el('p', { class: 'hint' }, t('page.last_page', { time: showTime(c.last_page_at) })));
   }
   if (ACTIVE.includes(c.state)) {
     const fill = el('div');
@@ -237,10 +290,10 @@ function captureItem(c) {
   }
   const actions = [];
   if (c.download_url) {
-    actions.push(el('a', { href: c.download_url, download: c.csv }, 'Bajar el CSV'));
+    actions.push(el('a', { href: c.download_url, download: c.csv }, t('page.download')));
   }
   if (c.state === 'queued' || ACTIVE.includes(c.state)) {
-    const b = el('button', { type: 'button' }, 'Cancelar');
+    const b = el('button', { type: 'button' }, t('page.cancel'));
     b.addEventListener('click', () => void cancel(c));
     actions.push(b);
   }
@@ -251,9 +304,9 @@ function captureItem(c) {
       'div',
       { class: 'row' },
       el('span', { class: 'who' }, `@${c.account}`),
-      el('span', { class: `state ${c.state}` }, STATES[c.state] ?? c.state),
+      el('span', { class: `state ${c.state}` }, t(`state.${c.state}`)),
     ),
-    el('p', { class: 'hint' }, `Del ${show(c.since)} al ${show(last)}, inclusive.`),
+    el('p', { class: 'hint' }, t('page.item_range', { since: show(c.since), until: show(last) })),
     ...lines,
     actions.length ? el('div', { class: 'row' }, ...actions) : null,
   );
@@ -271,12 +324,10 @@ function renderQueue(caps) {
 
 function renderGate(g, days) {
   const pct = (g.usage / g.hard_cap) * 100;
+  const percent = pct.toLocaleString(LOCALE(), { maximumFractionDigits: 1 });
   $('gate').textContent =
-    `${num(g.usage)} de ${num(g.hard_cap)} tweets vistos en las últimas 24 horas ` +
-    `(${pct.toLocaleString('es-AR', { maximumFractionDigits: 1 })} %). ` +
-    (g.remaining > 0
-      ? `Quedan ${num(g.remaining)}.`
-      : 'Está lleno: las capturas esperan a que salgan los más viejos.');
+    `${t('page.gate', { usage: num(g.usage), cap: num(g.hard_cap), percent })} ` +
+    (g.remaining > 0 ? t('page.gate_left', { count: num(g.remaining) }) : t('page.gate_full'));
   $('gate-bar').style.width = `${Math.min(100, pct)}%`;
   $('days').replaceChildren(
     ...days.map((d) =>
@@ -287,17 +338,12 @@ function renderGate(g, days) {
 
 // Quién captura: el navegador propio del servicio (sin ventana) o la extensión del navegador
 // de siempre, que necesita la pestaña a la vista (punto 13 de docs/PLAN.md).
-const BROWSER_TEXT = {
-  idle: 'Las hace el navegador propio de xport, sin ninguna ventana: no tenés que tocar nada.',
-  running: 'El navegador propio de xport está capturando, sin ninguna ventana a la vista.',
-  login: 'Iniciá sesión en X en la ventana de Chrome de xport que se abrió (una sola vez).',
-};
+const OWN_BROWSER = ['idle', 'running', 'login'];
 
 function renderBrowser(b) {
-  $('browser').textContent =
-    BROWSER_TEXT[b.state] ??
-    `${b.note ? `${b.note} ` : ''}La extensión de tu navegador abre la búsqueda en una pestaña: ` +
-      'dejala abierta y a la vista mientras captura.';
+  $('browser').textContent = OWN_BROWSER.includes(b.state)
+    ? t(`page.browser_${b.state}`)
+    : `${b.note ? `${note(b.note)} ` : ''}${t('page.browser_extension')}`;
 }
 
 // --- Ciclo ----------------------------------------------------------------------------
@@ -319,6 +365,38 @@ async function refresh() {
   }
 }
 
-renderRange();
+// --- Textos fijos y selector de idioma --------------------------------------------------
+
+function applyStrings() {
+  document.documentElement.lang = lang;
+  for (const node of document.querySelectorAll('[data-i18n]')) {
+    node.textContent = t(node.dataset.i18n);
+  }
+  for (const node of document.querySelectorAll('[data-i18n-aria-label]')) {
+    node.setAttribute('aria-label', t(node.dataset.i18nAriaLabel));
+  }
+  $('lang').value = lang;
+  fillYears();
+  renderRange();
+}
+
+$('lang').addEventListener('change', async () => {
+  lang = $('lang').value === 'es' ? 'es' : 'en';
+  try {
+    localStorage.setItem(LANG_KEY, lang);
+  } catch {
+    // sin almacenamiento, la elección dura lo que dure la pestaña
+  }
+  await loadStrings();
+  applyStrings();
+  await refresh();
+});
+
+try {
+  await loadStrings();
+} catch {
+  $('offline').hidden = false;
+}
+applyStrings();
 void refresh();
 setInterval(() => void refresh(), REFRESH_MS);

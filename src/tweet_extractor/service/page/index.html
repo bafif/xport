@@ -7,72 +7,79 @@
     <link rel="stylesheet" href="/page/page.css" />
     <script type="module" src="/page/page.js"></script>
   </head>
+  <!-- Los textos salen de /i18n/<idioma> (src/tweet_extractor/locales): cada elemento dice su
+       clave en data-i18n, y page.js los llena en el idioma de la persona. -->
   <body>
     <header>
-      <h1>xport</h1>
-      <p class="hint">Los tweets de una o varias cuentas de X entre dos fechas, un CSV por cuenta.</p>
+      <div class="top">
+        <h1>xport</h1>
+        <select id="lang" data-i18n-aria-label="page.lang">
+          <option value="es" lang="es" data-i18n="lang.es"></option>
+          <option value="en" lang="en" data-i18n="lang.en"></option>
+        </select>
+      </div>
+      <p class="hint" data-i18n="page.tagline"></p>
     </header>
 
-    <p id="offline" class="banner" role="alert" hidden>
-      El servicio de xport no responde. Si lo cerraste, volvé a abrirlo; esta página se actualiza sola.
-    </p>
+    <p id="offline" class="banner" role="alert" data-i18n="page.offline" hidden></p>
 
     <main>
       <section aria-labelledby="new-title">
-        <h2 id="new-title">Nueva captura</h2>
+        <h2 id="new-title" data-i18n="page.new"></h2>
         <form id="form" novalidate>
-          <label for="accounts">Cuentas</label>
+          <label for="accounts" data-i18n="page.accounts"></label>
           <input id="accounts" autocomplete="off" spellcheck="false" placeholder="nasa, esa" />
-          <p class="hint">Una o varias, separadas por comas o espacios. Sin @.</p>
+          <p class="hint" data-i18n="page.accounts_hint"></p>
 
           <div class="dates">
             <div>
-              <label for="since">Desde</label>
+              <label for="since" data-i18n="page.since"></label>
               <input id="since" type="date" />
             </div>
             <div>
-              <label for="until">Hasta</label>
+              <label for="until" data-i18n="page.until"></label>
               <input id="until" type="date" />
             </div>
           </div>
-          <p id="range" class="hint">«Hasta» vacío quiere decir hoy.</p>
+          <p id="range" class="hint"></p>
 
-          <div class="shortcuts" role="group" aria-label="Atajos de fechas">
-            <button type="button" data-months="1">Último mes</button>
-            <button type="button" data-months="12">Último año</button>
-            <select id="year" aria-label="Un año entero">
-              <option value="">Un año entero…</option>
+          <div class="shortcuts" role="group" data-i18n-aria-label="page.shortcuts">
+            <button type="button" data-months="1" data-i18n="page.last_month"></button>
+            <button type="button" data-months="12" data-i18n="page.last_year"></button>
+            <select id="year" data-i18n-aria-label="page.year">
+              <option value="" data-i18n="page.year_pick"></option>
             </select>
           </div>
 
-          <label class="check"><input id="excel" type="checkbox" /> Para Excel en castellano</label>
+          <label class="check"
+            ><input id="excel" type="checkbox" /> <span data-i18n="page.excel"></span
+          ></label>
 
-          <button type="submit" class="primary">Capturar</button>
+          <button type="submit" class="primary" data-i18n="page.capture"></button>
           <p id="form-msg" role="status"></p>
         </form>
       </section>
 
       <section aria-labelledby="queue-title">
-        <h2 id="queue-title">Capturas</h2>
-        <p id="browser" class="hint">
-          Las hace el navegador con la extensión de xport, de a una cuenta por vez.
-        </p>
+        <h2 id="queue-title" data-i18n="page.captures"></h2>
+        <p id="browser" class="hint" data-i18n="page.browser_default"></p>
         <ol id="queue"></ol>
-        <p id="queue-empty" class="hint" hidden>Todavía no hay capturas.</p>
+        <p id="queue-empty" class="hint" data-i18n="page.empty" hidden></p>
       </section>
 
       <section aria-labelledby="gate-title">
-        <h2 id="gate-title">Tope de 24 horas</h2>
+        <h2 id="gate-title" data-i18n="page.gate_title"></h2>
         <p id="gate"></p>
         <div class="bar" aria-hidden="true"><div id="gate-bar"></div></div>
-        <p class="hint">
-          xport nunca pasa de 900.000 tweets vistos en 24 horas: X penaliza pasar del millón.
-        </p>
+        <p class="hint" data-i18n="page.gate_hint"></p>
         <details>
-          <summary>Lo visto por día</summary>
+          <summary data-i18n="page.per_day"></summary>
           <table>
             <thead>
-              <tr><th scope="col">Día</th><th scope="col" class="num">Tweets vistos</th></tr>
+              <tr>
+                <th scope="col" data-i18n="page.day"></th>
+                <th scope="col" class="num" data-i18n="page.seen"></th>
+              </tr>
             </thead>
             <tbody id="days"></tbody>
           </table>
