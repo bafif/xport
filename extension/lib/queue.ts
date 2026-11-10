@@ -6,7 +6,14 @@
 // X y en paralelo no rinde.
 
 import type { CaptureOut, ProgressResult } from './api';
-import { type CrawlState, dayStart, epochSeconds, reachedSince, showSeconds } from './autoscroll';
+import {
+  type CrawlState,
+  dayStart,
+  epochSeconds,
+  reachedSince,
+  showSeconds,
+  untilTime,
+} from './autoscroll';
 
 export const QUEUE_ALARM = 'xport-queue';
 export const POLL_MINUTES = 0.5; // el mínimo de Chrome para `alarms`
@@ -78,6 +85,28 @@ export function decideQueue(crawl: CrawlState | null, next: CaptureOut | null): 
     return next?.id === crawl.captureId ? 'keep' : 'stop-crawl';
   }
   return next ? 'start' : 'idle';
+}
+
+/** La cota para volver a abrir la búsqueda de un crawl (la pestaña se cerró, el navegador se
+ *  reinició o pasó la espera a X): la del crawl, o la del tweet más viejo guardado más un
+ *  segundo si es más baja. Lo que el crawl avanzó scrolleando dentro de una búsqueda no queda
+ *  en su estado, solo en lo guardado; sin esto, la búsqueda vuelve a pedirse desde arriba y
+ *  regasta el cupo de X y el tope. Puro y testeable. */
+export function resumeBound(crawl: CrawlState, oldest: string | null): number {
+  const bound = untilTime(crawl);
+  const s = oldest === null ? null : epochSeconds(oldest);
+  return s === null ? bound : Math.min(bound, s + 1);
+}
+
+/** Pestaña → background: «¿crawleo yo?». Al reiniciarse el navegador puede haber dos pestañas
+ *  en la búsqueda de la captura (la que restauró el navegador y la que reabrió el background):
+ *  crawlea una sola. */
+export const CLAIM_MSG = 'xport-claim' as const;
+
+/** ¿Puede la pestaña `tabId` crawlear la captura? Sí, salvo que otra pestaña viva y en la
+ *  búsqueda ya sea la de la captura. Puro y testeable. */
+export function claimAllowed(stored: unknown, tabId: number, storedIsCrawling: boolean): boolean {
+  return typeof stored !== 'number' || stored === tabId || !storedIsCrawling;
 }
 
 /** Un crawl que sigue: `waiting` mientras espera a X, `resume` cuando ya pasó la hora y hay

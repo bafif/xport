@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 
 import { type CaptureOut, type CaptureReport, XportClient } from '../lib/api';
-import { AUTOSCROLL_MSG, crawlUrl, type CrawlState } from '../lib/autoscroll';
+import { AUTOSCROLL_MSG, crawlUrl, type CrawlState, narrowed, untilTime } from '../lib/autoscroll';
 import {
   accountFromUrl,
   CAPTURE_SOURCE,
@@ -17,6 +17,8 @@ import {
 } from '../lib/capture';
 import { decideIngest, type IngestFlags, MAX_PAGES_PER_POST, stopNotice } from '../lib/ingest';
 import {
+  CLAIM_MSG,
+  claimAllowed,
   CRAWL_MSG,
   type CrawlMsg,
   decideQueue,
@@ -24,6 +26,7 @@ import {
   QUEUE_ALARM,
   QUEUE_MSG,
   reportedState,
+  resumeBound,
   startPlan,
   type StartPlan,
   waitStep,
@@ -234,6 +237,7 @@ export default defineBackground(() => {
     const m = msg as { type?: unknown } | null;
     if (m?.type === QUEUE_MSG) return serial(pollQueue);
     if (m?.type === CRAWL_MSG) return serial(() => onCrawlEvent(msg as CrawlMsg, sender.tab?.id));
+    if (m?.type === CLAIM_MSG) return serial(() => claim(sender.tab?.id));
     return undefined; // otros mensajes: no respondemos
   });
 
@@ -333,9 +337,49 @@ export default defineBackground(() => {
         return;
       }
     }
-    console.debug('[xport] la pestaña de la captura no está: la vuelvo a abrir');
-    const tab = await browser.tabs.create({ url: crawlUrl(crawl) });
+    const fresh = await withFrontier(crawl);
+    if (fresh !== crawl) await browser.storage.local.set({ [STORAGE_CRAWL]: fresh });
+    console.debug('[xport] la pestaña de la captura no está: la vuelvo a abrir en', crawlUrl(fresh));
+    const tab = await browser.tabs.create({ url: crawlUrl(fresh) });
     await browser.storage.local.set({ [STORAGE_QUEUE_TAB]: tab.id });
+  }
+
+  /** El crawl con la cota bajada al tweet más viejo ya guardado, si es más bajo que la suya:
+   *  lo avanzado scrolleando dentro de una búsqueda solo queda en lo guardado (ver
+   *  `resumeBound`). Sin servicio, el mismo crawl. */
+  async function withFrontier(crawl: CrawlState): Promise<CrawlState> {
+    try {
+      const prog = await (await client()).progress({
+        account: crawl.account,
+        since: crawl.since,
+        until: crawl.until,
+      });
+      const bound = resumeBound(crawl, prog.oldest);
+      return bound < untilTime(crawl) ? narrowed(crawl, bound) : crawl;
+    } catch {
+      return crawl;
+    }
+  }
+
+  /** ¿Crawlea la pestaña `tabId`? Al reiniciarse el navegador puede haber dos en la búsqueda de
+   *  la captura (la restaurada y la que reabrió `ensureTab`): crawlea una sola, la que ya era
+   *  de la captura si sigue viva en una búsqueda; si no, la que pregunta. */
+  async function claim(tabId: number | undefined): Promise<boolean> {
+    if (tabId === undefined) return true;
+    const stored: unknown = (await browser.storage.local.get(STORAGE_QUEUE_TAB))[STORAGE_QUEUE_TAB];
+    let crawling = false;
+    if (typeof stored === 'number' && stored !== tabId) {
+      crawling = await browser.tabs
+        .sendMessage(stored, { type: AUTOSCROLL_MSG, action: 'ping' })
+        .then((r: unknown) => r === true)
+        .catch(() => false);
+    }
+    if (!claimAllowed(stored, tabId, crawling)) {
+      console.debug('[xport] otra pestaña ya crawlea la captura: la', tabId, 'no arranca');
+      return false;
+    }
+    await browser.storage.local.set({ [STORAGE_QUEUE_TAB]: tabId });
+    return true;
   }
 
   /** Un crawl que sigue: si espera a X, nada hasta la hora; pasada la hora, vuelve a la
@@ -345,8 +389,9 @@ export default defineBackground(() => {
       case 'waiting':
         return;
       case 'resume': {
-        const resumed: CrawlState = { ...crawl };
-        delete resumed.waitUntil;
+        const waited: CrawlState = { ...crawl };
+        delete waited.waitUntil;
+        const resumed = await withFrontier(waited);
         console.debug('[xport] pasó la espera a X: retomo', crawlUrl(resumed));
         await browser.storage.local.set({ [STORAGE_CRAWL]: resumed });
         await browser.storage.local.remove(STORAGE_PAUSED);

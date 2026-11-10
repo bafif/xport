@@ -25,7 +25,7 @@ import {
   untilTime,
 } from '../lib/autoscroll';
 import { STORAGE_CRAWL, STORAGE_PAUSED, STORAGE_STATUS } from '../lib/capture';
-import { CRAWL_MSG, type CrawlEvent, type CrawlMsg } from '../lib/queue';
+import { CLAIM_MSG, CRAWL_MSG, type CrawlEvent, type CrawlMsg } from '../lib/queue';
 import { decideRate, type RateInfo, rateFromMsg, type RateMsg, waitingNotice } from '../lib/rate';
 
 // Mundo ISOLATED: conduce el crawl adaptativo (patrón C). Scrollea la búsqueda hasta
@@ -157,6 +157,10 @@ export default defineContentScript({
       if (state.waitUntil !== undefined && state.waitUntil > Date.now()) return;
       // Solo arrancamos si esta pestaña ES la búsqueda en curso (no secuestramos otra).
       if (!matchesSearch(location.href, state)) return;
+      // Y si no hay otra pestaña crawleando la misma captura (el navegador restauró una y el
+      // background reabrió otra). Sin respuesta del background, arranca igual.
+      const mine: unknown = await browser.runtime.sendMessage({ type: CLAIM_MSG }).catch(() => true);
+      if (mine === false) return;
       await sleep(AUTOSTART_SETTLE_MS);
       if (!running) void run(state);
     }

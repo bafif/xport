@@ -365,6 +365,26 @@ hora. Lo que cambia está en los puntos 11 y 12, más abajo. Además:
   background le pregunta a la pestaña de la captura si quedó en una búsqueda vieja de la misma cuenta (`isStaleSearch`)
   y, si sí, la lleva a la actual. Si la persona usa esa pestaña para otra cosa de x.com, no la toca.
 
+**10 de noviembre, a la noche, después: la Fase 4 contra x.com.** Bautista verificó la cuenta aparte en una
+ventana y la prueba siguió. Como la máquina andaba corta de memoria y un proceso en segundo plano se corta solo, el
+navegador corrió en tramos de diez minutos: cada tramo lo cerraba y lo volvía a abrir, y la captura seguía desde lo que
+quedaba. El 9 de noviembre de @AmazonHelp salió entero en 53 minutos: 2.830 tweets, las 24 horas, el hueco más largo de
+8 minutos a las 23:29. El CSV trae 17: el resto son respuestas a conversaciones ajenas. En el medio:
+
+- La primera búsqueda trajo 880 tweets (44 páginas) sin frenarse; lo que la cortó fue el cupo. Es otra señal de que el
+  «techo de mil» de junio era el rate limit.
+- Con menos de 10 búsquedas en el cupo, el ritmo bajó solo a una página cada 80 segundos. Al llegar a cero, la captura
+  quedó «esperando a X» con la hora del reset, la pestaña pasó a la página local y, pasada la hora, volvió a la búsqueda.
+  Pasó tres veces.
+- Un día de @nasa terminó solo: la búsqueda hasta el segundo del tweet más viejo no trajo nada más y la captura cerró
+  con su CSV en 49 segundos.
+- Los reinicios mostraron dos errores, ya arreglados. Al reabrir la búsqueda se volvía a pedir desde arriba, porque lo
+  avanzado scrolleando dentro de una búsqueda no queda en el estado del crawl: ahora el background baja la cota al tweet
+  más viejo guardado (`resumeBound`) al reabrir la pestaña o al terminar una espera. Y el navegador restaura la pestaña
+  de la captura mientras el background abre otra, así que dos pestañas crawleaban lo mismo: ahora cada pestaña
+  reclama la captura antes de arrancar (`claim`) y crawlea una sola.
+- El tope contó 4.145 accesos en toda la prueba, con los sondeos y lo que se volvió a pedir.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada
@@ -375,8 +395,8 @@ con la pestaña oculta, el corte por cambio
 de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Lo mismo la Fase 3
 (10 de noviembre): la cola, la página local y las notificaciones tienen tests y una prueba de humo contra el servicio,
 pero no pasaron por un navegador. La Fase 4 (10 de noviembre), la espera a X ante el rate limit y la búsqueda al
-segundo, también tiene tests; contra x.com anduvo hasta el achique al segundo, pero X pidió verificar la cuenta antes
-de pasar por un 429 o por un día de más de mil tweets. Los tests corren sin red,
+segundo, quedó probada contra x.com: un día de @AmazonHelp con 2.830 tweets salió entero, pasando tres veces por el
+límite de búsquedas de X. Los tests corren sin red,
 mypy en modo estricto y ruff pasan, y la imagen Alpine y la extensión se construyen en CI.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
@@ -398,9 +418,10 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Captura in-page: parche de `fetch` y XHR, puente, relay en lotes de 20 páginas | `extension/entrypoints/` | real (junio y 6/11) |
 | Crawl adaptativo: scroll, «Reintentar», recarga con backoff, achique del rango al segundo del tweet más viejo, reanudación desde la base | `autoscroll.content.ts`, `POST /progress` | real; funciones puras con vitest |
 | Cortes del crawl: sin servicio, tope lleno, 429, `over_cap`, rechazo, veinte páginas sin registrar | `lib/ingest.ts`, `background.ts`, popup | vitest de `decideIngest`; real sin ventana (10/11): el servicio caído, el popup sin servicio y el tope lleno |
-| Búsqueda al segundo y en UTC (`since_time:`/`until_time:`): la cota baja al segundo del tweet más viejo y el crawl termina; ni días saturados ni primeras horas perdidas | `lib/autoscroll.ts` (`nextBound`), `lib/queue.ts` (`startPlan`), `POST /progress` | vitest y tests; real (10/11): la búsqueda nueva, la reanudación y un achique al segundo; **un día de más de mil, sin probar** |
+| Búsqueda al segundo y en UTC (`since_time:`/`until_time:`): la cota baja al segundo del tweet más viejo y el crawl termina; ni días saturados ni primeras horas perdidas | `lib/autoscroll.ts` (`nextBound`), `lib/queue.ts` (`startPlan`), `POST /progress` | vitest y tests; real (10/11): un día de 2.830 tweets salió entero, las 24 horas |
 | Pausa del crawl con la pestaña oculta, con aviso en el popup | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest de `decideStep`; **sin prueba a mano** |
-| Espera a X: con un 429 o sin cupo, la captura espera al reset fuera de la búsqueda y sigue sola; con pocas búsquedas, reparte las que quedan | `lib/rate.ts`, `capture-main.content.ts`, `autoscroll.content.ts`, `background.ts`, estado `waiting` de la cola | vitest de `decideRate` y `waitStep`; tests de la cola; **sin probar contra x.com** |
+| Espera a X: con un 429 o sin cupo, la captura espera al reset fuera de la búsqueda y sigue sola; con pocas búsquedas, reparte las que quedan | `lib/rate.ts`, `capture-main.content.ts`, `autoscroll.content.ts`, `background.ts`, estado `waiting` de la cola | vitest de `decideRate` y `waitStep`; tests de la cola; real (10/11): tres esperas al reset, cada una sola y con la pestaña en la página local |
+| Reinicio del navegador a mitad de una captura: retoma desde lo guardado, no desde arriba, y crawlea una sola pestaña | `background.ts` (`withFrontier`, `claim`), `lib/queue.ts` (`resumeBound`, `claimAllowed`) | vitest; real (10/11): cada tramo de la prueba reinició el navegador |
 | Cambio de forma de x.com: `rejected` y `format_changed` en `/ingest`, ejemplo en el log, corte del crawl | `service/ingest.py`, `lib/ingest.ts` | tests con una página de forma desconocida; vitest |
 | CSV para Excel en castellano desde `/export` y el popup | `service/schemas.py`, popup | tests (BOM y `;`); **sin abrirlo en Excel** |
 | Un solo registro del tope: carpeta de datos por usuario, `.env` del repo, mudanza de `data/`, no arranca si ya corre otro xport | `config.py`, `datadir.py`, `service/app.py` | tests (la CLI desde dos carpetas, la mudanza, la suma de dos registros, el segundo servicio) |
@@ -561,11 +582,10 @@ Falta pasarla por un navegador y lo que dice cada punto:
     (la búsqueda no lo pide; hay que abrir el perfil) y mapearlo en `mappers/` para distinguir los tres casos. Los tests
     necesitan respuestas reales de x.com, así que va junto con la prueba del punto 6. Mediano.
 
-### Fase 4: el crawl (en el código el 10 de noviembre; falta probarla contra x.com)
+### Fase 4: el crawl (hecha el 10 de noviembre)
 
-Está en el código y con tests (ver «Cómo lo fui construyendo»). Contra x.com anduvo hasta el achique al segundo, pero
-X pidió verificar la cuenta aparte antes de pasar por un 429 o por un día de más de mil tweets, así que siguen
-abiertos los dos «listo cuando». Los números siguen, porque el resto del plan los cita.
+Está en el código, con tests, y probada contra x.com (ver «Cómo lo fui construyendo»). Los números siguen, porque el
+resto del plan los cita.
 
 11. **Esperar a X en vez de insistir.** Hecho: el parche de `fetch` y XHR pasa aparte el status y los `x-rate-limit-*`
     de cada respuesta de `SearchTimeline` (HTTP, no GraphQL: la regla 4 se mantiene), y `decideRate` (`lib/rate.ts`)
@@ -574,15 +594,17 @@ abiertos los dos «listo cuando». Los números siguen, porque el resto del plan
     de la búsqueda a la página local, para que x.com no siga reintentando, y la vuelve a la búsqueda cuando pasa la hora
     (lo mira en la vuelta de la cola, cada medio minuto). La captura queda «esperando a X hasta las 18:40» (`waiting`,
     con `resume_at`) en la cola, la página y el popup, y no se notifica: sigue sola. Con menos de 10 búsquedas en el
-    cupo, el crawl reparte las que quedan hasta el reset, con una espera de hasta dos minutos por respuesta. Falta: una
-    captura que pase por un 429.
+    cupo, el crawl reparte las que quedan hasta el reset, con una espera de hasta dos minutos por respuesta. Probado: la
+    captura de un día de @AmazonHelp agotó el cupo tres veces, esperó cada vez al reset y siguió sola. Con el ritmo
+    repartido, X casi no llega a contestar 429: el crawl ve el cupo en cero antes, y espera igual.
 12. **Partir los días saturados por hora.** Hecho, y al segundo: la búsqueda pasa a `from:<cuenta> since_time:<s>
     until_time:<s>`, en segundos UTC, y cuando se asienta antes de `since` la cota baja al segundo del tweet más viejo
     cargado más uno: lo re-incluye, así no se pierde otro del mismo segundo, sea `until_time:` exclusivo o no. Si una
     búsqueda no trae nada más viejo que ese tweet, el rango terminó (con un «Reintentar» a la vista, en cambio, recarga).
     `/progress` devuelve la hora del más viejo y ya no `oldest_count`, y la reanudación arranca ahí. Se fueron el umbral
-    de 800 y el salteo de días, y con ellos las primeras horas (UTC) del día de inicio que se perdían. Falta: un día con
-    más de mil tweets que salga entero.
+    de 800 y el salteo de días, y con ellos las primeras horas (UTC) del día de inicio que se perdían. Probado: el 9 de
+    noviembre de @AmazonHelp salió entero, 2.830 tweets con las 24 horas cubiertas, y la captura terminó sola cuando la
+    búsqueda hasta las 00:00:32 no trajo nada más viejo.
 
 ### Fase 5: el navegador invisible
 

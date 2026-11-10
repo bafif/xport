@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { CaptureOut, ProgressResult } from '../lib/api';
 import { dayStart, isCaptureSearch, isStaleSearch, narrowed, searchUrl } from '../lib/autoscroll';
-import { decideQueue, reportedState, startPlan, waitStep } from '../lib/queue';
+import {
+  claimAllowed,
+  decideQueue,
+  reportedState,
+  resumeBound,
+  startPlan,
+  waitStep,
+} from '../lib/queue';
 
 const prog = (over: Partial<ProgressResult> = {}): ProgressResult => ({
   account: 'nasa',
@@ -51,6 +58,28 @@ describe('startPlan', () => {
     expect(startPlan(prog({ oldest: '2024-01-01T00:00:00Z' }), '2024-01-01', '2025-01-01')).toEqual({
       kind: 'done',
     });
+  });
+});
+
+describe('resumeBound', () => {
+  const crawl = { account: 'amazonhelp', since: '2026-11-09', until: '2026-11-10', captureId: 5 };
+  it('al reabrir, sigue desde el tweet más viejo guardado y no desde arriba', () => {
+    // El crawl iba por las 12:00 dentro de la primera búsqueda; su cota sigue en el fin del día.
+    expect(resumeBound(crawl, '2026-11-09T12:00:00Z')).toBe(dayStart('2026-11-09') + 12 * 3600 + 1);
+  });
+  it('sin nada guardado, o con lo guardado más arriba, la cota del crawl', () => {
+    expect(resumeBound(crawl, null)).toBe(dayStart('2026-11-10'));
+    const lower = { ...crawl, untilTime: dayStart('2026-11-09') + 3600 };
+    expect(resumeBound(lower, '2026-11-09T12:00:00Z')).toBe(dayStart('2026-11-09') + 3600);
+  });
+});
+
+describe('claimAllowed', () => {
+  it('crawlea una sola pestaña por captura', () => {
+    expect(claimAllowed(undefined, 7, false)).toBe(true); // nadie la tenía
+    expect(claimAllowed(7, 7, true)).toBe(true); // ya era suya (p. ej., al narrowar)
+    expect(claimAllowed(3, 7, true)).toBe(false); // otra viva y en la búsqueda
+    expect(claimAllowed(3, 7, false)).toBe(true); // la otra se cerró o ya no está en la búsqueda
   });
 });
 
