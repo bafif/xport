@@ -628,7 +628,9 @@ resto del plan los cita.
     en la cola, arranca el navegador adentro de cage (X rechaza `--headless` con un 403), le carga la extensión con
     `Extensions.loadUnpacked` por el pipe y le deja la marca `xport:runner` con `Extensions.setStorageItems` desde su
     service worker. Cada minuto mira la sesión: si falta la cookie o una pestaña quedó en el inicio de sesión de X,
-    borra las cookies y abre el perfil en una ventana chica (`--app`) hasta que la sesión aparece; si una pestaña queda
+    borra las cookies y abre el perfil en una ventana común de Chrome, sin el pipe ni ninguna opción especial, hasta que
+    la cookie de sesión aparece en la base de cookies del perfil (una ventana chica en modo aplicación y con el pipe no
+    dejaba terminar el inicio de sesión con una cuenta real); si una pestaña queda
     en una página de error dos veces seguidas, lo reinicia, y a la tercera falla le devuelve la cola a la extensión del
     navegador de siempre. Sin cage (Windows, macOS, o Linux sin instalarlo) no se usa, y la captura sigue como antes.
     Falta: Windows y macOS (la ventana propia sin foco del plan B), y sacar el native host y el popup cuando el

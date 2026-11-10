@@ -31,6 +31,7 @@ import logging
 import os
 import secrets
 import shutil
+import sqlite3
 import sys
 import time
 from collections.abc import Awaitable, Callable, Mapping
@@ -247,6 +248,79 @@ async def launch(
     return Browser(process=process, cdp=PipeCdp(reader, to_browser_w), headless=headless)
 
 
+class LoginWindow(Protocol):
+    """El navegador abierto para iniciar sesión (un `asyncio.subprocess.Process`)."""
+
+    @property
+    def returncode(self) -> int | None: ...
+
+    def terminate(self) -> None: ...
+
+    def kill(self) -> None: ...
+
+    async def wait(self) -> int: ...
+
+
+LoginLauncher = Callable[[Path, str], Awaitable[LoginWindow]]
+SessionProbe = Callable[[Path], bool]
+
+
+async def launch_login_window(binary: Path, profile: Path, url: str) -> LoginWindow:
+    """Abre el perfil de xport en una ventana común de Chrome, con pestañas y ventanas
+    emergentes, y sin canal de depuración ni ninguna opción especial: para X es un Chrome
+    como cualquier otro. Una ventana chica en modo aplicación y con el pipe enganchado no
+    dejaba terminar el inicio de sesión con una cuenta real (10/11/2026)."""
+    return await asyncio.create_subprocess_exec(
+        str(binary),
+        f"--user-data-dir={profile}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--new-window",
+        url,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def profile_has_session(profile: Path) -> bool:
+    """Si la base de cookies del perfil tiene la de sesión de X. Mira solo que exista, no su
+    valor. Lee una copia, dentro del mismo perfil (700), para no chocar con el navegador
+    que la está usando. Chrome la escribe cada tanto y al cerrarse."""
+    db = profile / "Default" / "Cookies"
+    if not db.is_file():
+        return False
+    copy = profile / ".xport-sesion"
+    try:
+        shutil.copyfile(db, copy)
+        with contextlib.closing(sqlite3.connect(f"file:{copy}?mode=ro", uri=True)) as con:
+            row = con.execute(
+                "SELECT 1 FROM cookies WHERE name = ? AND (host_key = 'x.com' "
+                "OR host_key LIKE '%.x.com') LIMIT 1",
+                (SESSION_COOKIE,),
+            ).fetchone()
+        return row is not None
+    except (OSError, sqlite3.Error):
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            copy.unlink()
+
+
+async def close_login_window(window: LoginWindow) -> None:
+    """La cierra como al cerrar la ventana (Chrome guarda las cookies al salir)."""
+    if window.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            window.terminate()
+        try:
+            await asyncio.wait_for(window.wait(), timeout=15)
+        except TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                window.kill()
+            await window.wait()
+
+
 # ── Lo que hace el servicio con el navegador ─────────────────────────────────────────
 
 
@@ -285,6 +359,8 @@ class BrowserRunner:
         notifier: Notify,
         *,
         launcher: Launcher | None = None,
+        login_launcher: LoginLauncher | None = None,
+        session_probe: SessionProbe = profile_has_session,
     ) -> None:
         self._settings = settings
         self._queue = queue
@@ -295,6 +371,9 @@ class BrowserRunner:
         ext = settings.xport_extension_dir
         self._extension = ext if ext is not None and (ext / "manifest.json").is_file() else None
         self._launcher = launcher or self._launch
+        self._login_launcher = login_launcher or self._launch_login
+        self._session_probe = session_probe
+        self._login_window: LoginWindow | None = None
         self._browser: Browser | None = None
         self._task: asyncio.Task[None] | None = None
         self._idle_since: float | None = None
@@ -326,6 +405,10 @@ class BrowserRunner:
                 "No encontré la extensión armada (extension/dist/chrome-mv3): "
                 "la captura usa tu navegador.",
             )
+
+    async def _launch_login(self, profile: Path, url: str) -> LoginWindow:
+        assert self._binary is not None
+        return await launch_login_window(self._binary, profile, url)
 
     async def _launch(self, profile: Path, extension: Path, headless: bool, url: str) -> Browser:
         assert self._binary is not None
@@ -362,6 +445,9 @@ class BrowserRunner:
         self._task = asyncio.create_task(self._supervise(), name="xport-browser")
 
     async def aclose(self) -> None:
+        if self._login_window is not None:
+            await close_login_window(self._login_window)
+            self._login_window = None
         if self._task is not None:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -530,9 +616,9 @@ class BrowserRunner:
         return True
 
     async def _login(self) -> None:
-        """Abre el perfil en una ventana chica en el inicio de sesión de X y espera la
-        sesión. Si la persona cierra la ventana sin iniciarla, se rinde hasta que alguien
-        vuelva a encolar."""
+        """Abre el perfil en una ventana común de Chrome en el inicio de sesión de X y espera
+        a que la sesión aparezca en sus cookies. Si la persona cierra la ventana sin
+        iniciarla, se rinde hasta que alguien vuelva a encolar."""
         if self._browser is not None and self._browser.alive:
             # La sesión que haya quedado no sirve: se borra, así el inicio de sesión de X
             # arranca limpio y no rebota contra una cookie vencida.
@@ -542,35 +628,38 @@ class BrowserRunner:
         if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
             self._give_up("X pide iniciar sesión y no hay pantalla para abrir la ventana.")
             return
+        profile = self._settings.browser_profile_dir
         self._status = RunnerStatus(
             RunnerState.LOGIN,
-            "Iniciá sesión en X en la ventana de xport (conviene una cuenta aparte).",
+            "Iniciá sesión en X en la ventana de Chrome de xport (conviene una cuenta aparte).",
         )
         self._notifier.post(
             "xport necesita una sesión de X",
-            "Se abrió una ventana chica de xport: iniciá sesión en X ahí, una sola vez. "
+            "Se abrió una ventana de Chrome de xport: iniciá sesión en X ahí, una sola vez. "
             "Conviene una cuenta aparte de la tuya.",
         )
         try:
-            browser = await self._open(headless=False, url=LOGIN_URL)
+            window = await self._login_launcher(profile, LOGIN_URL)
         except OSError as exc:
             self._give_up(f"No pude abrir la ventana para iniciar sesión ({exc}).")
             return
-        self._browser = browser
+        self._login_window = window
         deadline = time.monotonic() + self.LOGIN_TIMEOUT_S
         try:
-            while browser.alive and time.monotonic() < deadline:
-                if await self._has_session(browser):
-                    await asyncio.sleep(self.LOGIN_POLL_S)  # que X termine de guardar la sesión
-                    await self._close_browser()
+            while time.monotonic() < deadline:
+                closed = window.returncode is not None
+                if await asyncio.to_thread(self._session_probe, profile):
+                    log.info("navegador de xport: sesión de X iniciada")
                     self._status = RunnerStatus(RunnerState.IDLE)
                     self._crashes = 0
-                    log.info("navegador de xport: sesión de X iniciada")
+                    self._env_cookie_tried = True  # la del `.env` ya no hace falta
                     return
+                if closed:
+                    break
                 await asyncio.sleep(self.LOGIN_POLL_S)
-        except CdpError:
-            pass
-        await self._close_browser()
+        finally:
+            await close_login_window(window)
+            self._login_window = None
         self._give_up("Se cerró la ventana sin iniciar sesión en X.")
 
     def _give_up(self, note: str) -> None:

@@ -54,7 +54,7 @@ para varias cuentas a la vez:
 2. **Capturar:** cada cuenta entra a la cola y se capturan de a una (X frena la búsqueda por cuenta y en paralelo no
    rinde). El servicio abre su propio Chrome con la extensión adentro de una pantalla virtual que nadie ve, así que no
    tenés que dejar nada a la vista ni tocar el navegador. La primera vez, y cada vez que X cierre la sesión, aparece una
-   ventana chica para iniciar sesión en X; conviene una cuenta aparte de la tuya. Apenas entrás, la ventana se cierra
+   ventana común de Chrome para iniciar sesión en X; conviene una cuenta aparte de la tuya. Apenas entrás, la ventana se cierra
    sola y la captura sigue. Si la cerrás sin iniciar sesión, o si el servicio no puede usar su Chrome (ver
    [Instalar](#instalar)), la cola la toma la extensión de tu navegador como antes: abre la búsqueda en una pestaña y
    **esa pestaña tiene que quedar a la vista** mientras captura.

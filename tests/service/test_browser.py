@@ -23,6 +23,7 @@ from tweet_extractor.service.browser import (
     encode_message,
     find_browser,
     is_login_url,
+    profile_has_session,
     virtual_display_env,
 )
 
@@ -37,6 +38,9 @@ class FakeProcess:
 
     def kill(self) -> None:
         self.returncode = -9
+
+    def terminate(self) -> None:
+        self.returncode = 0
 
 
 class FakeCdp:
@@ -135,20 +139,43 @@ class Harness:
         self.session = session
         self.login_after = login_after
         self.launch_error = launch_error
-        self.runner = BrowserRunner(cfg, self.queue, self.notifier, launcher=self.launch)  # type: ignore[arg-type]
+        self.closes_login_by_hand = False
+        self.login_windows: list[FakeProcess] = []
+        self.runner = BrowserRunner(
+            cfg,
+            self.queue,  # type: ignore[arg-type]
+            self.notifier,
+            launcher=self.launch,
+            login_launcher=self.open_login,
+            session_probe=self.probe,
+        )
         self.runner.LOGIN_POLL_S = 0
+
+    async def open_login(self, profile: Path, url: str) -> FakeProcess:
+        """La ventana común de Chrome para iniciar sesión, sin canal de depuración."""
+        self.launches.append((False, url))
+        window = FakeProcess()
+        if self.closes_login_by_hand:
+            window.returncode = 0
+        self.login_windows.append(window)
+        return window
+
+    def probe(self, profile: Path) -> bool:
+        """La base de cookies del perfil: la sesión aparece a la `login_after`-ésima mirada."""
+        if self.login_after is None:
+            return False
+        self.login_after -= 1
+        if self.login_after <= 0:
+            self.session = True  # queda en el perfil para la próxima vez
+            return True
+        return False
 
     async def launch(self, profile: Path, ext: Path, headless: bool, url: str) -> Browser:
         if self.launch_error:
             raise OSError("no está")
         self.launches.append((headless, url))
         process = FakeProcess()
-        cdp = FakeCdp(
-            process, session=self.session, login_after=None if headless else self.login_after
-        )
-        if not headless:
-            # La sesión iniciada en la ventana queda en el perfil para la próxima vez.
-            self.session = True
+        cdp = FakeCdp(process, session=self.session, login_after=None)
         self.browsers.append(cdp)
         return Browser(process=process, cdp=cdp, headless=headless)  # type: ignore[arg-type]
 
@@ -280,6 +307,7 @@ async def test_without_session_opens_the_login_window_and_then_goes_back(
     assert h.launches == [(True, "about:blank"), (False, LOGIN_URL)]
     assert h.notifier.posts and "sesión de X" in h.notifier.posts[0][0]
     assert h.runner.status.state == RunnerState.IDLE  # ya tiene sesión: la próxima vuelta sigue
+    assert h.login_windows[0].returncode == 0  # la ventana se cerró sola
     await h.runner.tick(now=1)
     assert h.launches[-1] == (True, "about:blank")
     assert h.runner.status.state == RunnerState.RUNNING
@@ -290,14 +318,7 @@ async def test_closing_the_login_window_gives_the_queue_back(
 ) -> None:
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     h = Harness(tmp_path, session=False, login_after=None)
-
-    async def closed_by_hand(profile: Path, ext: Path, headless: bool, url: str) -> Browser:
-        b = await Harness.launch(h, profile, ext, headless, url)
-        if not headless:
-            b.process.returncode = 0  # type: ignore[misc]
-        return b
-
-    h.runner._launcher = closed_by_hand
+    h.closes_login_by_hand = True
     await h.runner.tick(now=0)
     assert h.runner.status.state == RunnerState.FAILED
     assert h.runner.accepts(None)  # mientras tanto, la extensión de siempre
@@ -382,3 +403,20 @@ async def test_a_page_stuck_on_a_chrome_error_restarts_the_browser(tmp_path: Pat
     assert h.browsers[0].process.returncode == 0  # cerrado: la próxima vuelta abre otro
     await h.runner.tick(now=2 * BrowserRunner.SESSION_CHECK_S + 1)
     assert len(h.launches) == 2 and h.runner.status.state == RunnerState.RUNNING
+
+
+def test_profile_has_session_reads_only_whether_the_cookie_exists(tmp_path: Path) -> None:
+    import sqlite3
+
+    assert profile_has_session(tmp_path) is False  # sin perfil todavía
+    (tmp_path / "Default").mkdir()
+    con = sqlite3.connect(tmp_path / "Default" / "Cookies")
+    con.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, encrypted_value BLOB)")
+    con.execute("INSERT INTO cookies VALUES ('.x.com', 'guest_id', x'00')")
+    con.commit()
+    assert profile_has_session(tmp_path) is False
+    con.execute("INSERT INTO cookies VALUES ('.x.com', 'auth_token', x'00')")
+    con.commit()
+    con.close()
+    assert profile_has_session(tmp_path) is True
+    assert not (tmp_path / ".xport-sesion").exists()  # la copia no queda

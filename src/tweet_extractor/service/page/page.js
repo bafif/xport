@@ -290,7 +290,7 @@ function renderGate(g, days) {
 const BROWSER_TEXT = {
   idle: 'Las hace el navegador propio de xport, sin ninguna ventana: no tenés que tocar nada.',
   running: 'El navegador propio de xport está capturando, sin ninguna ventana a la vista.',
-  login: 'Iniciá sesión en X en la ventana chica de xport que se abrió (una sola vez).',
+  login: 'Iniciá sesión en X en la ventana de Chrome de xport que se abrió (una sola vez).',
 };
 
 function renderBrowser(b) {

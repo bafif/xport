@@ -52,7 +52,7 @@ handles several accounts at once:
 2. **Capture:** each account goes into the queue and they are captured one at a time (X throttles search per account,
    and in parallel it does not pay off). The service opens its own Chrome with the extension inside a virtual screen
    nobody sees, so you do not have to keep anything in view or touch the browser. The first time, and whenever X ends
-   the session, a small window shows up to log in to X; a separate account is better than your own. As soon as you log
+   the session, a regular Chrome window shows up to log in to X; a separate account is better than your own. As soon as you log
    in, the window closes by itself and the capture goes on. If you close it without logging in, or if the service
    cannot use its Chrome (see [Install](#install)), the extension in your browser takes the queue as before: it opens
    the search in a tab and **that tab has to stay in view** while it captures.
