@@ -11,8 +11,9 @@
 export const AUTOSCROLL_MSG = 'xport-autoscroll' as const;
 
 // `ping`: el background pregunta si la pestaña sigue en una búsqueda de captura, para
-// reusarla con la próxima de la cola en vez de abrir otra.
-export type AutoscrollAction = 'start' | 'stop' | 'ping';
+// reusarla con la próxima de la cola en vez de abrir otra. `stale`: si quedó en una búsqueda
+// vieja de la cuenta del crawl (ver `isStaleSearch`), para llevarla a la actual.
+export type AutoscrollAction = 'start' | 'stop' | 'ping' | 'stale';
 
 export interface AutoscrollMsg {
   type: typeof AUTOSCROLL_MSG;
@@ -196,6 +197,26 @@ export function isCaptureSearch(url: string): boolean {
       /(^|\.)(x|twitter)\.com$/.test(u.hostname) &&
       u.pathname === '/search' &&
       /^from:\w+ since_time:\d+ until_time:\d+$/.test(u.searchParams.get('q') ?? '')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** `true` si `url` es una búsqueda de la cuenta del crawl que NO es la que toca: la que quedó
+ *  de antes de actualizar la extensión (con `since:`/`until:`), o una cota vieja que el
+ *  navegador restauró al reabrirse. Ahí el crawl no arranca y la captura quedaría trabada; el
+ *  background la lleva a la búsqueda actual. Otra página de x.com (la persona usando esa
+ *  pestaña) no cuenta. Puro y testeable. */
+export function isStaleSearch(url: string, state: CrawlState): boolean {
+  try {
+    const u = new URL(url);
+    const q = (u.searchParams.get('q') ?? '').toLowerCase();
+    return (
+      /(^|\.)(x|twitter)\.com$/.test(u.hostname) &&
+      u.pathname === '/search' &&
+      q.startsWith(`from:${state.account.toLowerCase()} `) &&
+      !matchesSearch(url, state)
     );
   } catch {
     return false;

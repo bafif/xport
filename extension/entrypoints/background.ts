@@ -309,15 +309,28 @@ export default defineBackground(() => {
   }
 
   /** Si la pestaña de la captura en curso se cerró (o el navegador se reinició), la vuelve a
-   *  abrir donde iba el crawl. */
+   *  abrir donde iba el crawl. Si sigue abierta pero en una búsqueda vieja de la misma cuenta
+   *  (la de antes de actualizar la extensión, o una que el navegador restauró), la lleva a la
+   *  actual: ahí el crawl no arranca. Si no contesta (está cargando, o no es x.com), se deja. */
   async function ensureTab(crawl: CrawlState): Promise<void> {
     const id = (await browser.storage.local.get(STORAGE_QUEUE_TAB))[STORAGE_QUEUE_TAB];
     if (typeof id === 'number') {
+      let open = false;
       try {
         await browser.tabs.get(id);
-        return; // sigue abierta
+        open = true;
       } catch {
         // se cerró
+      }
+      if (open) {
+        const stale: unknown = await browser.tabs
+          .sendMessage(id, { type: AUTOSCROLL_MSG, action: 'stale' })
+          .catch(() => false);
+        if (stale === true) {
+          console.debug('[xport] la pestaña de la captura quedó en una búsqueda vieja: la llevo a', crawlUrl(crawl));
+          await browser.tabs.update(id, { url: crawlUrl(crawl) });
+        }
+        return;
       }
     }
     console.debug('[xport] la pestaña de la captura no está: la vuelvo a abrir');

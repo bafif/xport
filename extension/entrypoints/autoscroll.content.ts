@@ -11,6 +11,7 @@ import {
   epochSeconds,
   FRESH_COUNTERS,
   isCaptureSearch,
+  isStaleSearch,
   MAX_STEPS,
   matchesSearch,
   narrowed,
@@ -67,6 +68,11 @@ export default defineContentScript({
       if (m.action === 'ping') {
         // ¿Esta pestaña sigue en una búsqueda de captura? Si sí, el background la reusa.
         return Promise.resolve(isCaptureSearch(location.href));
+      }
+      if (m.action === 'stale') {
+        // ¿Esta pestaña quedó en una búsqueda vieja del crawl? Si sí, el background la
+        // lleva a la actual (si no, el crawl no arranca acá y la captura queda trabada).
+        return readCrawl().then((s) => s !== null && isStaleSearch(location.href, s));
       }
       if (m.action === 'stop') {
         userStopped = true;

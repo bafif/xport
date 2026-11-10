@@ -352,9 +352,18 @@ hora. Lo que cambia está en los puntos 11 y 12, más abajo. Además:
   @JioCare unos 70 de día y 10 de noche (justo mil por día), @ANI unos 600 por día, y los bots que contestan menciones no
   aparecen en la búsqueda. Lo sondeado entra por `/ingest` y mueve el frente de reanudación (el más viejo guardado), así
   que antes de capturar hay que borrar lo de esa cuenta. La captura de @AmazonHelp del 9 no llegó a scrollear: Chrome
-  corrió el service worker de la prueba anterior, guardado en el perfil, porque la extensión tenía el mismo id y la misma
-  versión del manifest (la búsqueda salió con `since:`/`until:`). Antes de volver a intentarlo, la máquina se quedó sin
-  memoria y la prueba se cortó. Para la próxima: subir la versión del manifest de la copia que se prueba.
+  corrió el service worker de la prueba anterior, guardado en la caché del perfil (la búsqueda salió con
+  `since:`/`until:`), y subir la versión del manifest no alcanzó: hubo que apartar la carpeta `Service Worker` del perfil.
+  Es cosa de cargar la extensión por el pipe en un perfil que ya la tenía; «Recargar» en `chrome://extensions` vuelve a
+  registrar el service worker. En el medio la máquina se quedó sin memoria y la prueba se cortó una vez. Con el background
+  nuevo, un día de @nasa anduvo hasta el achique: la búsqueda salió con `since_time:`/`until_time:` (x.com no la
+  reescribe, ni con las dos cotas en medianoche), retomó en el tweet más viejo guardado más un segundo y bajó la cota al
+  segundo del más viejo cargado. Ahí X mandó la cuenta aparte a `x.com/account/access`, con un desafío de
+  Cloudflare, y la prueba quedó esperando a que una persona la verifique (detectarlo es el punto 13).
+- Una captura en curso cuando se actualiza la extensión deja su crawl con el formato viejo, y el navegador restaura la
+  pestaña con la búsqueda vieja: ahí el crawl nuevo no arranca y la captura quedaba trabada (pasó en la prueba). El
+  background le pregunta a la pestaña de la captura si quedó en una búsqueda vieja de la misma cuenta (`isStaleSearch`)
+  y, si sí, la lleva a la actual. Si la persona usa esa pestaña para otra cosa de x.com, no la toca.
 
 ## Dónde está hoy
 
@@ -366,7 +375,8 @@ con la pestaña oculta, el corte por cambio
 de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Lo mismo la Fase 3
 (10 de noviembre): la cola, la página local y las notificaciones tienen tests y una prueba de humo contra el servicio,
 pero no pasaron por un navegador. La Fase 4 (10 de noviembre), la espera a X ante el rate limit y la búsqueda al
-segundo, también tiene tests, pero la captura que la iba a probar contra x.com quedó a medias. Los tests corren sin red,
+segundo, también tiene tests; contra x.com anduvo hasta el achique al segundo, pero X pidió verificar la cuenta antes
+de pasar por un 429 o por un día de más de mil tweets. Los tests corren sin red,
 mypy en modo estricto y ruff pasan, y la imagen Alpine y la extensión se construyen en CI.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
@@ -388,7 +398,7 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Captura in-page: parche de `fetch` y XHR, puente, relay en lotes de 20 páginas | `extension/entrypoints/` | real (junio y 6/11) |
 | Crawl adaptativo: scroll, «Reintentar», recarga con backoff, achique del rango al segundo del tweet más viejo, reanudación desde la base | `autoscroll.content.ts`, `POST /progress` | real; funciones puras con vitest |
 | Cortes del crawl: sin servicio, tope lleno, 429, `over_cap`, rechazo, veinte páginas sin registrar | `lib/ingest.ts`, `background.ts`, popup | vitest de `decideIngest`; real sin ventana (10/11): el servicio caído, el popup sin servicio y el tope lleno |
-| Búsqueda al segundo y en UTC (`since_time:`/`until_time:`): la cota baja al segundo del tweet más viejo y el crawl termina; ni días saturados ni primeras horas perdidas | `lib/autoscroll.ts` (`nextBound`), `lib/queue.ts` (`startPlan`), `POST /progress` | vitest y tests; los operadores, real (10/11); **una captura entera, sin probar** |
+| Búsqueda al segundo y en UTC (`since_time:`/`until_time:`): la cota baja al segundo del tweet más viejo y el crawl termina; ni días saturados ni primeras horas perdidas | `lib/autoscroll.ts` (`nextBound`), `lib/queue.ts` (`startPlan`), `POST /progress` | vitest y tests; real (10/11): la búsqueda nueva, la reanudación y un achique al segundo; **un día de más de mil, sin probar** |
 | Pausa del crawl con la pestaña oculta, con aviso en el popup | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest de `decideStep`; **sin prueba a mano** |
 | Espera a X: con un 429 o sin cupo, la captura espera al reset fuera de la búsqueda y sigue sola; con pocas búsquedas, reparte las que quedan | `lib/rate.ts`, `capture-main.content.ts`, `autoscroll.content.ts`, `background.ts`, estado `waiting` de la cola | vitest de `decideRate` y `waitStep`; tests de la cola; **sin probar contra x.com** |
 | Cambio de forma de x.com: `rejected` y `format_changed` en `/ingest`, ejemplo en el log, corte del crawl | `service/ingest.py`, `lib/ingest.ts` | tests con una página de forma desconocida; vitest |
@@ -553,8 +563,9 @@ Falta pasarla por un navegador y lo que dice cada punto:
 
 ### Fase 4: el crawl (en el código el 10 de noviembre; falta probarla contra x.com)
 
-Está en el código y con tests (ver «Cómo lo fui construyendo»). La captura que la iba a probar contra x.com quedó a
-medias, así que siguen abiertos los dos «listo cuando». Los números siguen, porque el resto del plan los cita.
+Está en el código y con tests (ver «Cómo lo fui construyendo»). Contra x.com anduvo hasta el achique al segundo, pero
+X pidió verificar la cuenta aparte antes de pasar por un 429 o por un día de más de mil tweets, así que siguen
+abiertos los dos «listo cuando». Los números siguen, porque el resto del plan los cita.
 
 11. **Esperar a X en vez de insistir.** Hecho: el parche de `fetch` y XHR pasa aparte el status y los `x-rate-limit-*`
     de cada respuesta de `SearchTimeline` (HTTP, no GraphQL: la regla 4 se mantiene), y `decideRate` (`lib/rate.ts`)

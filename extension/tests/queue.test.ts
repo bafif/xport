@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CaptureOut, ProgressResult } from '../lib/api';
-import { dayStart, isCaptureSearch, narrowed, searchUrl } from '../lib/autoscroll';
+import { dayStart, isCaptureSearch, isStaleSearch, narrowed, searchUrl } from '../lib/autoscroll';
 import { decideQueue, reportedState, startPlan, waitStep } from '../lib/queue';
 
 const prog = (over: Partial<ProgressResult> = {}): ProgressResult => ({
@@ -119,6 +119,20 @@ describe('eventos del crawl', () => {
       isCaptureSearch('https://x.com/search?q=from%3Anasa%20since%3A2024-01-01%20until%3A2025-01-01&f=live'),
     ).toBe(false);
     expect(isCaptureSearch('https://x.com/search?q=gatos&f=live')).toBe(false);
+  });
+
+  it('reconoce la búsqueda vieja que dejó trabada una captura, y nada más', () => {
+    const crawl = { account: 'amazonhelp', since: '2026-11-09', until: '2026-11-10', captureId: 1 };
+    // la de antes de actualizar la extensión, que el navegador restauró
+    const old = 'https://x.com/search?q=from%3Aamazonhelp%20since%3A2026-11-09%20until%3A2026-11-10&f=live';
+    expect(isStaleSearch(old, crawl)).toBe(true);
+    // una cota vieja del mismo crawl
+    expect(isStaleSearch(searchUrl('amazonhelp', dayStart('2026-11-09'), 1794230000), crawl)).toBe(true);
+    // la actual no; otra cuenta, otra página de x.com u otro sitio tampoco
+    expect(isStaleSearch(searchUrl('amazonhelp', dayStart('2026-11-09'), dayStart('2026-11-10')), crawl)).toBe(false);
+    expect(isStaleSearch('https://x.com/search?q=from%3Anasa%20since%3A2026-11-09&f=live', crawl)).toBe(false);
+    expect(isStaleSearch('https://x.com/home', crawl)).toBe(false);
+    expect(isStaleSearch('https://example.com/search?q=from%3Aamazonhelp%20x', crawl)).toBe(false);
     expect(isCaptureSearch('https://x.com/home')).toBe(false);
     expect(isCaptureSearch('https://example.com/search?q=from%3Anasa')).toBe(false);
   });
