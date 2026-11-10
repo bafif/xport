@@ -14,6 +14,7 @@ import {
   showSeconds,
   untilTime,
 } from './autoscroll';
+import type { Msg } from './i18n';
 
 export const QUEUE_ALARM = 'xport-queue';
 export const POLL_MINUTES = 0.5; // el mínimo de Chrome para `alarms`
@@ -44,7 +45,7 @@ export function reportedState(event: CrawlEvent): 'done' | 'paused' | 'running' 
 
 export type StartPlan =
   | { kind: 'done' } // el rango ya está entero: no hay nada que crawlear
-  | { kind: 'crawl'; untilTime: number; message: string };
+  | { kind: 'crawl'; untilTime: number; message: Msg };
 
 /** Desde dónde arranca (o retoma) el crawl de una captura, según lo que ya está guardado.
  *  La captura va del más nuevo al más viejo: el tweet más viejo guardado marca hasta dónde
@@ -52,22 +53,22 @@ export type StartPlan =
  *  búsqueda re-incluye ese tweet (el store deduplica); si no trae nada más viejo, el crawl
  *  termina solo. */
 export function startPlan(prog: ProgressResult, since: string, until: string): StartPlan {
-  const who = `@${prog.account}`;
   const oldest = prog.oldest === null ? null : epochSeconds(prog.oldest);
   if (oldest === null) {
     return {
       kind: 'crawl',
       untilTime: dayStart(until),
-      message: `Capturando ${who}… (podés cerrar el popup)`,
+      message: { key: 'notice.capturing', params: { account: prog.account } },
     };
   }
   if (reachedSince(oldest, dayStart(since))) return { kind: 'done' };
   return {
     kind: 'crawl',
     untilTime: Math.min(oldest + 1, dayStart(until)),
-    message:
-      `Reanudando ${who} desde ${showSeconds(oldest)} (ya tenías ${prog.captured} tuits)… ` +
-      '(podés cerrar el popup)',
+    message: {
+      key: 'notice.resuming',
+      params: { account: prog.account, from: showSeconds(oldest), count: prog.captured },
+    },
   };
 }
 

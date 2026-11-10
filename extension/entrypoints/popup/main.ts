@@ -13,6 +13,16 @@ import {
   STORAGE_PAUSED,
   STORAGE_STATUS,
 } from '../../lib/capture';
+import {
+  chooseLang,
+  type Lang,
+  type MsgKey,
+  type MsgParam,
+  type Note,
+  render,
+  STORAGE_LANG,
+  t,
+} from '../../lib/i18n';
 import { QUEUE_MSG, type QueueMsg } from '../../lib/queue';
 
 const COUNTS_REFRESH_MS = 2000;
@@ -21,8 +31,43 @@ const SERVICE_RETRY_MS = 2000;
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
-  if (!node) throw new Error(`falta #${id} en el popup`);
+  if (!node) throw new Error(`#${id}?`);
   return node as T;
+}
+
+// Idioma: el elegido en el selector o, si no, el del navegador (lib/i18n.ts).
+let lang: Lang = 'en';
+
+function tr(key: MsgKey, params?: Record<string, MsgParam>): string {
+  return t(lang, key, params);
+}
+
+/** Los textos fijos del popup (`data-i18n`, `data-i18n-placeholder`, `data-i18n-aria-label`). */
+function applyStrings(): void {
+  document.documentElement.lang = lang;
+  for (const node of document.querySelectorAll<HTMLElement>('[data-i18n]')) {
+    node.textContent = tr(node.dataset.i18n as MsgKey);
+  }
+  for (const node of document.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]')) {
+    node.placeholder = tr(node.dataset.i18nPlaceholder as MsgKey);
+  }
+  for (const node of document.querySelectorAll<HTMLElement>('[data-i18n-aria-label]')) {
+    node.setAttribute('aria-label', tr(node.dataset.i18nAriaLabel as MsgKey));
+  }
+  langSelect.value = lang;
+}
+
+/** El mensaje de un error: si el servicio no contestó, en el idioma del popup; si contestó,
+ *  lo que dijo (ya en ese idioma, por el `Accept-Language`). */
+function errorText(err: unknown): string {
+  if (err instanceof XportApiError && err.status === 0) {
+    return tr('error.offline', { base: err.base ?? currentBase() });
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+function api(): XportClient {
+  return new XportClient(currentBase(), undefined, lang);
 }
 
 const baseInput = el<HTMLInputElement>('base');
@@ -40,6 +85,7 @@ const countsEl = el<HTMLElement>('counts');
 const statusEl = el<HTMLElement>('status');
 const exportStatus = el<HTMLElement>('export-status');
 const pageLink = el<HTMLAnchorElement>('page-link');
+const langSelect = el<HTMLSelectElement>('lang');
 
 function currentBase(): string {
   return baseInput.value.trim().replace(/\/+$/, '') || DEFAULT_BASE;
@@ -65,22 +111,25 @@ function escapeHtml(s: string): string {
 /** Valida cuenta + rango y devuelve un mensaje de error, o `null` si está OK. Fuente
  *  única para capturar y exportar (antes el campo vacío cortaba en silencio). */
 function validationError(): string | null {
-  if (!account()) return 'Completá la cuenta (sin @).';
+  if (!account()) return tr('popup.need_account');
   if (!isValidDate(sinceInput.value) || !isValidDate(untilInput.value)) {
-    return 'Completá las fechas en formato AAAA-MM-DD.';
+    return tr('popup.need_dates');
   }
-  if (sinceInput.value >= untilInput.value) return '"Desde" debe ser anterior a "Hasta".';
+  if (sinceInput.value >= untilInput.value) return tr('popup.order');
   return null;
 }
 
 async function refreshGate(): Promise<void> {
   try {
-    const g = await new XportClient(currentBase()).gate();
-    const pct = ((g.usage / g.hard_cap) * 100).toFixed(2);
+    const g = await api().gate();
+    const percent = ((g.usage / g.hard_cap) * 100).toFixed(2);
     gateEl.hidden = false;
-    gateEl.textContent =
-      `Gate: ${g.usage.toLocaleString()} / ${g.hard_cap.toLocaleString()} accesos ` +
-      `en 24 h (${pct}%) · quedan ${g.remaining.toLocaleString()}`;
+    gateEl.textContent = tr('popup.gate', {
+      usage: g.usage,
+      cap: g.hard_cap,
+      percent,
+      left: g.remaining,
+    });
   } catch {
     // El servicio puede no estar corriendo; el estado del gate es informativo.
   }
@@ -95,16 +144,18 @@ async function renderCounts(): Promise<void> {
     return;
   }
   countsEl.hidden = false;
-  countsEl.textContent = 'Capturado: ' + entries.map(([a, n]) => `${a} (${n})`).join(' · ');
+  countsEl.textContent = tr('popup.captured', {
+    list: entries.map(([a, n]) => `${a} (${n})`).join(' · '),
+  });
 }
 
 /** Muestra el aviso de pausa (pestaña de la captura oculta) mientras haya un crawl: si
  *  el crawl se cortó o terminó, un aviso viejo no se muestra. */
 async function renderPaused(): Promise<void> {
   const stored = await browser.storage.local.get([STORAGE_PAUSED, STORAGE_CRAWL]);
-  const notice = stored[STORAGE_PAUSED];
-  pausedEl.hidden = !(typeof notice === 'string' && notice && stored[STORAGE_CRAWL]);
-  if (!pausedEl.hidden) pausedEl.textContent = notice as string;
+  const notice = render(lang, stored[STORAGE_PAUSED]);
+  pausedEl.hidden = !(notice && stored[STORAGE_CRAWL]);
+  if (notice && !pausedEl.hidden) pausedEl.textContent = notice;
 }
 
 // Inserta los guiones de AAAA-MM-DD a medida que se escribe (los inputs son de texto,
@@ -147,6 +198,15 @@ browser.storage.onChanged.addListener((changes, area) => {
     void renderPaused();
   }
 });
+langSelect.addEventListener('change', () => {
+  lang = langSelect.value === 'es' ? 'es' : 'en';
+  void browser.storage.local.set({ [STORAGE_LANG]: lang });
+  applyStrings();
+  statusEl.hidden = true; // un aviso viejo quedaría en el otro idioma
+  void renderPaused();
+  void refreshGate();
+  void renderCounts();
+});
 baseInput.addEventListener('change', () => {
   void browser.storage.local.set({ [STORAGE_BASE]: currentBase() });
   pageLink.href = `${currentBase()}/`;
@@ -168,19 +228,16 @@ async function onCapture(): Promise<void> {
   // Sin servicio no se captura (regla 1 de docs/PLAN.md): lo que se viera en X no
   // quedaría contado en el gate. Se espera un poco por si el native host lo está
   // levantando; si no aparece, o si el tope de 24 h está lleno, no se encola.
-  const client = new XportClient(currentBase());
+  const client = api();
   let gate: GateResponse;
   try {
     gate = await whenServiceUp(() => client.gate());
   } catch (err) {
-    setStatus(
-      `No arranco la captura: ${err instanceof Error ? err.message : String(err)}. ` +
-        'Sin el servicio, lo que se vea en X no queda contado en el tope de 24 h.',
-    );
+    setStatus(tr('popup.no_start', { error: errorText(err) }));
     return;
   }
   if (gate.remaining <= 0) {
-    setStatus('El tope de 24 h del gate está lleno: no arranco la captura. Probá más tarde.');
+    setStatus(tr('popup.gate_full'));
     return;
   }
 
@@ -197,7 +254,7 @@ async function onCapture(): Promise<void> {
     });
     id = cap.id;
   } catch (err) {
-    setStatus(`No pude encolar la captura: ${err instanceof Error ? err.message : String(err)}`);
+    setStatus(tr('popup.enqueue_failed', { error: errorText(err) }));
     return;
   }
   await browser.storage.local.remove(STORAGE_STATUS); // limpiar avisos viejos
@@ -211,14 +268,11 @@ async function onCapture(): Promise<void> {
     | undefined;
   const cap = (await client.captures().catch(() => [])).find((c) => c.id === id);
   if (cap?.state === 'done') {
-    setStatus(
-      `Ya está todo capturado en ese rango (${cap.exported ?? 0} tuits en el CSV). ` +
-        'Lo tenés en la página de xport.',
-    );
+    setStatus(tr('popup.already_done', { count: cap.exported ?? 0 }));
   } else if (crawl?.captureId === id) {
-    setStatus('Abriendo la búsqueda y scrolleando… (podés cerrar el popup)');
+    setStatus(tr('popup.opening'));
   } else {
-    setStatus('En la cola: arranca cuando termine la captura en curso. La página de xport muestra el avance.');
+    setStatus(tr('popup.queued'));
   }
 }
 
@@ -230,20 +284,20 @@ async function whenServiceUp<T>(call: () => Promise<T>): Promise<T> {
       return await call();
     } catch (err) {
       if (!(err instanceof XportApiError) || err.status !== 0 || attempt >= SERVICE_TRIES) throw err;
-      setStatus('Esperando al servicio local…');
+      setStatus(tr('popup.waiting_service'));
       await new Promise((r) => setTimeout(r, SERVICE_RETRY_MS));
     }
   }
 }
 
 /** Corta el crawl en curso, y si es de la cola, le avisa al servicio que la cortó la persona. */
-async function endCrawl(note: string): Promise<void> {
+async function endCrawl(note: Note): Promise<void> {
   const crawl = (await browser.storage.local.get(STORAGE_CRAWL))[STORAGE_CRAWL] as
     | CrawlState
     | undefined;
   await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
   if (crawl?.captureId !== undefined) {
-    await new XportClient(currentBase())
+    await api()
       .captureState(crawl.captureId, { state: 'stopped', note, by_user: true })
       .catch(() => {});
   }
@@ -252,17 +306,17 @@ async function endCrawl(note: string): Promise<void> {
 async function stopScroll(): Promise<void> {
   // Borramos el crawl desde el popup también: si la pestaña activa no es la de captura,
   // el mensaje no llega, pero igual no debe seguir narrowando ni navegando.
-  await endCrawl('La detuviste desde el popup.');
+  await endCrawl({ key: 'note.stopped_popup' });
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) {
-    setStatus('Captura detenida.');
+    setStatus(tr('popup.stopped'));
     return;
   }
   try {
     await browser.tabs.sendMessage(tab.id, { type: AUTOSCROLL_MSG, action: 'stop' });
-    setStatus('Auto-scroll detenido.');
+    setStatus(tr('popup.scroll_stopped'));
   } catch {
-    setStatus('Captura detenida (no había scroll activo en esta pestaña).');
+    setStatus(tr('popup.stopped_no_scroll'));
   }
 }
 
@@ -274,7 +328,7 @@ async function onExport(): Promise<void> {
   }
   await persistForm();
   try {
-    const client = new XportClient(currentBase());
+    const client = api();
     const r = await client.exportCapture({
       account: account(),
       since: sinceInput.value,
@@ -285,18 +339,16 @@ async function onExport(): Promise<void> {
     // Aclaración: el CSV trae menos que el contador "Capturado" porque deja afuera las
     // respuestas a otras cuentas (se exportan tweets propios + hilos propios). Solo se
     // muestra si efectivamente se excluyó algo.
+    const excluded = tr('popup.excluded', { count: r.excluded_replies });
     const note =
-      r.excluded_replies > 0
-        ? `<small class="muted">No se incluyen ${r.excluded_replies} respuestas a otras ` +
-          `cuentas (el CSV trae tweets propios e hilos propios).</small>`
-        : '';
+      r.excluded_replies > 0 ? `<small class="muted">${escapeHtml(excluded)}</small>` : '';
+    const exported = tr('popup.exported', { count: r.exported });
     exportStatus.innerHTML =
       `<a href="${client.absolute(r.download_url)}" target="_blank" rel="noreferrer">` +
-      `${escapeHtml(r.csv)}</a> <small>${r.exported} tweets</small>${note}`;
+      `${escapeHtml(r.csv)}</a> <small>${escapeHtml(exported)}</small>${note}`;
   } catch (err) {
     exportStatus.hidden = false;
-    exportStatus.innerHTML =
-      `<span class="error">${escapeHtml(err instanceof Error ? err.message : String(err))}</span>`;
+    exportStatus.innerHTML = `<span class="error">${escapeHtml(errorText(err))}</span>`;
   }
 }
 
@@ -306,31 +358,26 @@ async function onReset(): Promise<void> {
   // lo deja trabado en el pasado y la captura no vuelve a traer los nuevos.
   const acc = account();
   if (!acc) {
-    setStatus('Completá la cuenta (sin @) para borrar lo capturado.');
+    setStatus(tr('popup.reset_needs_account'));
     return;
   }
-  if (
-    !confirm(
-      `¿Borrar todo lo capturado de @${acc}? Vas a tener que volver a capturar el rango. ` +
-        `(No afecta el gate de 24 h.)`,
-    )
-  ) {
+  if (!confirm(tr('popup.reset_confirm', { account: acc }))) {
     return;
   }
   try {
-    const r = await new XportClient(currentBase()).resetAccount(acc);
+    const r = await api().resetAccount(acc);
     // Limpiar el estado local para que la próxima captura arranque desde el tope del
     // rango (sin frente viejo): el contador de la cuenta y cualquier crawl/aviso en curso.
     const stored = await browser.storage.local.get(STORAGE_COUNTS);
     const counts = (stored[STORAGE_COUNTS] ?? {}) as Record<string, number>;
     delete counts[acc];
     await browser.storage.local.set({ [STORAGE_COUNTS]: counts });
-    await endCrawl('Borraste lo capturado desde el popup.');
+    await endCrawl({ key: 'note.reset_popup' });
     await browser.storage.local.remove(STORAGE_STATUS);
     await renderCounts();
-    setStatus(`Borrado: ${r.deleted} tuits de @${acc}. La próxima captura arranca de cero.`);
+    setStatus(tr('popup.reset_done', { count: r.deleted, account: acc }));
   } catch (err) {
-    setStatus(err instanceof Error ? err.message : String(err));
+    setStatus(errorText(err));
   }
 }
 
@@ -339,8 +386,11 @@ async function init(): Promise<void> {
     STORAGE_BASE,
     STORAGE_EXCEL,
     STORAGE_FORM,
+    STORAGE_LANG,
     STORAGE_STATUS,
   ]);
+  lang = chooseLang(stored[STORAGE_LANG], navigator.languages ?? [navigator.language]);
+  applyStrings();
   excelInput.checked = stored[STORAGE_EXCEL] === true;
   const savedBase = stored[STORAGE_BASE];
   baseInput.value = typeof savedBase === 'string' && savedBase ? savedBase : DEFAULT_BASE;
@@ -352,8 +402,8 @@ async function init(): Promise<void> {
     untilInput.value = form.until ?? '';
   }
   // Aviso del crawl (p.ej. se cortó por errores de carga). Lee-y-borra: se muestra una vez.
-  const notice = stored[STORAGE_STATUS];
-  if (typeof notice === 'string' && notice) {
+  const notice = render(lang, stored[STORAGE_STATUS]);
+  if (notice) {
     setStatus(notice);
     await browser.storage.local.remove(STORAGE_STATUS);
   }

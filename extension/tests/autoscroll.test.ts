@@ -19,6 +19,7 @@ import {
   searchUrl,
   untilTime,
 } from '../lib/autoscroll';
+import { render } from '../lib/i18n';
 
 const JAN_1 = 1735689600; // 2025-01-01T00:00:00Z
 const FEB_1 = 1738368000; // 2025-02-01T00:00:00Z
@@ -115,7 +116,8 @@ describe('decideStep', () => {
     expect(decideStep({ ...visible, retry: true }, retried).action).toBe('stale');
   });
   it('el aviso de pausa nombra la cuenta', () => {
-    expect(pausedNotice('nasa')).toMatch(/@nasa está en pausa/);
+    expect(render('es', pausedNotice('nasa'))).toMatch(/@nasa está en pausa/);
+    expect(render('en', pausedNotice('nasa'))).toMatch(/@nasa is paused/);
   });
 });
 

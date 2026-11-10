@@ -6,62 +6,80 @@
     <title>xport</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
+  <!-- Los textos salen de locales/ (lib/i18n.ts): cada elemento dice su clave en data-i18n
+       y main.ts los llena en el idioma de la persona. -->
   <body>
     <main id="app">
       <header>
-        <h1><img src="/icon/32.png" alt="" width="22" height="22" />xport</h1>
-        <p class="sub">Tweets → CSV (captura in-page)</p>
+        <div class="top">
+          <h1><img src="/icon/32.png" alt="" width="22" height="22" />xport</h1>
+          <select id="lang" data-i18n-aria-label="popup.lang">
+            <option value="es" lang="es" data-i18n="lang.es"></option>
+            <option value="en" lang="en" data-i18n="lang.en"></option>
+          </select>
+        </div>
+        <p class="sub" data-i18n="popup.subtitle"></p>
       </header>
 
       <form id="capture-form" autocomplete="off">
         <label>
-          Servicio local
+          <span data-i18n="popup.service"></span>
           <input id="base" type="url" placeholder="http://localhost:8000" required />
         </label>
         <label>
-          Cuenta
+          <span data-i18n="popup.account"></span>
           <input id="account" type="text" placeholder="nasa" required />
         </label>
         <div class="row">
           <label
-            >Desde
+            ><span data-i18n="popup.since"></span>
             <input
               id="since"
               type="text"
               inputmode="numeric"
-              placeholder="AAAA-MM-DD"
+              data-i18n-placeholder="popup.date_format"
               pattern="\d{4}-\d{2}-\d{2}"
               maxlength="10"
               required
           /></label>
           <label
-            >Hasta
+            ><span data-i18n="popup.until"></span>
             <input
               id="until"
               type="text"
               inputmode="numeric"
-              placeholder="AAAA-MM-DD"
+              data-i18n-placeholder="popup.date_format"
               pattern="\d{4}-\d{2}-\d{2}"
               maxlength="10"
               required
           /></label>
         </div>
-        <button id="capture-start" type="submit">Capturar ▶</button>
+        <button id="capture-start" type="submit" data-i18n="popup.capture"></button>
         <div class="row">
-          <button id="capture-stop" type="button" class="secondary">Detener ⏹</button>
-          <button id="export" type="button" class="secondary">Exportar CSV</button>
+          <button id="capture-stop" type="button" class="secondary" data-i18n="popup.stop"></button>
+          <button id="export" type="button" class="secondary" data-i18n="popup.export"></button>
         </div>
         <label class="check"
-          ><input id="excel" type="checkbox" /> Para Excel en castellano
-          <small>(separador «;» y UTF-8 con BOM)</small></label
+          ><input id="excel" type="checkbox" /> <span data-i18n="popup.excel"></span>
+          <small data-i18n="popup.excel_hint"></small></label
         >
-        <button id="reset" type="button" class="secondary danger">Borrar capturado 🗑</button>
+        <button
+          id="reset"
+          type="button"
+          class="secondary danger"
+          data-i18n="popup.reset"
+        ></button>
       </form>
 
       <p class="sub">
-        <a id="page-link" href="http://localhost:8000/" target="_blank" rel="noreferrer"
-          >Abrir la página de xport</a
-        >: varias cuentas, la cola con su avance, el tope y los CSV.
+        <a
+          id="page-link"
+          href="http://localhost:8000/"
+          target="_blank"
+          rel="noreferrer"
+          data-i18n="popup.page_link"
+        ></a
+        ><span data-i18n="popup.page_hint"></span>
       </p>
 
       <p id="paused" class="paused" hidden></p>

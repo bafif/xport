@@ -8,6 +8,8 @@
 // trae nada más viejo que el tweet que re-incluye, el rango terminó. Espera/recarga ante
 // carga lenta o vacía, y ante el rate limit de X espera al reset (lib/rate.ts).
 
+import type { Msg } from './i18n';
+
 export const AUTOSCROLL_MSG = 'xport-autoscroll' as const;
 
 // `ping`: el background pregunta si la pestaña sigue en una búsqueda de captura, para
@@ -79,11 +81,8 @@ export function decideStep(
 }
 
 /** El aviso que el popup muestra mientras la captura está en pausa. */
-export function pausedNotice(account: string): string {
-  return (
-    `La captura de @${account} está en pausa: su pestaña quedó oculta. Volvé a esa pestaña ` +
-    'para que siga.'
-  );
+export function pausedNotice(account: string): Msg {
+  return { key: 'notice.paused', params: { account } };
 }
 
 /** Backoff antes de recargar una búsqueda que cargó en blanco: 5s, 10s, 20s, 40s, …, tope 60s.

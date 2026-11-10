@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import json
 import re
 import string
 import sys
@@ -28,6 +29,7 @@ from tweet_extractor.storage.queue import CaptureState
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "tweet_extractor"
 PAGE = SRC / "service" / "page"
+EXTENSION_LOCALES = ROOT / "extension" / "locales"
 
 # Un texto para leer: tres palabras seguidas, o una letra con tilde o eñe.
 PROSE = re.compile(
@@ -80,6 +82,17 @@ def test_las_claves_del_codigo_estan_en_el_catalogo() -> None:
     assert keys - set(catalog("es")) == set()
     for status in (401, 402, 403):  # `t(f"provider.api_{status}")`
         assert f"provider.api_{status}" in catalog("es")
+
+
+def test_los_avisos_de_la_extension_son_los_mismos_que_los_del_servicio() -> None:
+    # La extensión manda al servicio el motivo de un corte (`note.stop_cap`…) y lo muestra en
+    # el popup; el servicio lo muestra en la página y en la notificación: el mismo texto.
+    for lang in i18n.LANGS:
+        ext = json.loads((EXTENSION_LOCALES / f"{lang}.json").read_text(encoding="utf-8"))
+        notes = {k: v for k, v in ext.items() if k.startswith("note.")}
+        assert notes
+        for key, value in notes.items():
+            assert catalog(lang).get(key) == value, f"{key} ({lang}) no coincide con el servicio"
 
 
 # ── la página local ──

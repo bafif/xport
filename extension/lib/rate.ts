@@ -7,6 +7,8 @@
 // interpreta el tweet). Con eso el crawl decide: seguir, aflojar el ritmo si quedan pocas, o
 // esperar al reset en vez de recargar cada minuto y que x.com reintente cada pocos segundos.
 
+import type { Msg } from './i18n';
+
 /** Mensaje del mundo MAIN al ISOLATED con el estado del rate limit, aparte de las capturas. */
 export const RATE_SOURCE = 'xport-rate' as const;
 
@@ -91,15 +93,8 @@ export function decideRate(rate: RateInfo | null, now: number): RateDecision {
   return GO;
 }
 
-/** «18:40», en la hora de quien mira. */
-export function clock(ms: number): string {
-  return new Date(ms).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-}
-
-/** El aviso que el popup muestra mientras la captura espera a X. */
-export function waitingNotice(account: string, untilMs: number): string {
-  return (
-    `X frenó la búsqueda por un rato: la captura de @${account} espera hasta las ` +
-    `${clock(untilMs)} y sigue sola.`
-  );
+/** El aviso que el popup muestra mientras la captura espera a X (la hora, en la de quien
+ *  mira y como la escribe su idioma). */
+export function waitingNotice(account: string, untilMs: number): Msg {
+  return { key: 'notice.waiting', params: { account, time: { clock: untilMs } } };
 }

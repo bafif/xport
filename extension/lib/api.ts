@@ -1,6 +1,8 @@
 // Cliente tipado del servicio FastAPI de xport. Los tipos son espejo de los
 // schemas de `src/tweet_extractor/service/schemas.py`; mantenerlos en sync.
 
+import type { Lang, Note } from './i18n';
+
 export type JobStatus = 'pending' | 'running' | 'done' | 'error';
 
 export interface JobCreate {
@@ -87,7 +89,7 @@ export interface CaptureOut {
   since: string;
   until: string; // exclusiva
   state: CaptureState;
-  note: string | null;
+  note: { key: string; params?: Record<string, unknown> } | null; // un aviso del catálogo del servicio
   csv: string | null;
   download_url: string | null;
   exported: number | null;
@@ -101,7 +103,7 @@ export interface CaptureOut {
 
 export interface CaptureReport {
   state: 'running' | 'paused' | 'waiting' | 'done' | 'stopped';
-  note?: string; // el motivo, si se cortó
+  note?: Note; // el motivo, si se cortó: el servicio lo muestra en el idioma de quien mira
   resume_at?: string; // esperando a X: cuándo sigue (ISO 8601)
   by_user?: boolean; // la cortó la persona: el servicio no lo notifica
 }
@@ -111,10 +113,13 @@ export interface ResetResult {
   deleted: number; // tweets borrados de la caché (el ledger del gate NO se toca)
 }
 
+/** Un pedido que falló. `status` 0: el servicio en `base` no contestó (el popup lo dice en
+ *  su idioma); si no, `message` es lo que contestó el servicio, en el idioma pedido. */
 export class XportApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly base?: string,
   ) {
     super(message);
     this.name = 'XportApiError';
@@ -124,10 +129,12 @@ export class XportApiError extends Error {
 /** Habla con el FastAPI local. Se invoca desde el popup (una extension page): con
  *  `host_permissions` sobre el host, el fetch cross-origin no choca con CORS. */
 export class XportClient {
-  /** `runner`: la marca del navegador de xport, si esta extensión corre en él. */
+  /** `runner`: la marca del navegador de xport, si esta extensión corre en él. `lang`: el
+   *  idioma de los errores que contesta el servicio (va como `Accept-Language`). */
   constructor(
     private readonly base: string,
     private readonly runner?: string,
+    private readonly lang?: Lang,
   ) {}
 
   private async req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -135,13 +142,14 @@ export class XportClient {
     try {
       res = await fetch(`${this.base}${path}`, {
         ...init,
-        headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+        headers: {
+          'content-type': 'application/json',
+          ...(this.lang ? { 'accept-language': this.lang } : {}),
+          ...(init?.headers ?? {}),
+        },
       });
     } catch {
-      throw new XportApiError(
-        `no se pudo contactar al servicio en ${this.base} (¿está corriendo?)`,
-        0,
-      );
+      throw new XportApiError(`${this.base} unreachable`, 0, this.base);
     }
     if (!res.ok) {
       throw new XportApiError(await detailOf(res), res.status);
@@ -220,7 +228,12 @@ async function detailOf(res: Response): Promise<string> {
     const body: unknown = await res.json();
     if (body && typeof body === 'object' && 'detail' in body) {
       const detail = (body as { detail: unknown }).detail;
-      return typeof detail === 'string' ? detail : JSON.stringify(detail);
+      if (typeof detail === 'string') return detail;
+      if (Array.isArray(detail)) {
+        // 422: los mensajes de validación, ya en el idioma pedido
+        return detail.map((d: { msg?: unknown }) => String(d.msg ?? '')).join('. ');
+      }
+      return JSON.stringify(detail);
     }
   } catch {
     /* sin body JSON */

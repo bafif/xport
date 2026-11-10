@@ -10,6 +10,8 @@
 // de la mitad del lote porque x.com cambió la forma de los datos, y seguir daría un CSV
 // vacío sin ningún error.
 
+import type { Note } from './i18n';
+
 // Páginas por POST: cada página de SearchTimeline pesa cientos de KB y nginx acepta
 // 32 MB en /ingest; un lote entero tras un corte largo daba 413 y se perdía.
 export const MAX_PAGES_PER_POST = 20;
@@ -50,25 +52,17 @@ export function decideIngest(
   return { requeue: false, stop: status === 429 ? 'cap' : 'rejected' };
 }
 
-/** El aviso que el popup muestra al reabrirse, según por qué se cortó el crawl. */
-export function stopNotice(reason: StopReason, base: string, status: number): string {
+/** El aviso que el popup muestra al reabrirse, según por qué se cortó el crawl. Si la
+ *  captura es de la cola, también va al servicio, que lo muestra en la página. */
+export function stopNotice(reason: StopReason, base: string, status: number): Note {
   switch (reason) {
     case 'cap':
-      return (
-        'Se llenó el tope de 24 h del gate: corté la captura. Vas a poder seguir cuando ' +
-        'salgan de la ventana los accesos más viejos (el popup muestra cuántos quedan).'
-      );
+      return { key: 'note.stop_cap' };
     case 'offline':
-      return (
-        `El servicio local no responde en ${base}: corté la captura para no ver tweets ` +
-        'que el tope de 24 h no puede contar. Levantá el servicio y volvé a capturar.'
-      );
+      return { key: 'note.stop_offline', params: { base } };
     case 'rejected':
-      return `El servicio rechazó la captura (${status}): la corté. Mirá el log del servicio.`;
+      return { key: 'note.stop_rejected', params: { status } };
     case 'format':
-      return (
-        'x.com cambió el formato de los datos: hay que actualizar xport. Corté la captura ' +
-        'para no seguir con un CSV vacío; el log del servicio tiene un ejemplo.'
-      );
+      return { key: 'note.stop_format' };
   }
 }

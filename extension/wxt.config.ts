@@ -11,9 +11,11 @@ export default defineConfig({
   outDir: 'dist',
   // Una función: la `key` va solo en el build de Chrome (Firefox la marcaría como desconocida).
   manifest: ({ browser }) => ({
-    name: 'xport — Extractor de tweets',
-    description:
-      'Dispara extracciones de tweets → CSV contra el servicio local de xport (FastAPI).',
+    // Nombre y descripción en el idioma del navegador: public/_locales/{es,en}/messages.json.
+    // Si no es ninguno de los dos, inglés.
+    name: '__MSG_extName__',
+    description: '__MSG_extDescription__',
+    default_locale: 'en',
     // `storage`: recuerda la URL base de la API. `activeTab`: al abrir el popup
     // (gesto del usuario) habilita mandarle start/stop del auto-scroll al content
     // script de la pestaña activa de x.com. `nativeMessaging`: deja que el background

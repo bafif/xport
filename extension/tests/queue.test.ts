@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CaptureOut, ProgressResult } from '../lib/api';
+import { render } from '../lib/i18n';
 import { dayStart, isCaptureSearch, isStaleSearch, narrowed, searchUrl } from '../lib/autoscroll';
 import {
   claimAllowed,
@@ -52,6 +53,9 @@ describe('startPlan', () => {
       '2025-01-01',
     );
     expect(plan).toMatchObject({ kind: 'crawl', untilTime: 1718033401 });
+    expect(plan.kind === 'crawl' && render('en', plan.message)).toBe(
+      'Resuming @nasa from 2024-06-10 15:30 UTC (you already had 300 tweets)… (you can close the popup)',
+    );
   });
 
   it('con el rango entero, no hay nada que crawlear', () => {

@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "xport — Tweet extractor",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Runs tweet → CSV extractions against xport's local service (FastAPI).",
+    "description": "Extension description"
+  }
+}

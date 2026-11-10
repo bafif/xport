@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { render } from '../lib/i18n';
+
 import {
   decideRate,
   FALLBACK_WAIT_MS,
@@ -93,6 +95,7 @@ describe('decideRate', () => {
 
 describe('waitingNotice', () => {
   it('dice la cuenta y que sigue sola', () => {
-    expect(waitingNotice('nasa', NOW)).toMatch(/@nasa espera hasta las .+ y sigue sola/);
+    expect(render('es', waitingNotice('nasa', NOW))).toMatch(/@nasa espera hasta las .+ y sigue sola/);
+    expect(render('en', waitingNotice('nasa', NOW))).toMatch(/@nasa waits until .+ and carries on/);
   });
 });

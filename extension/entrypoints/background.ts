@@ -16,6 +16,7 @@ import {
   STORAGE_RUNNER,
   STORAGE_STATUS,
 } from '../lib/capture';
+import type { Note } from '../lib/i18n';
 import { decideIngest, type IngestFlags, MAX_PAGES_PER_POST, stopNotice } from '../lib/ingest';
 import {
   CLAIM_MSG,
@@ -179,10 +180,10 @@ export default defineBackground(() => {
   /** Corta el crawl en curso: sin su estado, el content script deja de scrollear y no
    *  narrowa ni navega más. El aviso lo muestra el popup la próxima vez que se abre, y si
    *  es de la cola, el servicio la marca cortada y lo notifica. */
-  async function stopCrawl(notice: string): Promise<void> {
+  async function stopCrawl(notice: Note): Promise<void> {
     const had = await readCrawl();
     if (!had) return; // no había crawl (captura manual): nada que cortar
-    console.warn('[xport] corto el crawl:', notice);
+    console.warn('[xport] corto el crawl:', notice.key);
     await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
     await browser.storage.local.set({ [STORAGE_STATUS]: notice });
     if (had.captureId !== undefined) {
@@ -203,7 +204,7 @@ export default defineBackground(() => {
   async function report(
     id: number,
     state: 'running' | 'paused' | 'waiting' | 'done' | 'stopped',
-    note?: string,
+    note?: Note,
     resumeAt?: number,
   ): Promise<void> {
     const body: CaptureReport = { state };

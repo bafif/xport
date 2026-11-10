@@ -25,6 +25,7 @@ import {
   untilTime,
 } from '../lib/autoscroll';
 import { STORAGE_CRAWL, STORAGE_PAUSED, STORAGE_STATUS } from '../lib/capture';
+import type { Msg } from '../lib/i18n';
 import { CLAIM_MSG, CRAWL_MSG, type CrawlEvent, type CrawlMsg } from '../lib/queue';
 import { decideRate, type RateInfo, rateFromMsg, type RateMsg, waitingNotice } from '../lib/rate';
 
@@ -123,7 +124,7 @@ export default defineContentScript({
     async function writeCrawl(s: CrawlState): Promise<void> {
       await browser.storage.local.set({ [STORAGE_CRAWL]: s });
     }
-    async function endCrawl(notice?: string): Promise<void> {
+    async function endCrawl(notice?: Msg): Promise<void> {
       await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
       if (notice) await browser.storage.local.set({ [STORAGE_STATUS]: notice });
     }
