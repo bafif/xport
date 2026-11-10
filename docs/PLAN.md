@@ -101,9 +101,10 @@ providers/     de dónde salen los datos, detrás de TweetProvider (twscrape, AP
 mappers/       GraphQL crudo → modelo de dominio
 domain/        Tweet y TweetLink (pydantic v2)
 compliance/    el registro del tope (SlidingWindowGate) y GatedProvider
-storage/       SQLite de datos (deduplicado, checkpoints) y export CSV en streaming
+storage/       SQLite de datos (deduplicado, checkpoints), la cola de capturas y export CSV en streaming
 datadir.py     la mudanza de los datos viejos (`data/`) a la carpeta por usuario
-service/       FastAPI: jobs, ingesta de la captura, export, estado del tope
+service/       FastAPI: jobs, ingesta de la captura, la cola, export, estado del tope, notificaciones
+               y la página local (`service/page/`)
 cli.py         la línea de comandos (Typer)
 extension/     extensión para Chrome y Firefox (WXT, un solo código)
 ```
@@ -305,13 +306,38 @@ o un Excel de verdad sigue abierto en «Pendiente»:
   explica por qué. Uvicorn corre el lifespan antes de abrir su puerto, así que lo que responde es siempre otro proceso.
   El compose queda para CI y despliegue.
 
+**10 de noviembre: la Fase 3, la cola y la página local.** Todo con tests; nada pasó todavía por un navegador:
+
+- La cola vive en `queue.db`, en la carpeta de datos, y la escriben el servicio y la CLI, así que lo que lee y decide va
+  en `BEGIN IMMEDIATE`. Una captura por cuenta; la misma cuenta y rango en cola no se repite. Una terminada o cortada no
+  cambia más, para que un aviso tardío de la extensión no la reviva. `POST /captures/next` devuelve la que está en curso
+  o toma la siguiente (por eso es POST y no GET), y con el tope lleno no empieza ninguna (regla 1).
+- La extensión mira la cola con `alarms` cada medio minuto, al arrancar y cuando el popup encola. La decisión es una
+  función pura (`decideQueue`): sin crawl arranca la que diga el servicio; con crawl sigue mientras sea la que va, y si
+  la cancelaron se corta. Desde dónde arranca sale de `/progress`, como hacía el popup (`startPlan`). El content script
+  avisa la pausa y el fin, y espera la respuesta antes de borrar el crawl: así la vuelta siguiente no arranca de nuevo
+  la que acaba de terminar. Reusa la pestaña de la captura anterior si sigue en una búsqueda de captura y, si se cerró,
+  la vuelve a abrir.
+- El «Capturar ▶» del popup pasó a encolar: hay un solo camino, y todas las capturas exportan y avisan al terminar.
+- Al terminar, el servicio exporta el CSV con el formato de la captura y manda la notificación; un corte avisa con su
+  motivo, salvo que lo haya hecho la persona. Sin un solo tweet en el rango no hay CSV, y se dice por qué puede ser.
+- La página se sirve en `/`, sin build. Los pedidos que cambian algo con un `Origin` que no es el de la página ni el de
+  una extensión reciben 403; sin `Origin` (la CLI, curl) pasan. nginx pasa el `Host` con el puerto, para que la
+  comparación ande detrás del compose.
+- El tope ganó un resumen por día (`access_daily`, en la base de auditoría) que se escribe en la misma transacción que
+  cada acceso, se corrige con cada `reconcile`, no se poda y el tope no lee nunca. Un registro viejo lo arma con lo que
+  tenga en la ventana, y la mudanza de un `data/` viejo suma también su historia.
+- La CLI tiene dos comandos: `extract` (el de antes, ahora con nombre) y `capture`.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada
 en el código. Esa vez anduvo de punta a punta: el host levantó el servicio, los lotes entraron y el tope contó cada post
 visto. Lo que no ejercité en un navegador son los cortes mismos: el servicio caído a mitad de una captura, el popup sin
 servicio y el tope lleno. Tampoco lo de la Fase 1 (7 de noviembre): la pausa con la pestaña oculta, el corte por cambio
-de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine y la
+de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Lo mismo la Fase 3
+(10 de noviembre): la cola, la página local y las notificaciones tienen tests y una prueba de humo contra el servicio,
+pero no pasaron por un navegador. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine y la
 extensión se construyen en CI.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
@@ -337,6 +363,10 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Cambio de forma de x.com: `rejected` y `format_changed` en `/ingest`, ejemplo en el log, corte del crawl | `service/ingest.py`, `lib/ingest.ts` | tests con una página de forma desconocida; vitest |
 | CSV para Excel en castellano desde `/export` y el popup | `service/schemas.py`, popup | tests (BOM y `;`); **sin abrirlo en Excel** |
 | Un solo registro del tope: carpeta de datos por usuario, `.env` del repo, mudanza de `data/`, no arranca si ya corre otro xport | `config.py`, `datadir.py`, `service/app.py` | tests (la CLI desde dos carpetas, la mudanza, la suma de dos registros, el segundo servicio) |
+| Cola de capturas: una por cuenta, de a una, persistente; la extensión la toma con `alarms`; el popup y `tweet-extractor capture` encolan | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (dos cuentas en dos CSV, estados, reinicio); vitest; **no ejercitada en un navegador** |
+| Página local en `/`, con chequeo de `Origin` | `service/page/`, `service/app.py` | tests y prueba de humo; **no abierta en un navegador** |
+| Export y notificación al terminar; aviso si el rango no tiene tweets | `service/captures.py`, `service/notify.py` | tests con un notificador falso; **notificaciones sin probar a mano** |
+| Resumen diario del tope, aparte de la ventana | `compliance/gate.py` | tests (reserva y reconcile, poda, registro viejo, mudanza) |
 | Borrar lo capturado de una cuenta sin tocar el tope | `POST /reset`, popup | tests; real |
 | Arranque automático por native messaging: Firefox, Chrome, Chrome Beta y Chromium, id fijo en Chrome | `deploy/native-host/` | real en Chrome Beta (6/11); Windows con WSL sin probar |
 | El servicio solo atiende pedidos a `localhost` o `127.0.0.1` | `service/app.py` | tests |
@@ -447,37 +477,26 @@ Falta lo que pide un navegador o un Excel de verdad:
    en `SearchTimeline` (punto 11). Listo cuando: el resultado queda acá y elige entre headless, Xvfb o la ventana. Chico;
    necesita una sesión de X.
 
-### Fase 3: la cola y la página local
+### Fase 3: la cola y la página local (hecha el 10 de noviembre)
 
-7. **Cola de capturas.** Por qué: hoy cada captura es una sola cuenta y la arranca el popup, y la idea original era una o
-   varias. Cómo: `POST /captures` con una o varias cuentas y un rango, y `GET /captures`, guardados en SQLite en la
-   carpeta de datos para que sobrevivan a un reinicio. Cada captura tiene un estado: en cola, en curso, en pausa,
-   esperando a X, terminada, o cortada con su motivo. La extensión pide la siguiente (`GET /captures/next`, con
-   `alarms` para el service worker de MV3), la crawlea e informa el avance. La CLI la llena con `tweet-extractor capture
-   --account a,b --since … --until …`. Va de a una, porque X frena la búsqueda por cuenta de X y en paralelo no rinde.
-   Reemplaza la idea de persistir `/jobs`. Listo cuando: dos cuentas encoladas salen en dos CSV sin tocar nada en el
-   medio. Mediano.
-8. **La página local.** Cómo: el servicio la sirve en `/`, con la casilla de Excel del punto 3, el chequeo de `Origin`
-   y lo siguiente:
-   - **Avance de verdad:** por captura, lo que dice `/progress` («vas por el 10/03/2024, 63 % del rango, 4.210 tweets»),
-     su estado y la hora de la última página que entró. Reemplaza al contador «Capturado» del popup, que suma de por
-     vida y no coincide con el CSV.
-   - **Fechas fáciles:** atajos (último mes, último año, un año entero), «Hasta» vacío quiere decir hoy y la aclaración
-     «hasta el 31/12/2025 inclusive»; por dentro sigue siendo exclusivo. La dirección del servicio no se muestra.
-   - **El tope:** el uso de las últimas 24 horas y un resumen por día de lo visto antes, que sale de una tabla diaria
-     (fecha y cantidad) en la base de auditoría que la poda de la ventana no toca y que no cuenta para el tope.
+Está en el código y con tests (ver «Cómo lo fui construyendo»). Los números siguen, porque el resto del plan los cita.
+Falta pasarla por un navegador y lo que dice cada punto:
 
-   Listo cuando: se encola, se sigue y se baja una captura sin abrir el popup. Mediano.
-9. **Avisar cuando termina y exportar solo.** Por qué: hoy el crawl termina en silencio y hay que volver a apretar
-   «Exportar». Cómo: cuando una captura de la cola termina, el servicio exporta su CSV y manda una notificación del
-   sistema con la cantidad de tweets; la manda el servicio y no la extensión, que va a estar en un navegador sin ventana.
-   Un corte avisa igual, con su motivo. Hasta que esté la cola, el popup hace lo mismo con `notifications`. Listo
-   cuando: una captura termina con todo cerrado y aparece la notificación, que lleva al CSV. Chico.
-10. **Cuenta inexistente, suspendida o protegida.** Cómo: primero, si el rango entero termina sin un solo tweet, decirlo
-    («No encontré tweets: ¿la cuenta existe, es pública y escribió en esas fechas?»). Después, capturar
-    `UserByScreenName` y mapearlo en `mappers/` para distinguir inexistente, suspendida y protegida; esa captura queda
-    cortada con el motivo y la cola sigue con la próxima, sin frenar el resto. Listo cuando: cada caso da su mensaje.
-    Chico lo primero, mediano lo segundo.
+7. **Cola de capturas.** Hecha: `POST /captures`, `GET /captures`, `POST /captures/next` y `POST /captures/{id}/state`,
+   en `queue.db`, y `tweet-extractor capture`; el «Capturar ▶» del popup también encola. Falta la prueba a mano: dos
+   cuentas encoladas desde la página que salgan en dos CSV sin tocar nada en el medio. Si la pestaña de la cola se
+   cierra, el background la vuelve a abrir; si la persona la usa para otra cosa, la captura queda en curso sin avanzar
+   hasta que la cancele (lo resuelve el navegador invisible, punto 13). El estado «esperando a X» llega con el punto 11.
+8. **La página local.** Hecha (`service/page/`, sin build), con el chequeo de `Origin`, las fechas inclusivas con
+   atajos, el avance por captura y el tope con su resumen diario. Falta abrirla en un navegador de verdad. El contador
+   «Capturado» del popup sigue como estaba, hasta que el popup se vaya.
+9. **Avisar cuando termina y exportar solo.** Hecho en el servicio (`service/notify.py`): en Linux con `notify-send`,
+   donde el clic abre el CSV; en Windows con un toast de PowerShell, y en macOS con `osascript`, sin clic. Ninguna se
+   probó a mano, y las de Windows y macOS ni siquiera corrieron.
+10. **Cuenta inexistente, suspendida o protegida.** Lo primero está: un rango entero sin tweets termina con «No encontré
+    tweets: ¿la cuenta existe, es pública y escribió en esas fechas?». Falta lo segundo: capturar `UserByScreenName`
+    (la búsqueda no lo pide; hay que abrir el perfil) y mapearlo en `mappers/` para distinguir los tres casos. Los tests
+    necesitan respuestas reales de x.com, así que va junto con la prueba del punto 6. Mediano.
 
 ### Fase 4: el crawl
 

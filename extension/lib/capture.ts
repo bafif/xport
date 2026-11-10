@@ -22,6 +22,7 @@ export const STORAGE_STATUS = 'xport:status'; // último aviso del crawl (p.ej. 
 export const STORAGE_PAUSED = 'xport:paused'; // aviso mientras el crawl espera a que su pestaña
 // vuelva a estar a la vista; el popup lo muestra mientras haya crawl
 export const STORAGE_EXCEL = 'xport:excel'; // casilla «Para Excel en castellano» del popup
+export const STORAGE_QUEUE_TAB = 'xport:queue-tab'; // id de la pestaña donde corre la cola
 
 // Operaciones que capturamos. MVP: SearchTimeline (rango de fechas vía la búsqueda
 // from:user since: until:). UserTweets* son timeline de perfil (otro envelope) — el

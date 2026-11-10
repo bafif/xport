@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated
@@ -16,6 +17,7 @@ from tweet_extractor.orchestrator import AccountResult, run_job
 from tweet_extractor.providers.base import ProviderError
 from tweet_extractor.providers.factory import build_backend
 from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCODING
+from tweet_extractor.storage.queue import Capture, CaptureQueue
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
 app = typer.Typer(
@@ -34,11 +36,24 @@ def _parse_day(value: str, param: str) -> datetime:
     return datetime(day.year, day.month, day.day, tzinfo=UTC)
 
 
+def _accounts(values: list[str]) -> list[str]:
+    """Las cuentas de `--account`, repetible y con varias separadas por comas. Minúsculas
+    como en la API (`_clean_handle`): X no distingue mayúsculas en los handles y el store
+    compara exacto. Sin repetidos, preservando el orden."""
+    raw = [part for value in values for part in value.split(",")]
+    accounts = list(dict.fromkeys(a.strip().lstrip("@").strip().lower() for a in raw))
+    if any(not a for a in accounts):
+        raise typer.BadParameter("--account no puede ser vacío")
+    return accounts
+
+
 @app.command()
 def extract(
     account: Annotated[
         list[str],
-        typer.Option("--account", "-a", help="Handle de la cuenta (sin @). Repetible."),
+        typer.Option(
+            "--account", "-a", help="Handle de la cuenta (sin @). Repetible o separadas por comas."
+        ),
     ],
     since: Annotated[str, typer.Option(help="Fecha inicial YYYY-MM-DD (UTC), inclusiva.")],
     until: Annotated[str, typer.Option(help="Fecha final YYYY-MM-DD (UTC), exclusiva.")],
@@ -57,17 +72,13 @@ def extract(
         str, typer.Option(help="Delimitador del CSV (default ','; ';' p/ Excel-AR).")
     ] = DEFAULT_DELIMITER,
 ) -> None:
-    """Corre el job de extracción. Todo acceso pasa por el Compliance Gate
-    (tope deslizante de 24 h); un re-run saltea los tramos ya completados."""
+    """Extrae del lado del servidor (twscrape o la API oficial). Todo acceso pasa por el
+    Compliance Gate (tope deslizante de 24 h); un re-run saltea los tramos ya completados."""
     since_dt = _parse_day(since, "--since")
     until_dt = _parse_day(until, "--until")
     if since_dt >= until_dt:
         raise typer.BadParameter("--since debe ser anterior a --until")
-    # Minúsculas como en la API (`_clean_handle`): X no distingue mayúsculas en los
-    # handles y el store compara exacto. Sin repetidos, preservando el orden.
-    accounts = list(dict.fromkeys(a.strip().lstrip("@").strip().lower() for a in account))
-    if any(not a for a in accounts):
-        raise typer.BadParameter("--account no puede ser vacío")
+    accounts = _accounts(account)
 
     try:
         results, usage, remaining = asyncio.run(
@@ -85,6 +96,50 @@ def extract(
             f"{r.windows_skipped} salteados por checkpoint)"
         )
     typer.echo(f"Gate: {usage:,} accesos en la ventana de 24 h; quedan {remaining:,} del tope.")
+
+
+@app.command()
+def capture(
+    account: Annotated[
+        list[str],
+        typer.Option(
+            "--account", "-a", help="Handle de la cuenta (sin @). Repetible o separadas por comas."
+        ),
+    ],
+    since: Annotated[str, typer.Option(help="Fecha inicial YYYY-MM-DD (UTC), inclusiva.")],
+    until: Annotated[str, typer.Option(help="Fecha final YYYY-MM-DD (UTC), exclusiva.")],
+    excel: Annotated[
+        bool, typer.Option("--excel", help="CSV para Excel en castellano (UTF-8 con BOM y ';').")
+    ] = False,
+) -> None:
+    """Encola capturas para la extensión, una por cuenta: las toma de a una mientras el
+    navegador con xport esté abierto, y al terminar cada una el servicio exporta su CSV."""
+    since_day = _parse_day(since, "--since").date()
+    until_day = _parse_day(until, "--until").date()
+    if since_day >= until_day:
+        raise typer.BadParameter("--since debe ser anterior a --until")
+    accounts = _accounts(account)
+    bad = [a for a in accounts if not re.fullmatch(r"[a-z0-9_]{1,15}", a)]
+    if bad:
+        raise typer.BadParameter(f"@{bad[0]} no es un nombre de usuario de X")
+    encoding, delimiter = ("utf-8-sig", ";") if excel else (DEFAULT_ENCODING, DEFAULT_DELIMITER)
+    caps = asyncio.run(_enqueue(accounts, since_day, until_day, encoding, delimiter))
+    for c in caps:
+        typer.echo(f"#{c.id} @{c.account} {c.since} → {c.until}: {c.state.value}")
+    typer.echo(
+        "La extensión las toma de a una con el navegador abierto; el avance y los CSV están "
+        "en http://localhost:8000/."
+    )
+
+
+async def _enqueue(
+    accounts: list[str], since: date, until: date, encoding: str, delimiter: str
+) -> list[Capture]:
+    settings = Settings()
+    for note in await asyncio.to_thread(migrate_legacy_data, settings):
+        typer.echo(f"datos viejos: {note}")
+    async with CaptureQueue(settings.queue_db_path) as queue:
+        return await queue.add(accounts, since, until, encoding=encoding, delimiter=delimiter)
 
 
 async def _run(

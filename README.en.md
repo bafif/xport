@@ -36,7 +36,30 @@ again, the latest version is kept.
 Without a browser there are two ways. With a regular X account it has been blocked since June 2026: x.com changed how
 it signs requests and twscrape can no longer do it. With the [official X API](#with-the-official-api), which is paid,
 it is implemented but **has not been tried against the real API**: it was built from X's documentation and made-up
-responses. The capture cut-offs added on 6 November 2026 have not been tried in a browser yet.
+responses. The capture cut-offs added on 6 November 2026 have not been tried in a browser yet, and neither have the
+queue, the local page and the notifications from 10 November.
+
+## Everyday use: the page
+
+With the service running, `http://localhost:8000/` is xport's page (in Spanish). It opens in your usual browser and
+handles several accounts at once:
+
+1. **Accounts and dates:** one or more accounts, separated by commas or spaces. «Desde» (from) and «Hasta» (to) are
+   both included («hasta el 31/12/2025 inclusive»), and an empty «Hasta» means today. There are shortcuts: last month,
+   last year and a whole year. If the CSV is going to an Excel set to Spanish, tick «Para Excel en castellano».
+2. **Capture:** each account goes into the queue. The extension takes them one at a time (X throttles search per
+   account, and in parallel it does not pay off): it opens the search in a tab and scrolls it by itself, as from the
+   popup. **That tab has to stay in view** while it captures. If you close it, it opens it again where it was.
+3. **Follow it:** each capture shows its state (queued, running, paused, done or stopped), how far back it got, how
+   much of the range it covers, how many tweets it has and when the last page came in. «Cancelar» takes it off the
+   queue; what was already stored stays.
+4. **The CSV:** when one finishes, the service builds its CSV by itself and says so with a system notification, which
+   on Linux opens the file with a click. The link stays on the page. If the whole range ends without a single tweet,
+   it says so: the account may not exist, be protected or have written nothing in those dates. If it stops (the cap,
+   the service, a change on x.com), the notification says why.
+
+Below, the page shows the cap: what was seen in the last 24 hours and a per-day summary of what was seen before, which
+is only history and does not count towards the cap.
 
 ## Everyday use: the popup
 
@@ -49,7 +72,9 @@ date range, the cap usage and the link to the exported CSV.">
    hours and how many are left.
 2. **Fill it in:** the account without `@`, and «Desde» (from) and «Hasta» (to) as `YYYY-MM-DD`. «Desde» is included;
    «Hasta» is not.
-3. **Capture:** «Capturar ▶» opens X's search in a new tab and scrolls it by itself. You can close the popup. If X stops
+3. **Capture:** «Capturar ▶» puts the account in the same queue as the page and, if nothing else is running, opens X's
+   search in a new tab and scrolls it by itself. You can close the popup. When it finishes, the service builds the CSV
+   and says so with a notification, as with the page. If X stops
    returning results before the start date, the extension narrows the range and searches again until the whole range is
    covered. «Detener ⏹» stops it. **That tab has to stay in view:** if you switch to another tab or minimize the
    window, the capture pauses (the popup says so) and carries on by itself when you come back.
@@ -115,7 +140,8 @@ CI and deployment: it has its own ledger, in a Podman volume. If an xport alread
 uv sync
 uv run fastapi dev src/tweet_extractor/service/app.py
 cp .env.example .env && podman compose -f deploy/compose.yaml up --build
-uv run tweet-extractor --account <account> --since 2025-01-01 --until 2026-01-01
+uv run tweet-extractor capture --account nasa,esa --since 2025-01-01 --until 2026-01-01
+uv run tweet-extractor extract --account <account> --since 2025-01-01 --until 2026-01-01
 ```
 
 - `fastapi dev` starts the service on `http://localhost:8000`, the address the extension uses unless you tell it
@@ -124,7 +150,10 @@ uv run tweet-extractor --account <account> --since 2025-01-01 --until 2026-01-01
   computer. In the popup, put that address in the service field. It needs the `.env`, even if it is the empty copy of
   `.env.example`. The data and the cap's ledger live in two separate volumes. After a reboot it comes back by itself
   only if `podman-restart.service` is enabled (`systemctl --user enable podman-restart.service`).
-- `tweet-extractor` downloads tweets from the server, without a browser: with the official API (see below) or with the
+- `tweet-extractor capture` queues captures for the extension, one per account (`--account` repeats or takes several
+  separated by commas; `--excel` for an Excel set to Spanish). The browser with xport open takes them; progress and
+  the CSVs are on the page.
+- `tweet-extractor extract` downloads tweets from the server, without a browser: with the official API (see below) or with the
   cookies of an X account, which has been blocked since June 2026 and fails with an error that says so. `--since` is
   included and `--until` is not (UTC days). Also: `--out-dir` (by default, `csv/` in the data folder), `--subwindow-days`, `--encoding` (`utf-8-sig` adds the
   BOM Excel expects) and `--delimiter` (`;` for an Excel set to a locale that uses the comma as decimal separator). If
@@ -146,12 +175,18 @@ The service answers these requests:
 
 | Request | What it does |
 |---|---|
+| `GET /` | xport's page |
 | `GET /healthz` | says whether the service is alive and that it is xport |
 | `GET /gate` | cap usage in the last 24 hours, what is left, the cap and the window |
 | `POST /ingest` | stores the pages the extension captured and records their accesses |
 | `POST /progress` | the oldest stored tweet of an account in a range: where capture resumes |
 | `POST /export`, `GET /exports/{file}` | builds and downloads the CSV of a captured range (optional `encoding` and `delimiter`) |
 | `POST /reset` | deletes what was captured for an account (the cap's ledger is never touched) |
+| `POST /captures`, `GET /captures` | queues one capture per account; lists the latest, with their progress |
+| `POST /captures/next` | the capture the extension has to do (taken from the queue); 204 if there is none or the cap is full |
+| `POST /captures/{id}/state` | what the extension reports (running, paused, done, stopped) or a cancellation |
+| `GET /captures/{id}/csv` | the CSV of a finished capture |
+| `GET /gate/days` | what was seen per day over the last 30 days with activity (does not count towards the cap) |
 | `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{account}` | server-side downloads (blocked) |
 
 Configuration lives in the repository's `.env`, which git ignores; [`.env.example`](.env.example) lists every variable
@@ -167,6 +202,8 @@ needs none of them: it uses the browser's session. Relative paths hang from the 
 | `AUDIT_DB_PATH` | the cap's ledger, separate from the data | `audit/ledger.db` |
 | `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; twscrape accounts | `tweets.db`, `accounts.db` |
 | `CSV_DIR`, `CAPTURES_DIR` | CSVs of server-side downloads and of captures | `csv`, `captures` |
+| `QUEUE_DB_PATH` | the capture queue | `queue.db` |
+| `XPORT_NOTIFY` | system notification when a capture finishes or stops | `true` |
 | `CORS_ALLOW_ORIGINS` | JSON list of allowed origins (the extension does not need it) | `[]` |
 | `ALLOWED_HOSTS` | hosts the service answers to (guards against DNS rebinding) | `["localhost","127.0.0.1"]` |
 | `PAGE_SIZE`, `SUBWINDOW_DAYS` | page size and days per search stretch (server) | `20`, `7` |
@@ -222,6 +259,11 @@ decisions:
   response, and X bills expansions from 22 November 2026.
 - The service only answers requests addressed to `localhost` or `127.0.0.1`. It only listens on your computer, but a
   web page using DNS rebinding could reach it under its own domain.
+- Any site you open can send requests to `localhost` from your browser. So the ones that change something (queueing,
+  cancelling, deleting) have to come from the page itself, from the extension or from a program without a browser,
+  like the CLI: those carrying another site's `Origin` get 403.
+- The queue goes one account at a time, because X throttles search per X account and in parallel it does not pay
+  off. It lives in SQLite in the data folder, so it survives a restart.
 - Only `mappers/` interprets X's responses; the extension does not read them. When x.com changes the shape, it is fixed
   in one place, and a change the mapper does not understand gives an error, not an empty CSV.
 - The CSV defaults (UTF-8 without BOM, comma, everything quoted, UTC, `<account>_<from>_<to>.csv`) have been settled

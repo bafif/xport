@@ -28,7 +28,7 @@ def salida(result: Any) -> str:
 
 def test_fecha_invalida_es_error_de_uso():
     result = runner.invoke(
-        cli.app, ["--account", "u", "--since", "2023-13-01", "--until", "2024-01-01"]
+        cli.app, ["extract", "--account", "u", "--since", "2023-13-01", "--until", "2024-01-01"]
     )
     assert result.exit_code != 0
     assert "YYYY-MM-DD" in salida(result)
@@ -36,14 +36,14 @@ def test_fecha_invalida_es_error_de_uso():
 
 def test_since_no_anterior_a_until_es_error():
     result = runner.invoke(
-        cli.app, ["--account", "u", "--since", "2024-01-01", "--until", "2023-01-01"]
+        cli.app, ["extract", "--account", "u", "--since", "2024-01-01", "--until", "2023-01-01"]
     )
     assert result.exit_code != 0
     assert "anterior" in salida(result)
 
 
 def test_account_vacio_es_error():
-    result = runner.invoke(cli.app, ["--account", "@", *ARGS_BASE])
+    result = runner.invoke(cli.app, ["extract", "--account", "@", *ARGS_BASE])
     assert result.exit_code != 0
     assert "vacío" in salida(result)
 
@@ -71,7 +71,7 @@ def test_happy_path_parsea_y_resume(monkeypatch: pytest.MonkeyPatch, tmp_path: P
         )
 
     monkeypatch.setattr(cli, "_run", fake_run)
-    result = runner.invoke(cli.app, ["--account", "@someuser", *ARGS_BASE])
+    result = runner.invoke(cli.app, ["extract", "--account", "@someuser", *ARGS_BASE])
     assert result.exit_code == 0
     assert capturado["accounts"] == ["someuser"]  # el @ se tolera y se limpia
     assert capturado["since"] == datetime(2023, 1, 1, tzinfo=UTC)
@@ -85,7 +85,7 @@ def test_error_de_dominio_sale_con_codigo_1(monkeypatch: pytest.MonkeyPatch):
         raise ProviderError("Faltan cookies X_AUTH_TOKEN/X_CT0 en el entorno (.env).")
 
     monkeypatch.setattr(cli, "_run", fake_run)
-    result = runner.invoke(cli.app, ["--account", "u", *ARGS_BASE])
+    result = runner.invoke(cli.app, ["extract", "--account", "u", *ARGS_BASE])
     assert result.exit_code == 1
     assert "Faltan cookies" in salida(result)
 
@@ -106,7 +106,7 @@ def test_desde_otra_carpeta_usa_el_mismo_registro(
     for folder in ("una", "otra"):
         (tmp_path / folder).mkdir()
         monkeypatch.chdir(tmp_path / folder)
-        result = runner.invoke(cli.app, ["--account", "someuser", *ARGS_BASE])
+        result = runner.invoke(cli.app, ["extract", "--account", "someuser", *ARGS_BASE])
         assert result.exit_code == 0, salida(result)
         outputs.append(result.output)
     assert "Gate: 2 accesos" in outputs[0]
@@ -116,3 +116,26 @@ def test_desde_otra_carpeta_usa_el_mismo_registro(
     assert "Gate: 2 accesos" in outputs[1]
     assert (tmp_path / "xport-data" / "audit" / "ledger.db").is_file()
     assert not (tmp_path / "una" / "data").exists()
+
+
+def test_capture_llena_la_cola(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    from tweet_extractor.storage.queue import CaptureQueue
+
+    monkeypatch.setenv("XPORT_DATA_DIR", str(tmp_path / "xport-data"))
+    result = runner.invoke(cli.app, ["capture", "--account", "Uno,@dos", "--excel", *ARGS_BASE])
+    assert result.exit_code == 0, salida(result)
+    assert "@uno 2023-01-01 → 2023-01-08: queued" in result.output
+
+    async def queued() -> list[tuple[str, str, str]]:
+        async with CaptureQueue(tmp_path / "xport-data" / "queue.db") as q:
+            return [(c.account, c.encoding, c.delimiter) for c in await q.recent()]
+
+    assert asyncio.run(queued()) == [("dos", "utf-8-sig", ";"), ("uno", "utf-8-sig", ";")]
+
+
+def test_capture_rechaza_lo_que_no_es_un_usuario_de_x() -> None:
+    result = runner.invoke(cli.app, ["capture", "--account", "nasa since:2020", *ARGS_BASE])
+    assert result.exit_code != 0
+    assert "no es un nombre de usuario de X" in salida(result)

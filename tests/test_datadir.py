@@ -30,6 +30,11 @@ def _accesses(path: Path) -> int:
         return int(db.execute("SELECT COALESCE(SUM(count), 0) FROM access_ledger").fetchone()[0])
 
 
+def _daily(path: Path) -> int:
+    with closing(sqlite3.connect(path)) as db:
+        return int(db.execute("SELECT COALESCE(SUM(count), 0) FROM access_daily").fetchone()[0])
+
+
 def _settings(tmp_path: Path, *legacy: Path) -> Settings:
     return Settings(
         _env_file=None, xport_data_dir=tmp_path / "nueva", xport_legacy_dirs=list(legacy)
@@ -67,6 +72,7 @@ def test_dos_registros_se_suman_en_uno(tmp_path: Path) -> None:
     notes = migrate_legacy_data(s)
 
     assert _accesses(s.audit_db_path) == 130
+    assert _daily(s.audit_db_path) == 130  # la historia por día suma los dos
     assert not (old / "audit" / "ledger.db").exists()
     assert s.data_db_path.read_bytes() == b"nuevo"  # las bases de tweets no se mezclan
     assert (old / "tweets.db").exists()

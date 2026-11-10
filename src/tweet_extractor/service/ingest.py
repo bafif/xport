@@ -83,6 +83,7 @@ async def ingest(body: IngestPayload, svc: SvcDep) -> IngestResult:
             json.dumps(raw, ensure_ascii=False)[:_EXAMPLE_CHARS],
         )
     saved = await svc.store.save(mapped)
+    await svc.queue.touch(body.account)  # la hora de la última página, para la página local
     # accessed==0 (página vacía/malformada) -> no se registra nada; solo se reporta el uso.
     usage = await svc.gate.record(accessed) if accessed else await svc.gate.usage()
     remaining = svc.gate.hard_cap - usage

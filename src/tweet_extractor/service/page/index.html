@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>xport</title>
+    <link rel="stylesheet" href="/page/page.css" />
+    <script type="module" src="/page/page.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>xport</h1>
+      <p class="hint">Los tweets de una o varias cuentas de X entre dos fechas, un CSV por cuenta.</p>
+    </header>
+
+    <p id="offline" class="banner" role="alert" hidden>
+      El servicio de xport no responde. Si lo cerraste, volvé a abrirlo; esta página se actualiza sola.
+    </p>
+
+    <main>
+      <section aria-labelledby="new-title">
+        <h2 id="new-title">Nueva captura</h2>
+        <form id="form" novalidate>
+          <label for="accounts">Cuentas</label>
+          <input id="accounts" autocomplete="off" spellcheck="false" placeholder="nasa, esa" />
+          <p class="hint">Una o varias, separadas por comas o espacios. Sin @.</p>
+
+          <div class="dates">
+            <div>
+              <label for="since">Desde</label>
+              <input id="since" type="date" />
+            </div>
+            <div>
+              <label for="until">Hasta</label>
+              <input id="until" type="date" />
+            </div>
+          </div>
+          <p id="range" class="hint">«Hasta» vacío quiere decir hoy.</p>
+
+          <div class="shortcuts" role="group" aria-label="Atajos de fechas">
+            <button type="button" data-months="1">Último mes</button>
+            <button type="button" data-months="12">Último año</button>
+            <select id="year" aria-label="Un año entero">
+              <option value="">Un año entero…</option>
+            </select>
+          </div>
+
+          <label class="check"><input id="excel" type="checkbox" /> Para Excel en castellano</label>
+
+          <button type="submit" class="primary">Capturar</button>
+          <p id="form-msg" role="status"></p>
+        </form>
+      </section>
+
+      <section aria-labelledby="queue-title">
+        <h2 id="queue-title">Capturas</h2>
+        <p class="hint">
+          Las hace el navegador con la extensión de xport, de a una cuenta por vez. Mientras tanto,
+          dejá abierta la pestaña de x.com que abre y tenela a la vista.
+        </p>
+        <ol id="queue"></ol>
+        <p id="queue-empty" class="hint" hidden>Todavía no hay capturas.</p>
+      </section>
+
+      <section aria-labelledby="gate-title">
+        <h2 id="gate-title">Tope de 24 horas</h2>
+        <p id="gate"></p>
+        <div class="bar" aria-hidden="true"><div id="gate-bar"></div></div>
+        <p class="hint">
+          xport nunca pasa de 900.000 tweets vistos en 24 horas: X penaliza pasar del millón.
+        </p>
+        <details>
+          <summary>Lo visto por día</summary>
+          <table>
+            <thead>
+              <tr><th scope="col">Día</th><th scope="col" class="num">Tweets vistos</th></tr>
+            </thead>
+            <tbody id="days"></tbody>
+          </table>
+        </details>
+      </section>
+    </main>
+  </body>
+</html>

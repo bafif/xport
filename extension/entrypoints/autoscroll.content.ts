@@ -8,8 +8,10 @@ import {
   type CrawlState,
   decideStep,
   FRESH_COUNTERS,
+  isCaptureSearch,
   MAX_STEPS,
   matchesSearch,
+  narrowed,
   nextUntil,
   pausedNotice,
   reachedSince,
@@ -18,6 +20,7 @@ import {
   searchUrl,
 } from '../lib/autoscroll';
 import { STORAGE_CRAWL, STORAGE_PAUSED, STORAGE_STATUS } from '../lib/capture';
+import { CRAWL_MSG, type CrawlEvent, type CrawlMsg } from '../lib/queue';
 
 // Mundo ISOLATED: conduce el crawl adaptativo (patrón C). Scrollea la búsqueda hasta
 // el fondo disparando los fetches de SearchTimeline que captura-main intercepta y,
@@ -41,9 +44,13 @@ export default defineContentScript({
       if (!document.hidden) wake?.();
     });
 
-    browser.runtime.onMessage.addListener((msg: unknown): void => {
+    browser.runtime.onMessage.addListener((msg: unknown): Promise<boolean> | undefined => {
       const m = msg as Partial<AutoscrollMsg> | null;
-      if (!m || m.type !== AUTOSCROLL_MSG) return;
+      if (!m || m.type !== AUTOSCROLL_MSG) return undefined;
+      if (m.action === 'ping') {
+        // ¿Esta pestaña sigue en una búsqueda de captura? Si sí, el background la reusa.
+        return Promise.resolve(isCaptureSearch(location.href));
+      }
       if (m.action === 'stop') {
         userStopped = true;
         running = false;
@@ -52,6 +59,7 @@ export default defineContentScript({
       } else if (m.action === 'start' && !running) {
         void maybeStart();
       }
+      return undefined;
     });
 
     // Corte desde afuera: el background borra el crawl cuando el gate se llenó o el
@@ -82,6 +90,21 @@ export default defineContentScript({
     async function endCrawl(notice?: string): Promise<void> {
       await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
       if (notice) await browser.storage.local.set({ [STORAGE_STATUS]: notice });
+    }
+
+    /** Le avisa al background qué pasó con una captura de la cola (sin cola, nada). Espera
+     *  la respuesta: así el servicio sabe que terminó antes de que se borre el crawl y la
+     *  próxima vuelta de la cola no la vuelva a arrancar. */
+    async function tell(state: CrawlState, event: CrawlEvent): Promise<void> {
+      if (state.captureId === undefined) return;
+      const msg: CrawlMsg = { type: CRAWL_MSG, event, captureId: state.captureId };
+      await browser.runtime.sendMessage(msg).catch(() => {});
+    }
+
+    /** El rango quedó cubierto: la captura terminó. */
+    async function finish(state: CrawlState): Promise<void> {
+      await tell(state, 'done');
+      await endCrawl();
     }
 
     async function maybeStart(): Promise<void> {
@@ -139,12 +162,14 @@ export default defineContentScript({
     async function pauseWhileHidden(state: CrawlState): Promise<void> {
       console.debug('[xport] pestaña oculta: crawl en pausa');
       await browser.storage.local.set({ [STORAGE_PAUSED]: pausedNotice(state.account) });
+      await tell(state, 'paused');
       await new Promise<void>((resolve) => {
         wake = resolve;
         if (!document.hidden || !running) resolve();
       });
       wake = null;
       await browser.storage.local.remove(STORAGE_PAUSED);
+      if (running) await tell(state, 'resumed');
       console.debug('[xport] pestaña a la vista: sigue el crawl');
     }
 
@@ -201,7 +226,7 @@ export default defineContentScript({
       if (oldest === null) {
         // No se renderizó NINGÚN tweet.
         if (hasEmptyState()) {
-          await endCrawl(); // x.com dice "sin resultados": rango realmente vacío → terminamos
+          await finish(cur); // x.com dice "sin resultados": rango realmente vacío → terminamos
           console.debug('[xport] sin resultados para', state.since, '→', state.until);
           return;
         }
@@ -223,7 +248,7 @@ export default defineContentScript({
         return;
       }
       if (reachedSince(oldest, state.since)) {
-        await endCrawl(); // llegamos al inicio del rango: cubierto entero
+        await finish(cur); // llegamos al inicio del rango: cubierto entero
         console.debug('[xport] crawl completo (alcanzó since)');
         return;
       }
@@ -232,7 +257,7 @@ export default defineContentScript({
       // resetea). `until` decrece estrictamente → el crawl termina.
       const until = nextUntil(oldest, state.until);
       console.debug('[xport] pared a', oldest, '→ narrow until', until);
-      await writeCrawl({ account: state.account, since: state.since, until });
+      await writeCrawl(narrowed(cur, until));
       location.href = searchUrl(state.account, state.since, until);
     }
   },

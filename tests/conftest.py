@@ -17,6 +17,7 @@ def _aislar_carpeta_de_datos(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     monkeypatch.setenv("XPORT_DATA_DIR", str(tmp_path / "xport-data"))
     monkeypatch.setenv("XPORT_LEGACY_DIRS", "[]")
     monkeypatch.setenv("XPORT_PEER_PORTS", "[]")
+    monkeypatch.setenv("XPORT_NOTIFY", "false")  # ninguna notificación a la pantalla
 
 
 class FakeClock:

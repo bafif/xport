@@ -1,0 +1,166 @@
+"""La cola de capturas por HTTP (puntos 7, 9 y 10 de docs/PLAN.md).
+
+La página local, el popup y la CLI encolan; la extensión pide la siguiente con
+`POST /captures/next`, la crawlea y avisa su estado. Cuando una termina, el servicio exporta
+su CSV y manda una notificación del sistema; un corte también avisa, con su motivo.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+
+from fastapi import APIRouter, HTTPException, Response, status
+from fastapi.responses import FileResponse
+
+from tweet_extractor.service.routers import SvcDep
+from tweet_extractor.service.schemas import CaptureCreate, CaptureOut, CaptureReport, GateDay
+from tweet_extractor.storage.csv_exporter import export_account
+from tweet_extractor.storage.queue import Capture, CaptureState
+
+router = APIRouter()
+
+EMPTY_NOTE = "No encontré tweets: ¿la cuenta existe, es pública y escribió en esas fechas?"
+
+
+def _utc(day: date) -> datetime:
+    return datetime(day.year, day.month, day.day, tzinfo=UTC)
+
+
+def _thousands(n: int) -> str:
+    return f"{n:,}".replace(",", ".")
+
+
+def _percent(cap: Capture, oldest: date | None) -> int:
+    """Qué parte del rango ya cubre la captura: va del más nuevo al más viejo, así que lo
+    cubierto es de `oldest` a `until`."""
+    if cap.state == CaptureState.DONE:
+        return 100
+    if oldest is None:
+        return 0
+    total = (cap.until - cap.since).days
+    covered = (cap.until - oldest).days
+    return max(0, min(99, covered * 100 // total))
+
+
+async def _out(svc: SvcDep, cap: Capture) -> CaptureOut:
+    oldest_dt, captured, _ = await svc.store.account_extent(
+        cap.account, since=_utc(cap.since), until=_utc(cap.until)
+    )
+    oldest = oldest_dt.date() if oldest_dt else None
+    return CaptureOut(
+        id=cap.id,
+        account=cap.account,
+        since=cap.since,
+        until=cap.until,
+        encoding=cap.encoding,
+        delimiter=cap.delimiter,
+        state=cap.state,
+        note=cap.note,
+        created_at=cap.created_at,
+        started_at=cap.started_at,
+        finished_at=cap.finished_at,
+        last_page_at=cap.last_page_at,
+        csv=cap.csv,
+        download_url=f"/captures/{cap.id}/csv" if cap.csv else None,
+        exported=cap.exported,
+        excluded_replies=cap.excluded_replies,
+        oldest=oldest,
+        captured=captured,
+        percent=_percent(cap, oldest),
+    )
+
+
+async def _finish(svc: SvcDep, cap: Capture) -> Capture:
+    """Exporta el CSV de una captura que terminó y avisa. Sin un solo tweet en el rango no
+    hay CSV que valga: se dice por qué puede ser (punto 10)."""
+    since, until = _utc(cap.since), _utc(cap.until)
+    _, total, _ = await svc.store.account_extent(cap.account, since=since, until=until)
+    title = f"Terminó la captura de @{cap.account}"
+    if total == 0:
+        cap = await svc.queue.record_export(
+            cap.id, csv=None, exported=0, excluded_replies=0, note=EMPTY_NOTE
+        )
+        svc.notifier.post(title, EMPTY_NOTE)
+        return cap
+    path, exported = await export_account(
+        svc.store,
+        cap.account,
+        svc.settings.captures_dir,
+        since=since,
+        until=until,
+        encoding=cap.encoding,
+        delimiter=cap.delimiter,
+    )
+    cap = await svc.queue.record_export(
+        cap.id, csv=path.name, exported=exported, excluded_replies=max(0, total - exported)
+    )
+    svc.notifier.post(title, f"{_thousands(exported)} tweets en {path.name}", path)
+    return cap
+
+
+@router.post("/captures", response_model=list[CaptureOut], status_code=status.HTTP_201_CREATED)
+async def enqueue(body: CaptureCreate, svc: SvcDep) -> list[CaptureOut]:
+    """Encola una captura por cuenta. La misma cuenta y rango ya en cola no se repite."""
+    caps = await svc.queue.add(
+        body.accounts, body.since, body.until, encoding=body.encoding, delimiter=body.delimiter
+    )
+    return [await _out(svc, c) for c in caps]
+
+
+@router.get("/captures", response_model=list[CaptureOut])
+async def list_captures(svc: SvcDep) -> list[CaptureOut]:
+    """Las últimas capturas, de la más nueva a la más vieja, con su avance."""
+    return [await _out(svc, c) for c in await svc.queue.recent()]
+
+
+@router.post(
+    "/captures/next",
+    response_model=CaptureOut,
+    responses={204: {"description": "No hay nada que capturar"}},
+)
+async def next_capture(svc: SvcDep) -> CaptureOut | Response:
+    """La captura que tiene que crawlear la extensión: la que está en curso o, si no hay, la
+    siguiente de la cola, que pasa a en curso (por eso es POST). Con el tope de 24 h lleno
+    no empieza ninguna nueva (regla 1 de docs/PLAN.md); 204 si no hay nada."""
+    cap = await svc.queue.active()
+    if cap is None and await svc.gate.remaining() > 0:
+        cap = await svc.queue.claim_next()
+    if cap is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return await _out(svc, cap)
+
+
+@router.post("/captures/{capture_id}/state", response_model=CaptureOut)
+async def report_state(capture_id: int, body: CaptureReport, svc: SvcDep) -> CaptureOut:
+    """Lo que avisa la extensión (en curso, en pausa, terminada, cortada) o la persona al
+    cancelarla. Terminada: el servicio exporta el CSV y lo notifica. Cortada: se notifica
+    el motivo, salvo que la haya cortado la persona."""
+    cap, changed = await svc.queue.set_state(capture_id, CaptureState(body.state), body.note)
+    if cap is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"no hay captura {capture_id}")
+    if changed and cap.state == CaptureState.DONE:
+        cap = await _finish(svc, cap)
+    elif changed and cap.state == CaptureState.STOPPED and not body.by_user:
+        svc.notifier.post(
+            f"Se cortó la captura de @{cap.account}", cap.note or "Mirá la página de xport."
+        )
+    return await _out(svc, cap)
+
+
+@router.get("/captures/{capture_id}/csv")
+async def capture_csv(capture_id: int, svc: SvcDep) -> FileResponse:
+    """El CSV de una captura terminada."""
+    cap = await svc.queue.get(capture_id)
+    if cap is None or cap.csv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="esa captura no tiene CSV")
+    path = svc.settings.captures_dir / cap.csv
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="el CSV ya no está")
+    return FileResponse(path, media_type="text/csv", filename=cap.csv)
+
+
+@router.get("/gate/days", response_model=list[GateDay])
+async def gate_days(svc: SvcDep) -> list[GateDay]:
+    """Lo visto por día (hora local) en los últimos 30 días con actividad. Es historia: el
+    tope es la ventana deslizante de `GET /gate`."""
+    return [GateDay(day=date.fromisoformat(day), accessed=n) for day, n in await svc.gate.daily(30)]

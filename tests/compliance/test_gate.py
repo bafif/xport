@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
+import time
+from contextlib import closing
 
 import pytest
 
@@ -338,3 +341,44 @@ async def test_context_manager_hace_setup_y_cierra(tmp_path):
         assert await gate.usage() == 10
 
     assert gate._conn is None  # la conexión quedó cerrada al salir del bloque
+
+
+def _local_day(ts: float) -> str:
+    return time.strftime("%Y-%m-%d", time.localtime(ts))
+
+
+async def test_resumen_diario_sigue_a_cada_acceso(tmp_path, make_gate, fake_clock):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000, clock=fake_clock.time)
+    await gate.setup()
+    rid = await gate.reserve(60)
+    await gate.reconcile(rid, 23)  # el resumen se corrige con la reserva
+    await gate.record(7)
+    assert await gate.daily() == [(_local_day(fake_clock.time()), 30)]
+
+
+async def test_resumen_diario_sobrevive_a_la_poda_y_no_cuenta_para_el_tope(
+    tmp_path, make_gate, fake_clock
+):
+    gate = make_gate(tmp_path / "ledger.db", hard_cap=1000, clock=fake_clock.time)
+    await gate.setup()
+    first_day = _local_day(fake_clock.time())
+    await gate.record(900)
+    fake_clock.advance(2 * 86_400)  # fuera de la ventana: la poda borra la fila
+    await gate.record(5)
+    assert await gate.usage() == 5  # el tope solo mira la ventana
+    days = dict(await gate.daily())
+    assert days[first_day] == 900  # la historia queda
+    assert days[_local_day(fake_clock.time())] == 5
+
+
+async def test_un_registro_viejo_arma_su_primer_resumen(tmp_path, make_gate, fake_clock):
+    # Un ledger de antes del resumen diario: lo que tenga en la ventana entra al resumen.
+    path = tmp_path / "ledger.db"
+    with closing(sqlite3.connect(path)) as db:
+        db.execute("CREATE TABLE access_ledger (id INTEGER PRIMARY KEY, ts INTEGER, count INTEGER)")
+        db.execute("INSERT INTO access_ledger(ts, count) VALUES(?, 40)", (int(fake_clock.time()),))
+        db.commit()
+    gate = make_gate(path, hard_cap=1000, clock=fake_clock.time)
+    await gate.setup()
+    assert await gate.daily() == [(_local_day(fake_clock.time()), 40)]
+    assert await gate.usage() == 40

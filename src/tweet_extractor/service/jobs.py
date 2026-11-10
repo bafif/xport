@@ -12,7 +12,9 @@ from tweet_extractor.compliance.gated_provider import GatedProvider
 from tweet_extractor.config import Settings
 from tweet_extractor.orchestrator import AccountResult, run_job
 from tweet_extractor.providers.factory import Backend, build_backend
+from tweet_extractor.service.notify import Notifier
 from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCODING
+from tweet_extractor.storage.queue import CaptureQueue
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
 # El seam de construcción del backend (scraping ↔ oficial). Inyectable en
@@ -70,6 +72,8 @@ class ServiceState:
     store: SqliteStore
     registry: JobRegistry
     backend_builder: BackendBuilder
+    queue: CaptureQueue  # la cola de capturas de la extensión (punto 7 de docs/PLAN.md)
+    notifier: Notifier
 
 
 class JobRegistry:

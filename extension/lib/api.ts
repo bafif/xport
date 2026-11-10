@@ -71,6 +71,40 @@ export interface ProgressResult {
   oldest_count: number; // cuántos caen en el DÍA del más viejo (alto ⇒ día saturado)
 }
 
+export type CaptureState = 'queued' | 'running' | 'paused' | 'done' | 'stopped';
+
+export interface CaptureCreate {
+  accounts: string[]; // una captura por cuenta
+  since: string; // YYYY-MM-DD, inclusiva
+  until: string; // YYYY-MM-DD, exclusiva
+  encoding?: string;
+  delimiter?: string;
+}
+
+/** Una captura de la cola (espejo de `CaptureOut`). */
+export interface CaptureOut {
+  id: number;
+  account: string;
+  since: string;
+  until: string; // exclusiva
+  state: CaptureState;
+  note: string | null;
+  csv: string | null;
+  download_url: string | null;
+  exported: number | null;
+  excluded_replies: number | null;
+  oldest: string | null; // hasta qué día llegó
+  captured: number;
+  percent: number;
+  last_page_at: string | null;
+}
+
+export interface CaptureReport {
+  state: 'running' | 'paused' | 'done' | 'stopped';
+  note?: string; // el motivo, si se cortó
+  by_user?: boolean; // la cortó la persona: el servicio no lo notifica
+}
+
 export interface ResetResult {
   account: string;
   deleted: number; // tweets borrados de la caché (el ledger del gate NO se toca)
@@ -107,6 +141,7 @@ export class XportClient {
     if (!res.ok) {
       throw new XportApiError(await detailOf(res), res.status);
     }
+    if (res.status === 204) return null as T;
     return (await res.json()) as T;
   }
 
@@ -138,6 +173,28 @@ export class XportClient {
    *  no vuelve a traer los nuevos). NO toca el ledger del gate. */
   resetAccount(account: string): Promise<ResetResult> {
     return this.req<ResetResult>('/reset', { method: 'POST', body: JSON.stringify({ account }) });
+  }
+
+  /** Encola una captura por cuenta (la misma cuenta y rango en cola no se repite). */
+  enqueue(body: CaptureCreate): Promise<CaptureOut[]> {
+    return this.req<CaptureOut[]>('/captures', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  captures(): Promise<CaptureOut[]> {
+    return this.req<CaptureOut[]>('/captures');
+  }
+
+  /** La captura que va: la que está en curso o la siguiente de la cola, que el servicio
+   *  pasa a en curso. `null` si no hay nada (o si el tope de 24 h está lleno). */
+  nextCapture(): Promise<CaptureOut | null> {
+    return this.req<CaptureOut | null>('/captures/next', { method: 'POST' });
+  }
+
+  captureState(id: number, body: CaptureReport): Promise<CaptureOut> {
+    return this.req<CaptureOut>(`/captures/${id}/state`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   }
 
   /** URL absoluta de descarga a partir del `download_url` relativo del backend. */

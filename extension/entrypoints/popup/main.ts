@@ -1,14 +1,7 @@
 import { browser } from 'wxt/browser';
 
-import { EXCEL_ES, type ProgressResult, XportApiError, XportClient } from '../../lib/api';
-import {
-  AUTOSCROLL_MSG,
-  type CrawlState,
-  dayAfter,
-  isValidDate,
-  SATURATED_DAY,
-  searchUrl,
-} from '../../lib/autoscroll';
+import { EXCEL_ES, type GateResponse, XportApiError, XportClient } from '../../lib/api';
+import { AUTOSCROLL_MSG, type CrawlState, isValidDate } from '../../lib/autoscroll';
 import {
   DEFAULT_BASE,
   STORAGE_BASE,
@@ -20,6 +13,7 @@ import {
   STORAGE_PAUSED,
   STORAGE_STATUS,
 } from '../../lib/capture';
+import { QUEUE_MSG, type QueueMsg } from '../../lib/queue';
 
 const COUNTS_REFRESH_MS = 2000;
 const SERVICE_TRIES = 5; // intentos contra el servicio antes de no arrancar la captura
@@ -45,6 +39,7 @@ const gateEl = el<HTMLElement>('gate');
 const countsEl = el<HTMLElement>('counts');
 const statusEl = el<HTMLElement>('status');
 const exportStatus = el<HTMLElement>('export-status');
+const pageLink = el<HTMLAnchorElement>('page-link');
 
 function currentBase(): string {
   return baseInput.value.trim().replace(/\/+$/, '') || DEFAULT_BASE;
@@ -154,6 +149,7 @@ browser.storage.onChanged.addListener((changes, area) => {
 });
 baseInput.addEventListener('change', () => {
   void browser.storage.local.set({ [STORAGE_BASE]: currentBase() });
+  pageLink.href = `${currentBase()}/`;
 });
 for (const input of [accountInput, sinceInput, untilInput]) {
   input.addEventListener('change', () => void persistForm());
@@ -171,16 +167,11 @@ async function onCapture(): Promise<void> {
 
   // Sin servicio no se captura (regla 1 de docs/PLAN.md): lo que se viera en X no
   // quedaría contado en el gate. Se espera un poco por si el native host lo está
-  // levantando; si no aparece, o si el tope de 24 h está lleno, no se abre la búsqueda.
+  // levantando; si no aparece, o si el tope de 24 h está lleno, no se encola.
   const client = new XportClient(currentBase());
-  let prog: ProgressResult;
+  let gate: GateResponse;
   try {
-    prog = await whenServiceUp(() => client.progress({ account: acc, since, until }));
-    const gate = await client.gate();
-    if (gate.remaining <= 0) {
-      setStatus('El tope de 24 h del gate está lleno: no arranco la captura. Probá más tarde.');
-      return;
-    }
+    gate = await whenServiceUp(() => client.gate());
   } catch (err) {
     setStatus(
       `No arranco la captura: ${err instanceof Error ? err.message : String(err)}. ` +
@@ -188,44 +179,47 @@ async function onCapture(): Promise<void> {
     );
     return;
   }
-
-  // Reanudar entre sesiones: le preguntamos al backend hasta dónde llegamos en este
-  // rango (el tweet más viejo capturado) y arrancamos AHÍ, no en `until`. x.com frena
-  // la búsqueda a ~1000 y hay que volver más tarde; retomar no debe re-pedir lo bajado.
-  let startUntil = until;
-  let msg = 'Abriendo la búsqueda y scrolleando… (podés cerrar el popup)';
-  if (prog.oldest) {
-    if (prog.oldest <= since) {
-      setStatus(`Ya está todo capturado en ese rango (${prog.captured} tuits). Exportá cuando quieras.`);
-      return;
-    }
-    if (prog.oldest_count >= SATURATED_DAY) {
-      // El día más viejo ya está saturado (~tope de X): re-incluirlo dejaría el crawl
-      // trabado ahí. Lo EXCLUIMOS para avanzar (se pierde su cola sub-diaria, inevitable
-      // a granularidad de día). Solo se dispara con conteo ALTO: cargar poco/nada es
-      // error/conexión, no saturación, y eso lo reintenta el crawl (no se saltea acá).
-      startUntil = prog.oldest;
-      msg =
-        `Día ${prog.oldest} saturado (${prog.oldest_count} tuits, ~tope de X): ` +
-        `salteo su resto y sigo más atrás… (podés cerrar el popup)`;
-    } else {
-      startUntil = dayAfter(prog.oldest); // re-incluye el día más viejo (solapa, el store deduplica)
-      msg = `Reanudando desde ${prog.oldest} (ya tenías ${prog.captured} tuits)… (podés cerrar el popup)`;
-    }
+  if (gate.remaining <= 0) {
+    setStatus('El tope de 24 h del gate está lleno: no arranco la captura. Probá más tarde.');
+    return;
   }
 
-  // El crawl adaptativo encoge `until` solo si choca la pared. El background lee la
-  // base de storage (no del campo).
-  const crawl: CrawlState = { account: acc, since, until: startUntil };
-  await browser.storage.local.remove([STORAGE_STATUS, STORAGE_PAUSED]); // limpiar avisos viejos
-  await browser.storage.local.set({
-    [STORAGE_BASE]: currentBase(),
-    [STORAGE_CAPTURE]: true,
-    [STORAGE_CRAWL]: crawl,
-  });
+  // La captura entra a la cola del servicio, como las de la página, y el background la
+  // arranca (o la retoma desde donde quedó) cuando le toca: va de a una. Al terminar, el
+  // servicio exporta el CSV y lo avisa con una notificación.
+  let id: number;
+  try {
+    const [cap] = await client.enqueue({
+      accounts: [acc],
+      since,
+      until,
+      ...(excelInput.checked ? EXCEL_ES : {}),
+    });
+    id = cap.id;
+  } catch (err) {
+    setStatus(`No pude encolar la captura: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+  await browser.storage.local.remove(STORAGE_STATUS); // limpiar avisos viejos
+  await browser.storage.local.set({ [STORAGE_BASE]: currentBase(), [STORAGE_CAPTURE]: true });
   await persistForm();
-  await browser.tabs.create({ url: searchUrl(acc, since, startUntil) });
-  setStatus(msg);
+  const poll: QueueMsg = { type: QUEUE_MSG };
+  await browser.runtime.sendMessage(poll).catch(() => {});
+
+  const crawl = (await browser.storage.local.get(STORAGE_CRAWL))[STORAGE_CRAWL] as
+    | CrawlState
+    | undefined;
+  const cap = (await client.captures().catch(() => [])).find((c) => c.id === id);
+  if (cap?.state === 'done') {
+    setStatus(
+      `Ya está todo capturado en ese rango (${cap.exported ?? 0} tuits en el CSV). ` +
+        'Lo tenés en la página de xport.',
+    );
+  } else if (crawl?.captureId === id) {
+    setStatus('Abriendo la búsqueda y scrolleando… (podés cerrar el popup)');
+  } else {
+    setStatus('En la cola: arranca cuando termine la captura en curso. La página de xport muestra el avance.');
+  }
 }
 
 /** Reintenta `call` mientras el servicio no responda (status 0), hasta ~10 s: al abrir
@@ -242,10 +236,23 @@ async function whenServiceUp<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Corta el crawl en curso, y si es de la cola, le avisa al servicio que la cortó la persona. */
+async function endCrawl(note: string): Promise<void> {
+  const crawl = (await browser.storage.local.get(STORAGE_CRAWL))[STORAGE_CRAWL] as
+    | CrawlState
+    | undefined;
+  await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
+  if (crawl?.captureId !== undefined) {
+    await new XportClient(currentBase())
+      .captureState(crawl.captureId, { state: 'stopped', note, by_user: true })
+      .catch(() => {});
+  }
+}
+
 async function stopScroll(): Promise<void> {
   // Borramos el crawl desde el popup también: si la pestaña activa no es la de captura,
   // el mensaje no llega, pero igual no debe seguir narrowando ni navegando.
-  await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
+  await endCrawl('La detuviste desde el popup.');
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) {
     setStatus('Captura detenida.');
@@ -318,7 +325,8 @@ async function onReset(): Promise<void> {
     const counts = (stored[STORAGE_COUNTS] ?? {}) as Record<string, number>;
     delete counts[acc];
     await browser.storage.local.set({ [STORAGE_COUNTS]: counts });
-    await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_STATUS, STORAGE_PAUSED]);
+    await endCrawl('Borraste lo capturado desde el popup.');
+    await browser.storage.local.remove(STORAGE_STATUS);
     await renderCounts();
     setStatus(`Borrado: ${r.deleted} tuits de @${acc}. La próxima captura arranca de cero.`);
   } catch (err) {
@@ -336,6 +344,7 @@ async function init(): Promise<void> {
   excelInput.checked = stored[STORAGE_EXCEL] === true;
   const savedBase = stored[STORAGE_BASE];
   baseInput.value = typeof savedBase === 'string' && savedBase ? savedBase : DEFAULT_BASE;
+  pageLink.href = `${currentBase()}/`;
   const form = stored[STORAGE_FORM] as Partial<FormState> | undefined;
   if (form) {
     accountInput.value = form.account ?? '';

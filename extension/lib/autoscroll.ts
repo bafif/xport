@@ -9,7 +9,9 @@
 
 export const AUTOSCROLL_MSG = 'xport-autoscroll' as const;
 
-export type AutoscrollAction = 'start' | 'stop';
+// `ping`: el background pregunta si la pestaña sigue en una búsqueda de captura, para
+// reusarla con la próxima de la cola en vez de abrir otra.
+export type AutoscrollAction = 'start' | 'stop' | 'ping';
 
 export interface AutoscrollMsg {
   type: typeof AUTOSCROLL_MSG;
@@ -85,7 +87,7 @@ export function decideStep(
 export function pausedNotice(account: string): string {
   return (
     `La captura de @${account} está en pausa: su pestaña quedó oculta. Volvé a esa pestaña ` +
-    'para que siga (si la cerraste, «Capturar ▶» la retoma).'
+    'para que siga.'
   );
 }
 
@@ -106,6 +108,14 @@ export interface CrawlState {
   since: string; // YYYY-MM-DD, fijo
   until: string; // YYYY-MM-DD, exclusivo, se reduce al narrowar
   attempt?: number;
+  captureId?: number; // la captura de la cola que es este crawl (sin cola: un crawl viejo)
+}
+
+/** El estado para la búsqueda siguiente al narrowar: otra cota superior, y `attempt` de cero. */
+export function narrowed(state: CrawlState, until: string): CrawlState {
+  const next: CrawlState = { ...state, until };
+  delete next.attempt;
+  return next;
 }
 
 /** Valida un `YYYY-MM-DD` real (rechaza fechas que `Date` normalizaría, p.ej.
@@ -151,6 +161,21 @@ export function searchQuery(account: string, since: string, until: string): stri
 /** URL de la búsqueda en modo "Latest" (cronológico, `f=live`). Puro y testeable. */
 export function searchUrl(account: string, since: string, until: string): string {
   return `https://x.com/search?q=${encodeURIComponent(searchQuery(account, since, until))}&f=live`;
+}
+
+/** `true` si `url` es una búsqueda de captura de xport (`from:x since:… until:…` en «Más
+ *  reciente»), sea cual sea: así el background sabe que esa pestaña es suya y la reusa. */
+export function isCaptureSearch(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return (
+      /(^|\.)(x|twitter)\.com$/.test(u.hostname) &&
+      u.pathname === '/search' &&
+      /^from:\w+ since:\d{4}-\d{2}-\d{2} until:\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('q') ?? '')
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** `true` si `url` es exactamente la búsqueda del estado actual (compara el param `q`

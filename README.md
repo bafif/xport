@@ -36,7 +36,30 @@ capturar, queda la última versión.
 Sin navegador hay dos caminos. Con una cuenta de X común está bloqueado desde junio de 2026: x.com cambió cómo firma los
 pedidos y twscrape dejó de poder hacerlo. Con la [API oficial de X](#con-la-api-oficial), que es paga, está implementado
 pero **no se probó contra la API real**: se armó con la documentación de X y respuestas fabricadas. Los cortes de la
-captura que se sumaron el 6 de noviembre de 2026 todavía no se probaron en un navegador.
+captura que se sumaron el 6 de noviembre de 2026 todavía no se probaron en un navegador, y la cola, la página local y las notificaciones
+del 10 de noviembre tampoco.
+
+## Uso diario: la página
+
+Con el servicio andando, `http://localhost:8000/` es la página de xport. Se abre en el navegador de siempre y sirve
+para varias cuentas a la vez:
+
+1. **Cuentas y fechas:** una o varias cuentas, separadas por comas o espacios. «Desde» y «Hasta» entran los dos
+   («hasta el 31/12/2025 inclusive»), y «Hasta» vacío quiere decir hoy. Hay atajos: último mes, último año y un año
+   entero. Si el CSV va a un Excel configurado en castellano, marcá «Para Excel en castellano».
+2. **Capturar:** cada cuenta entra a la cola. La extensión las toma de a una (X frena la búsqueda por cuenta y en
+   paralelo no rinde): abre la búsqueda en una pestaña y la scrollea sola, como desde el popup. **Esa pestaña tiene
+   que quedar a la vista** mientras captura. Si la cerrás, la vuelve a abrir donde iba.
+3. **Seguirla:** cada captura dice su estado (en cola, en curso, en pausa, terminada o cortada), hasta qué día llegó,
+   qué parte del rango cubre, cuántos tweets lleva y a qué hora entró la última página. «Cancelar» la saca de la cola;
+   lo que ya se guardó queda.
+4. **El CSV:** cuando una termina, el servicio arma su CSV solo y avisa con una notificación del sistema, que en Linux
+   abre el archivo con un clic. El enlace queda en la página. Si el rango entero termina sin un solo tweet, lo dice:
+   puede que la cuenta no exista, sea protegida o no haya escrito en esas fechas. Si se corta (el tope, el servicio,
+   un cambio de x.com), la notificación dice por qué.
+
+Abajo, la página muestra el tope: lo visto en las últimas 24 horas y un resumen por día de lo visto antes, que es solo
+historia y no cuenta para el tope.
 
 ## Uso diario: el popup
 
@@ -48,7 +71,9 @@ fechas, el uso del tope y el enlace al CSV exportado.">
 1. **Abrir el popup:** hacé clic en el ícono de xport. Arriba muestra cuántos accesos lleva el tope en las últimas
    24 horas y cuántos quedan.
 2. **Completar:** la cuenta sin `@`, «Desde» y «Hasta» en formato `AAAA-MM-DD`. «Desde» entra; «Hasta» no.
-3. **Capturar:** «Capturar ▶» abre la búsqueda de X en una pestaña nueva y la scrollea sola. Podés cerrar el popup.
+3. **Capturar:** «Capturar ▶» pone la cuenta en la misma cola que la página y, si no hay otra en curso, abre la
+   búsqueda de X en una pestaña nueva y la scrollea sola. Podés cerrar el popup. Al terminar, el servicio arma el CSV
+   y lo avisa con una notificación, como con la página.
    Si X deja de dar resultados antes de la fecha de inicio, la extensión achica el rango y busca de nuevo, hasta
    cubrirlo entero. «Detener ⏹» la corta. **Esa pestaña tiene que quedar a la vista:** si pasás a otra pestaña o
    minimizás la ventana, la captura se pone en pausa (el popup lo avisa) y sigue sola cuando volvés.
@@ -114,7 +139,8 @@ dos registros.
 uv sync
 uv run fastapi dev src/tweet_extractor/service/app.py
 cp .env.example .env && podman compose -f deploy/compose.yaml up --build
-uv run tweet-extractor --account <cuenta> --since 2025-01-01 --until 2026-01-01
+uv run tweet-extractor capture --account nasa,esa --since 2025-01-01 --until 2026-01-01
+uv run tweet-extractor extract --account <cuenta> --since 2025-01-01 --until 2026-01-01
 ```
 
 - `fastapi dev` levanta el servicio en `http://localhost:8000`, la dirección que la extensión usa si no le decís otra.
@@ -124,7 +150,10 @@ uv run tweet-extractor --account <cuenta> --since 2025-01-01 --until 2026-01-01
   vacía de `.env.example`. Los datos y el registro del tope van en dos volúmenes separados. Después de reiniciar la
   computadora se levanta solo únicamente si está prendido `podman-restart.service`
   (`systemctl --user enable podman-restart.service`).
-- `tweet-extractor` baja tweets desde el servidor, sin navegador: con la API oficial (ver abajo) o con las cookies de
+- `tweet-extractor capture` encola capturas para la extensión, una por cuenta (`--account` se repite o lleva varias
+  separadas por comas; `--excel` para un Excel en castellano). Las toma el navegador con xport abierto; el avance y
+  los CSV están en la página.
+- `tweet-extractor extract` baja tweets desde el servidor, sin navegador: con la API oficial (ver abajo) o con las cookies de
   una cuenta de X, que está bloqueado desde junio de 2026 y falla con un error que lo explica. `--since` entra y
   `--until` no (días UTC). Además: `--out-dir` (por defecto, `csv/` en la carpeta de datos), `--subwindow-days`, `--encoding` (`utf-8-sig` le agrega el BOM que Excel
   espera) y `--delimiter` (`;` para un Excel configurado en castellano). Si se corta, correrlo de nuevo saltea los
@@ -145,12 +174,18 @@ El servicio responde a estos pedidos:
 
 | Pedido | Qué hace |
 |---|---|
+| `GET /` | la página de xport |
 | `GET /healthz` | dice si el servicio está vivo y que es xport |
 | `GET /gate` | uso del tope en las últimas 24 horas, cuánto queda, el tope y la ventana |
 | `POST /ingest` | guarda las páginas que capturó la extensión y registra sus accesos |
 | `POST /progress` | el tweet más viejo guardado de una cuenta en un rango: desde dónde se retoma |
 | `POST /export`, `GET /exports/{archivo}` | arma y baja el CSV de un rango capturado (`encoding` y `delimiter`, opcionales) |
 | `POST /reset` | borra lo capturado de una cuenta (el registro del tope no se toca) |
+| `POST /captures`, `GET /captures` | encola una captura por cuenta; lista las últimas, con su avance |
+| `POST /captures/next` | la captura que tiene que hacer la extensión (la toma de la cola); 204 si no hay ninguna o el tope está lleno |
+| `POST /captures/{id}/state` | lo que avisa la extensión (en curso, en pausa, terminada, cortada) o una cancelación |
+| `GET /captures/{id}/csv` | el CSV de una captura terminada |
+| `GET /gate/days` | lo visto por día en los últimos 30 días con actividad (no cuenta para el tope) |
 | `POST /jobs`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/csv/{cuenta}` | bajadas desde el servidor (bloqueadas) |
 
 La configuración va en el `.env` del repo, que git ignora; [`.env.example`](.env.example) tiene todas las variables
@@ -166,6 +201,8 @@ necesita ninguna: usa la sesión del navegador. Las rutas relativas cuelgan de l
 | `AUDIT_DB_PATH` | registro del tope, aparte de los datos | `audit/ledger.db` |
 | `DATA_DB_PATH`, `ACCOUNTS_DB_PATH` | tweets; cuentas de twscrape | `tweets.db`, `accounts.db` |
 | `CSV_DIR`, `CAPTURES_DIR` | CSV de las bajadas del servidor y de las capturas | `csv`, `captures` |
+| `QUEUE_DB_PATH` | la cola de capturas | `queue.db` |
+| `XPORT_NOTIFY` | notificación del sistema al terminar o cortarse una captura | `true` |
 | `CORS_ALLOW_ORIGINS` | lista JSON de orígenes permitidos (la extensión no lo necesita) | `[]` |
 | `ALLOWED_HOSTS` | hosts a los que el servicio responde (protege contra DNS rebinding) | `["localhost","127.0.0.1"]` |
 | `PAGE_SIZE`, `SUBWINDOW_DAYS` | tamaño de página y días por tramo de búsqueda (servidor) | `20`, `7` |
@@ -220,6 +257,11 @@ decisiones:
   cobra desde el 22 de noviembre de 2026.
 - El servicio responde solo a pedidos dirigidos a `localhost` o `127.0.0.1`. Escucha solo en tu computadora, pero una
   página web con DNS rebinding podría llegar a él con su propio dominio.
+- Cualquier sitio que abras puede mandarle pedidos a `localhost` desde tu navegador. Por eso los que cambian algo
+  (encolar, cancelar, borrar) tienen que venir de la propia página, de la extensión o de un programa sin navegador,
+  como la CLI: los que traen el `Origin` de otro sitio reciben 403.
+- La cola va de a una cuenta, porque X frena la búsqueda por cuenta de X y en paralelo no rinde. Vive en SQLite en la
+  carpeta de datos, así sobrevive a un reinicio.
 - Solo `mappers/` interpreta las respuestas de X; la extensión no las lee. Cuando x.com cambie la forma, se arregla en
   un solo lugar, y un cambio que el mapper no entiende da un error y no un CSV vacío.
 - Los defaults del CSV (UTF-8 sin BOM, coma, todo entre comillas, UTC, `<cuenta>_<desde>_<hasta>.csv`) están cerrados

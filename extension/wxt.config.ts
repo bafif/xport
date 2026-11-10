@@ -21,7 +21,8 @@ export default defineConfig({
     // así no hace falta correr `uvicorn` a mano. `host_permissions`: deja que las
     // páginas de la extensión (popup/background) hagan fetch al servicio local sin
     // chocar con CORS (las extension pages con host_permissions no están sujetas a CORS).
-    permissions: ['storage', 'activeTab', 'nativeMessaging'],
+    // `alarms`: despierta al background cada medio minuto para mirar la cola de capturas.
+    permissions: ['storage', 'activeTab', 'nativeMessaging', 'alarms'],
     host_permissions: ['http://localhost/*', 'http://127.0.0.1/*'],
     // Id estable de Firefox: el manifest del native host lo lista en `allowed_extensions`
     // (debe coincidir con install-linux.sh / install-windows.ps1, default `xport@local`).

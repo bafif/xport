@@ -19,7 +19,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from tweet_extractor.compliance.gate import LEDGER_SCHEMA
+from tweet_extractor.compliance.gate import DAILY_BACKFILL, LEDGER_SCHEMA
 from tweet_extractor.config import Settings
 
 # Lo que se muda, con el campo de Settings que dice adónde. El registro va ÚLTIMO: es lo que
@@ -108,9 +108,16 @@ def _merge_ledger(old: Path, new: Path) -> int:
                 "SELECT COALESCE(SUM(count), 0) FROM old.access_ledger"
             ).fetchone()
             with db:  # una transacción: o entran todos los accesos o ninguno
+                db.execute(DAILY_BACKFILL)  # el resumen del nuevo, si todavía no tenía
                 db.execute(
                     "INSERT INTO main.access_ledger(ts, count)"
                     " SELECT ts, count FROM old.access_ledger"
+                )
+                db.execute(
+                    "INSERT INTO main.access_daily(day, count)"
+                    " SELECT date(ts, 'unixepoch', 'localtime'), SUM(count)"
+                    " FROM old.access_ledger WHERE true GROUP BY 1"
+                    " ON CONFLICT(day) DO UPDATE SET count = count + excluded.count"
                 )
             return int(total)
         finally:

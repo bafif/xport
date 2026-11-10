@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import codecs
+import re
 from datetime import UTC, date, datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from tweet_extractor.orchestrator import AccountResult
 from tweet_extractor.service.jobs import JobRecord, JobStatus
 from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCODING
+from tweet_extractor.storage.queue import CaptureState
 
 
 def _clean_handle(raw: str) -> str:
@@ -79,8 +81,79 @@ class JobCreate(_DateRange, _CsvFormat):
     @field_validator("accounts")
     @classmethod
     def _clean_accounts(cls, raw: list[str]) -> list[str]:
-        # Dedup preservando orden: la misma cuenta dos veces no debe duplicar el CSV.
-        return list(dict.fromkeys(_clean_handle(a) for a in raw))
+        return _clean_accounts(raw)
+
+
+def _clean_accounts(raw: list[str]) -> list[str]:
+    """Las cuentas de una lista, cada entrada con una o varias separadas por comas o
+    espacios. Sin repetidos y en orden: la misma cuenta dos veces no duplica el CSV."""
+    handles = [h for entry in raw for h in re.split(r"[\s,]+", entry) if h.strip("@ ")]
+    if not handles:
+        raise ValueError("falta al menos una cuenta")
+    return list(dict.fromkeys(_clean_handle(h) for h in handles))
+
+
+# Un nombre de usuario de X: letras, números y guion bajo, hasta 15. En la cola se exige,
+# porque va tal cual a la búsqueda `from:<cuenta>` y otra cosa le agregaría operadores.
+_X_HANDLE = re.compile(r"[a-z0-9_]{1,15}")
+
+
+class CaptureCreate(_DateRange, _CsvFormat):
+    """Body de `POST /captures`: una o varias cuentas y un rango; una captura por cuenta."""
+
+    accounts: list[str] = Field(min_length=1, description="Handles (sin @). Al menos uno.")
+
+    @field_validator("accounts")
+    @classmethod
+    def _cuentas_de_x(cls, raw: list[str]) -> list[str]:
+        handles = _clean_accounts(raw)
+        for h in handles:
+            if not _X_HANDLE.fullmatch(h):
+                raise ValueError(
+                    f"@{h} no es un nombre de usuario de X (letras, números y _, hasta 15)"
+                )
+        return handles
+
+
+class CaptureReport(BaseModel):
+    """Body de `POST /captures/{id}/state`: lo que avisa la extensión, el popup o la página."""
+
+    state: Literal["running", "paused", "done", "stopped"]
+    note: str | None = Field(default=None, max_length=500)  # el motivo, si se cortó
+    by_user: bool = False  # la cortó la persona: no hace falta avisarle
+
+
+class CaptureOut(BaseModel):
+    """Una captura de la cola, con su avance según lo guardado."""
+
+    id: int
+    account: str
+    since: date
+    until: date  # exclusiva
+    encoding: str
+    delimiter: str
+    state: CaptureState
+    note: str | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    last_page_at: datetime | None  # la última página que entró por /ingest
+    csv: str | None
+    download_url: str | None
+    exported: int | None
+    excluded_replies: int | None
+    # La captura va del más nuevo al más viejo: `oldest` es hasta dónde llegó, `captured`
+    # cuántos tweets hay guardados en el rango y `percent` qué parte del rango cubre.
+    oldest: date | None
+    captured: int
+    percent: int
+
+
+class GateDay(BaseModel):
+    """Los accesos de un día (local). Historia: no cuenta para el tope."""
+
+    day: date
+    accessed: int
 
 
 class AccountResultDTO(BaseModel):

@@ -56,7 +56,14 @@ def _in_data_dir(data_dir: Path, path: Path) -> Path:
 
 
 # Los campos de Settings que son rutas dentro de la carpeta de datos.
-_DATA_PATHS = ("audit_db_path", "data_db_path", "accounts_db_path", "csv_dir", "captures_dir")
+_DATA_PATHS = (
+    "audit_db_path",
+    "data_db_path",
+    "accounts_db_path",
+    "csv_dir",
+    "captures_dir",
+    "queue_db_path",
+)
 
 
 class Settings(BaseSettings):
@@ -84,6 +91,9 @@ class Settings(BaseSettings):
     accounts_db_path: Path = Path("accounts.db")  # cuentas/cookies de twscrape
     csv_dir: Path = Path("csv")  # raíz de salida de los CSV (el service usa un subdir por job)
     captures_dir: Path = Path("captures")  # CSV exportados de la captura in-page (patrón C)
+    queue_db_path: Path = Path("queue.db")  # la cola de capturas (sobrevive a un reinicio)
+    # Notificación del sistema al terminar o cortarse una captura de la cola.
+    xport_notify: bool = True
     # De dónde mudar los datos viejos (`data/`) la primera vez (ver `datadir.py`).
     xport_legacy_dirs: list[Path] = Field(default_factory=_legacy_data_dirs)
     # Puertos donde el servicio busca otro xport antes de arrancar: el de `fastapi dev` y

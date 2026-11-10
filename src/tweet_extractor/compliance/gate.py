@@ -11,6 +11,10 @@ from typing import Any
 import aiosqlite
 
 # Esquema del ledger. Lo usa también la mudanza de un ledger viejo (`datadir.py`).
+#
+# `access_daily` es el resumen por día (local) de lo visto, para mostrar la historia: la poda
+# de la ventana no lo toca y el tope NUNCA lo lee (`_usage` suma solo `access_ledger`). Se
+# escribe en la misma transacción que cada fila del ledger.
 LEDGER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS access_ledger (
     id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,7 +22,24 @@ CREATE TABLE IF NOT EXISTS access_ledger (
     count INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_ts ON access_ledger(ts);
+CREATE TABLE IF NOT EXISTS access_daily (
+    day   TEXT PRIMARY KEY,  -- YYYY-MM-DD, en la hora local
+    count INTEGER NOT NULL
+);
 """
+
+# Un ledger de antes del resumen diario: lo que quede en la ventana arma su primer resumen.
+DAILY_BACKFILL = """
+INSERT INTO access_daily(day, count)
+SELECT date(ts, 'unixepoch', 'localtime'), SUM(count) FROM access_ledger
+WHERE NOT EXISTS (SELECT 1 FROM access_daily)
+GROUP BY 1
+"""
+
+_DAILY_ADD = (
+    "INSERT INTO access_daily(day, count) VALUES(date(?, 'unixepoch', 'localtime'), ?) "
+    "ON CONFLICT(day) DO UPDATE SET count = count + excluded.count"
+)
 
 
 class ComplianceError(RuntimeError):
@@ -92,6 +113,7 @@ class SlidingWindowGate:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         db = await self._db()
         await db.executescript(LEDGER_SCHEMA)
+        await db.execute(DAILY_BACKFILL)
         await db.commit()
 
     async def _usage(self, db: aiosqlite.Connection, now: int) -> int:
@@ -135,6 +157,7 @@ class SlidingWindowGate:
         commit. Devuelve el id de la fila. DEBE llamarse dentro de `_write_txn`."""
         await db.execute("DELETE FROM access_ledger WHERE ts <= ?", (now - self._window_s,))
         cur = await db.execute("INSERT INTO access_ledger(ts, count) VALUES(?, ?)", (now, n))
+        await db.execute(_DAILY_ADD, (now, n))
         await db.commit()
         rid = cur.lastrowid
         assert rid is not None  # garantizado tras un INSERT exitoso
@@ -199,6 +222,14 @@ class SlidingWindowGate:
         """Ajusta la reserva al conteo real de objetos accedidos tras el fetch."""
         async with self._lock:
             db = await self._db()
+            # El resumen diario se corrige por la diferencia, en la misma transacción.
+            await db.execute(
+                "UPDATE access_daily SET count = count + (? - "
+                "(SELECT count FROM access_ledger WHERE id = ?)) "
+                "WHERE day = (SELECT date(ts, 'unixepoch', 'localtime') "
+                "FROM access_ledger WHERE id = ?)",
+                (actual, reservation_id, reservation_id),
+            )
             await db.execute(
                 "UPDATE access_ledger SET count = ? WHERE id = ?",
                 (actual, reservation_id),
@@ -206,6 +237,15 @@ class SlidingWindowGate:
             await db.commit()
         # Puede haber liberado presupuesto: despierta a quien espera en `reserve`.
         self._reconciled.set()
+
+    async def daily(self, days: int = 30) -> list[tuple[str, int]]:
+        """Los accesos de los últimos `days` días con actividad, del más nuevo al más viejo:
+        `(YYYY-MM-DD, accesos)`. Es solo historia: no cuenta para el tope."""
+        db = await self._db()
+        cur = await db.execute(
+            "SELECT day, count FROM access_daily ORDER BY day DESC LIMIT ?", (days,)
+        )
+        return [(str(r[0]), int(r[1])) for r in await cur.fetchall()]
 
     async def record(self, n: int) -> int:
         """Registra `n` accesos YA ocurridos (captura in-page del patrón C): inserta
