@@ -420,3 +420,14 @@ def test_profile_has_session_reads_only_whether_the_cookie_exists(tmp_path: Path
     con.close()
     assert profile_has_session(tmp_path) is True
     assert not (tmp_path / ".xport-sesion").exists()  # la copia no queda
+
+
+async def test_each_start_drops_the_cached_extension_worker(tmp_path: Path) -> None:
+    """Si no, Chrome sigue corriendo el background de un armado anterior."""
+    cache = tmp_path / "browser" / "Default" / "Service Worker" / "ScriptCache"
+    cache.mkdir(parents=True)
+    (cache / "viejo").write_text("background de antes")
+    h = Harness(tmp_path)
+    await h.runner.tick(now=0)
+    assert h.runner.status.state == RunnerState.RUNNING
+    assert not (tmp_path / "browser" / "Default" / "Service Worker").exists()

@@ -532,6 +532,11 @@ class BrowserRunner:
         profile = self._settings.browser_profile_dir
         profile.mkdir(parents=True, exist_ok=True, mode=0o700)
         profile.chmod(0o700)  # guarda la sesión de X: solo para esta cuenta
+        # Chrome guarda en el perfil el service worker de la extensión y, con la misma
+        # versión en el manifiesto, lo sigue usando aunque `dist/` tenga otro armado: el
+        # 10/11/2026 corrió el background de antes de la Fase 4 y la captura no avanzó. Sin
+        # esa caché, cada arranque usa la extensión que está en disco.
+        shutil.rmtree(profile / "Default" / "Service Worker", ignore_errors=True)
         assert self._extension is not None
         return await self._launcher(profile, self._extension, headless, url)
 

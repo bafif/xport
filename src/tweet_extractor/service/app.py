@@ -139,7 +139,7 @@ def create_app(
 
     app = FastAPI(
         title="tweet-extractor",
-        version="0.2.0",
+        version="0.2.1",
         summary="Extrae tweets por rango de fechas → un CSV por cuenta, bajo el Compliance Gate.",
         lifespan=lifespan,
     )

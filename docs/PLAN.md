@@ -396,7 +396,11 @@ pedido que se presente como `HeadlessChrome` (con `curl` y ese user-agent, 403; 
 pasé al plan B que ya estaba decidido, el mismo Chrome con ventana adentro de cage sin pantalla real, y ahí X lo ve
 como un Chrome común y la página está «visible». La cookie de la cuenta aparte del `.env` ya no servía (la búsqueda
 rebota al inicio de sesión, que ahora vive en `/i/jf/onboarding`): el servicio lo nota, borra las cookies del perfil y
-abre una ventana chica para iniciar sesión una vez.
+abre una ventana chica para iniciar sesión una vez. Con mi cuenta, esa ventana chica en modo aplicación y con el pipe
+no dejaba pasar de «Continuar»; pasó a ser una ventana común de Chrome, sin el pipe, y el servicio se entera de la
+sesión por la base de cookies del perfil. Ya con sesión, la captura entró una página y se quedó: Chrome seguía corriendo
+el service worker de la extensión de antes de la Fase 4, guardado en el perfil con la misma versión. Ahora el servicio
+borra esa caché cada vez que levanta su Chrome.
 
 ## Dónde está hoy
 
