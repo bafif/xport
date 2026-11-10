@@ -23,6 +23,10 @@ export const STORAGE_PAUSED = 'xport:paused'; // aviso mientras el crawl espera 
 // vuelva a estar a la vista; el popup lo muestra mientras haya crawl
 export const STORAGE_EXCEL = 'xport:excel'; // casilla «Para Excel en castellano» del popup
 export const STORAGE_QUEUE_TAB = 'xport:queue-tab'; // id de la pestaña donde corre la cola
+// La marca que deja el servicio en la extensión de SU navegador sin ventana (punto 13 de
+// docs/PLAN.md). Con el navegador de xport en marcha, la cola solo le da trabajo a quien la
+// muestra: la extensión del navegador de todos los días no abre pestañas.
+export const STORAGE_RUNNER = 'xport:runner';
 
 // Operaciones que capturamos. MVP: SearchTimeline (rango de fechas vía la búsqueda
 // from:user since: until:). UserTweets* son timeline de perfil (otro envelope) — el

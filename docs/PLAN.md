@@ -338,6 +338,19 @@ pasar: gastó las 50 búsquedas de la ventana de X y siguió con un 429 cada cua
 cota siempre (si no baja, pasa al día anterior), y la reanudación de `startPlan` pide hasta el día más viejo, no hasta el
 siguiente. El mismo mes que antes quedaba en bucle terminó entero en 11 búsquedas.
 
+**10 de noviembre, a la noche: la Fase 5, el navegador propio del servicio.** Quise capturar todos mis tweets y la
+cola no arrancaba: en la extensión de mi Chrome había quedado el crawl del 6 de noviembre, de antes de la cola, y
+`decideQueue` lo dejaba seguir para siempre aunque no tuviera pestaña. Ahora un crawl de antes de la cola le cede el
+lugar a la primera captura que aparezca. Y como la idea era no tener que tocar nada, armé el punto 13: el servicio
+levanta su propio Chrome con un perfil de xport, le carga la extensión por el pipe de depuración y le deja una marca en
+su storage; `POST /captures/next` solo le da trabajo a quien muestra esa marca, así la extensión de mi navegador de
+todos los días no abre pestañas. Al probarlo contra x.com, X le contestó 403 a todo: desde esa tarde rechaza cualquier
+pedido que se presente como `HeadlessChrome` (con `curl` y ese user-agent, 403; con el de Chrome, 200). No lo disfracé:
+pasé al plan B que ya estaba decidido, el mismo Chrome con ventana adentro de cage sin pantalla real, y ahí X lo ve
+como un Chrome común y la página está «visible». La cookie de la cuenta aparte del `.env` ya no servía (la búsqueda
+rebota al inicio de sesión, que ahora vive en `/i/jf/onboarding`): el servicio lo nota, borra las cookies del perfil y
+abre una ventana chica para iniciar sesión una vez.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada
@@ -347,8 +360,9 @@ popup sin servicio y el tope lleno) y anduvieron. Lo de la Fase 1 (7 de noviembr
 con la pestaña oculta, el corte por cambio
 de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Lo mismo la Fase 3
 (10 de noviembre): la cola, la página local y las notificaciones tienen tests y una prueba de humo contra el servicio,
-pero no pasaron por un navegador. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine y la
-extensión se construyen en CI.
+pero no pasaron por un navegador. Desde el 10 de noviembre a la noche, en Linux, el servicio captura con su propio
+Chrome adentro de cage, sin ninguna ventana a la vista (la Fase 5). Los tests corren sin red, mypy en modo estricto y
+ruff pasan, y la imagen Alpine y la extensión se construyen en CI.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
 cambio de x.com: falla cerrado con un error claro. La API oficial está implementada para quien tenga una clave paga,
@@ -377,6 +391,8 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Cola de capturas: una por cuenta, de a una, persistente; la extensión la toma con `alarms`; el popup y `tweet-extractor capture` encolan | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (dos cuentas en dos CSV, estados, reinicio); vitest; **no ejercitada en un navegador** |
 | Página local en `/`, con chequeo de `Origin` | `service/page/`, `service/app.py` | tests y prueba de humo; **no abierta en un navegador** |
 | Export y notificación al terminar; aviso si el rango no tiene tweets | `service/captures.py`, `service/notify.py` | tests con un notificador falso; **notificaciones sin probar a mano** |
+| El navegador propio del servicio: Chrome con un perfil de xport adentro de cage, la extensión cargada por el pipe de depuración, la cola solo para él, ventana chica para iniciar sesión en X cuando hace falta, cerrado con la cola vacía | `service/browser.py`, `service/captures.py`, `lib/api.ts`, `background.ts` | tests con un Chrome falso; real (10/11): carga la extensión, la marca, la pantalla virtual, el rebote al inicio de sesión y la ventana |
+| Un crawl de antes de la cola ya no la frena | `lib/queue.ts` (`decideQueue`) | vitest; real (10/11): era lo que trababa mi captura |
 | Resumen diario del tope, aparte de la ventana | `compliance/gate.py` | tests (reserva y reconcile, poda, registro viejo, mudanza) |
 | Borrar lo capturado de una cuenta sin tocar el tope | `POST /reset`, popup | tests; real |
 | Arranque automático por native messaging: Firefox, Chrome, Chrome Beta y Chromium, id fijo en Chrome | `deploy/native-host/` | real en Chrome Beta (6/11); Windows con WSL sin probar |
@@ -550,9 +566,17 @@ Falta pasarla por un navegador y lo que dice cada punto:
     operadores no andan, el plan B es que el export diga qué días pueden estar incompletos. Listo cuando: un día con más
     de mil tweets sale entero. Mediano.
 
-### Fase 5: el navegador invisible
+### Fase 5: el navegador invisible (hecha el 10 de noviembre, en Linux)
 
-13. **El servicio maneja el perfil de xport.** Cómo: arranca y para Chrome o Edge con `--user-data-dir=<datos>/browser`,
+13. **El servicio maneja el perfil de xport.** Hecho así: el servicio busca Chrome, Chromium o Edge y cage; con capturas
+    en la cola, arranca el navegador adentro de cage (X rechaza `--headless` con un 403), le carga la extensión con
+    `Extensions.loadUnpacked` por el pipe y le deja la marca `xport:runner` con `Extensions.setStorageItems` desde su
+    service worker. Cada minuto mira la sesión: si falta la cookie o una pestaña quedó en el inicio de sesión de X,
+    borra las cookies y abre el perfil en una ventana chica (`--app`) hasta que la sesión aparece; si una pestaña queda
+    en una página de error dos veces seguidas, lo reinicia, y a la tercera falla le devuelve la cola a la extensión del
+    navegador de siempre. Sin cage (Windows, macOS, o Linux sin instalarlo) no se usa, y la captura sigue como antes.
+    Falta: Windows y macOS (la ventana propia sin foco del plan B), y sacar el native host y el popup cuando el
+    instalador esté. Lo que decía el plan: Cómo: arranca y para Chrome o Edge con `--user-data-dir=<datos>/browser`,
     sin ventana mientras haya capturas en la cola (el punto 6 eligió headless; la extensión se carga por el pipe de
     depuración o se instala desde la Web Store, a decidir). Lo abre en una ventana chica y
     sin foco (`windows.create({ focused: false })`) para iniciar sesión, cuando X pide una verificación o cierra la

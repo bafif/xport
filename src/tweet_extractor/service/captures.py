@@ -8,12 +8,19 @@ su CSV y manda una notificación del sistema; un corte también avisa, con su mo
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Header, HTTPException, Response, status
 from fastapi.responses import FileResponse
 
 from tweet_extractor.service.routers import SvcDep
-from tweet_extractor.service.schemas import CaptureCreate, CaptureOut, CaptureReport, GateDay
+from tweet_extractor.service.schemas import (
+    BrowserOut,
+    CaptureCreate,
+    CaptureOut,
+    CaptureReport,
+    GateDay,
+)
 from tweet_extractor.storage.csv_exporter import export_account
 from tweet_extractor.storage.queue import Capture, CaptureState
 
@@ -104,6 +111,8 @@ async def enqueue(body: CaptureCreate, svc: SvcDep) -> list[CaptureOut]:
     caps = await svc.queue.add(
         body.accounts, body.since, body.until, encoding=body.encoding, delimiter=body.delimiter
     )
+    if svc.runner is not None:
+        svc.runner.wake()
     return [await _out(svc, c) for c in caps]
 
 
@@ -118,10 +127,16 @@ async def list_captures(svc: SvcDep) -> list[CaptureOut]:
     response_model=CaptureOut,
     responses={204: {"description": "No hay nada que capturar"}},
 )
-async def next_capture(svc: SvcDep) -> CaptureOut | Response:
+async def next_capture(
+    svc: SvcDep, x_xport_runner: Annotated[str | None, Header()] = None
+) -> CaptureOut | Response:
     """La captura que tiene que crawlear la extensión: la que está en curso o, si no hay, la
     siguiente de la cola, que pasa a en curso (por eso es POST). Con el tope de 24 h lleno
-    no empieza ninguna nueva (regla 1 de docs/PLAN.md); 204 si no hay nada."""
+    no empieza ninguna nueva (regla 1 de docs/PLAN.md); 204 si no hay nada. Con el navegador
+    de xport en marcha (punto 13), la cola es solo suya: la extensión de otro navegador
+    recibe 204 y no abre pestañas."""
+    if svc.runner is not None and not svc.runner.accepts(x_xport_runner):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     cap = await svc.queue.active()
     if cap is None and await svc.gate.remaining() > 0:
         cap = await svc.queue.claim_next()
@@ -157,6 +172,15 @@ async def capture_csv(capture_id: int, svc: SvcDep) -> FileResponse:
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="el CSV ya no está")
     return FileResponse(path, media_type="text/csv", filename=cap.csv)
+
+
+@router.get("/browser", response_model=BrowserOut)
+async def browser_status(svc: SvcDep) -> BrowserOut:
+    """En qué anda el navegador sin ventana de xport, para la página."""
+    if svc.runner is None:
+        return BrowserOut(state="off", note=None)
+    st = svc.runner.status
+    return BrowserOut(state=st.state.value, note=st.note)
 
 
 @router.get("/gate/days", response_model=list[GateDay])

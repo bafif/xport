@@ -53,6 +53,7 @@ def make_settings(tmp_path: Path, **over: Any) -> Settings:
         "csv_dir": tmp_path / "csv",
         "captures_dir": tmp_path / "captures",
         "allowed_hosts": ["testserver"],  # el host que usa TestClient
+        "xport_browser": False,  # los tests nunca levantan un navegador de verdad
     }
     params.update(over)
     return Settings(**params)

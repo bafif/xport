@@ -69,13 +69,15 @@ export type QueueStep = 'idle' | 'start' | 'keep' | 'stop-crawl';
 
 /** Qué hace el background en cada vuelta, según el crawl guardado y lo que dice el servicio
  *  (`next`: la captura en curso o la siguiente; `null` si no hay ninguna).
- *  - Un crawl sin captura (uno viejo, de antes de la cola) no se toca.
+ *  - Un crawl sin captura (uno viejo, de antes de la cola) sigue solo mientras la cola no
+ *    tenga nada: si hay una captura, se corta y la próxima vuelta la arranca. Antes se
+ *    dejaba para siempre, y uno trabado (sin pestaña) frenaba la cola sin aviso.
  *  - El crawl de una captura sigue mientras el servicio diga que es la que va; si dice otra
  *    cosa (la cancelaron desde la página, o ya terminó), se corta.
  *  - Sin crawl, se arranca la que diga el servicio. */
 export function decideQueue(crawl: CrawlState | null, next: CaptureOut | null): QueueStep {
   if (crawl) {
-    if (crawl.captureId === undefined) return 'keep';
+    if (crawl.captureId === undefined) return next ? 'stop-crawl' : 'keep';
     return next?.id === crawl.captureId ? 'keep' : 'stop-crawl';
   }
   return next ? 'start' : 'idle';

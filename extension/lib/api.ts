@@ -123,7 +123,11 @@ export class XportApiError extends Error {
 /** Habla con el FastAPI local. Se invoca desde el popup (una extension page): con
  *  `host_permissions` sobre el host, el fetch cross-origin no choca con CORS. */
 export class XportClient {
-  constructor(private readonly base: string) {}
+  /** `runner`: la marca del navegador de xport, si esta extensión corre en él. */
+  constructor(
+    private readonly base: string,
+    private readonly runner?: string,
+  ) {}
 
   private async req<T>(path: string, init?: RequestInit): Promise<T> {
     let res: Response;
@@ -187,7 +191,8 @@ export class XportClient {
   /** La captura que va: la que está en curso o la siguiente de la cola, que el servicio
    *  pasa a en curso. `null` si no hay nada (o si el tope de 24 h está lleno). */
   nextCapture(): Promise<CaptureOut | null> {
-    return this.req<CaptureOut | null>('/captures/next', { method: 'POST' });
+    const headers: Record<string, string> = this.runner ? { 'x-xport-runner': this.runner } : {};
+    return this.req<CaptureOut | null>('/captures/next', { method: 'POST', headers });
   }
 
   captureState(id: number, body: CaptureReport): Promise<CaptureOut> {

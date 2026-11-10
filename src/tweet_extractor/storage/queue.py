@@ -218,6 +218,13 @@ class CaptureQueue:
         found = await self._fetch(db, "id = ?", (capture_id,))
         return found[0] if found else None
 
+    async def has_unfinished(self) -> bool:
+        """Si queda alguna captura en cola, en curso o en pausa."""
+        db = await self._db()
+        sql = f"SELECT 1 FROM captures WHERE state IN ({_marks(len(_UNFINISHED))}) LIMIT 1"
+        async with db.execute(sql, _UNFINISHED) as cur:
+            return await cur.fetchone() is not None
+
     async def active(self) -> Capture | None:
         """La captura en curso o en pausa, si hay."""
         db = await self._db()

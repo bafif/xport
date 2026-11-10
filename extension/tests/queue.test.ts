@@ -71,9 +71,11 @@ describe('decideQueue', () => {
     expect(decideQueue(crawl, cap(8))).toBe('stop-crawl');
   });
 
-  it('un crawl de antes de la cola no se toca', () => {
+  it('un crawl de antes de la cola sigue solo si la cola no tiene nada', () => {
     const old = { account: 'nasa', since: '2024-01-01', until: '2025-01-01' };
-    expect(decideQueue(old, cap(8))).toBe('keep');
+    expect(decideQueue(old, null)).toBe('keep');
+    // Uno trabado no puede frenar la cola: se corta y la próxima vuelta arranca la captura.
+    expect(decideQueue(old, cap(8))).toBe('stop-crawl');
   });
 });
 

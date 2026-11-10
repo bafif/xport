@@ -12,6 +12,7 @@ from tweet_extractor.compliance.gated_provider import GatedProvider
 from tweet_extractor.config import Settings
 from tweet_extractor.orchestrator import AccountResult, run_job
 from tweet_extractor.providers.factory import Backend, build_backend
+from tweet_extractor.service.browser import BrowserRunner
 from tweet_extractor.service.notify import Notifier
 from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCODING
 from tweet_extractor.storage.queue import CaptureQueue
@@ -74,6 +75,7 @@ class ServiceState:
     backend_builder: BackendBuilder
     queue: CaptureQueue  # la cola de capturas de la extensión (punto 7 de docs/PLAN.md)
     notifier: Notifier
+    runner: BrowserRunner | None = None  # el navegador sin ventana (punto 13 de docs/PLAN.md)
 
 
 class JobRegistry:

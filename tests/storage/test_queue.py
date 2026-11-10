@@ -87,3 +87,18 @@ async def test_sobrevive_a_un_reinicio(tmp_path: Path) -> None:
         assert cap is not None and cap.id == a.id
         assert (cap.encoding, cap.delimiter) == ("utf-8-sig", ";")
         assert cap.last_page_at is not None
+
+
+async def test_sabe_si_queda_algo_sin_terminar(tmp_path: Path) -> None:
+    """Lo que mira el navegador propio del servicio para levantarse o cerrarse."""
+    q = await _queue(tmp_path)
+    try:
+        assert await q.has_unfinished() is False
+        (cap,) = await q.add(["a"], SINCE, UNTIL, encoding="utf-8", delimiter=",")
+        assert await q.has_unfinished() is True  # en cola
+        await q.claim_next()
+        assert await q.has_unfinished() is True  # en curso
+        await q.set_state(cap.id, CaptureState.DONE)
+        assert await q.has_unfinished() is False
+    finally:
+        await q.close()

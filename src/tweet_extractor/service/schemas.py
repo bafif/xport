@@ -123,6 +123,13 @@ class CaptureReport(BaseModel):
     by_user: bool = False  # la cortó la persona: no hace falta avisarle
 
 
+class BrowserOut(BaseModel):
+    """`GET /browser`: el navegador sin ventana de xport (punto 13 de docs/PLAN.md)."""
+
+    state: Literal["off", "idle", "running", "login", "failed"]
+    note: str | None
+
+
 class CaptureOut(BaseModel):
     """Una captura de la cola, con su avance según lo guardado."""
 
