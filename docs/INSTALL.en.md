@@ -7,7 +7,7 @@
 - **A browser:** Google Chrome, Chromium or Microsoft Edge. Firefox only works with the extension loaded by hand.
 - **On Linux, [cage](https://github.com/cage-kiosk/cage):** the invisible screen xport's Chrome runs in. X does not
   serve Chrome in `--headless` mode, so xport opens it on a screen nobody sees. Install it with `sudo apt install cage`
-  (Debian, Ubuntu), `sudo pacman -S cage` (Arch) or `sudo dnf install cage` (Fedora). Without cage xport still works,
+  (Debian, Ubuntu), `sudo pacman -S cage` (Arch), `sudo dnf install cage` (Fedora) or `sudo apk add cage` (Alpine). Without cage xport still works,
   but the capture is done by the extension in your browser, with the tab in view.
 - **An X account**, preferably not your own: X may limit accounts that download many tweets.
 

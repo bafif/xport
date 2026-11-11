@@ -7,7 +7,7 @@
 - **Un navegador:** Google Chrome, Chromium o Microsoft Edge. Firefox sirve solo con la extensión cargada a mano.
 - **En Linux, [cage](https://github.com/cage-kiosk/cage):** la pantalla invisible donde corre el Chrome de xport. X no
   atiende a Chrome en modo `--headless`, así que xport lo abre en una pantalla que nadie ve. Se instala con
-  `sudo apt install cage` (Debian, Ubuntu), `sudo pacman -S cage` (Arch) o `sudo dnf install cage` (Fedora). Sin cage,
+  `sudo apt install cage` (Debian, Ubuntu), `sudo pacman -S cage` (Arch), `sudo dnf install cage` (Fedora) o `sudo apk add cage` (Alpine). Sin cage,
   xport anda igual, pero la captura la hace la extensión en tu navegador, con la pestaña a la vista.
 - **Una cuenta de X**, mejor aparte de la tuya: X puede limitar las cuentas que bajan muchos tweets.
 

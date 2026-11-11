@@ -316,6 +316,7 @@ def package_command(package: str, os_release: Path = OS_RELEASE) -> str | None:
         return None
     for family, tool in (
         ("arch", "pacman -S"),
+        ("alpine", "apk add"),
         ("debian", "apt install"),
         ("ubuntu", "apt install"),
         ("fedora", "dnf install"),

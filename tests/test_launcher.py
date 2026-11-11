@@ -322,6 +322,8 @@ def test_como_instalar_cage_segun_la_distro(tmp_path: Path) -> None:
     assert launcher.package_command("cage", rel) == "sudo pacman -S cage"
     rel.write_text('NAME="Linux Mint"\nID=linuxmint\nID_LIKE="ubuntu debian"\n')
     assert launcher.package_command("cage", rel) == "sudo apt install cage"
+    rel.write_text("ID=alpine\n")
+    assert launcher.package_command("cage", rel) == "sudo apk add cage"
     rel.write_text("ID=fedora\n")
     assert launcher.package_command("cage", rel) == "sudo dnf install cage"
     rel.write_text("ID=nixos\n")
