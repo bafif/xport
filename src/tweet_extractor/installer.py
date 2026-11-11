@@ -164,13 +164,17 @@ def windows_shortcuts(lay: Layout, *, remove: bool = False) -> None:
         XPORT_DESCRIPTION=t("installer.desktop_comment"),
         XPORT_REMOVE="1" if remove else "",
     )
-    subprocess.run(
+    done = subprocess.run(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _PS_SHORTCUTS],
         env=env,
         stdin=subprocess.DEVNULL,
         capture_output=True,
-        check=not remove,
+        text=True,
+        check=False,
     )
+    if done.returncode != 0 and not remove:
+        error = done.stderr.strip() or f"powershell: {done.returncode}"
+        raise InstallError(t("installer.shortcut_failed", error=error, path=lay.app))
 
 
 def _write(path: Path, text: str, mode: int) -> None:
@@ -207,16 +211,16 @@ def remove_shortcuts(lay: Layout) -> None:
             path.unlink(missing_ok=True)
 
 
-def _close_running(settings: Settings, env: Mapping[str, str], stopper: Stopper) -> None:
+def _close_running(env: Mapping[str, str], stopper: Stopper) -> None:
     """Cierra el xport que esté corriendo: sus archivos se van a reemplazar o borrar."""
     try:
-        if stopper(settings, port_from_env(env)):
+        if stopper(port_from_env(env)):
             print(t("installer.stopped_old"))
     except LaunchError as e:
         print(t("installer.could_not_stop", error=e))
 
 
-Stopper = Callable[[Settings, int], bool]
+Stopper = Callable[[int], bool]
 Starter = Callable[[list[str]], int]
 
 
@@ -238,7 +242,7 @@ def install(
         raise InstallError(t("installer.not_bundle", mark=BUNDLE_MARK))
     env = os.environ if env is None else env
     lay = layout(platform, Path.home() if home is None else home, env)
-    _close_running(Settings(), env, stopper)
+    _close_running(env, stopper)
     if source.resolve() != lay.app.resolve():
         replace_dir(source, lay.app)
     version = json.loads((lay.app / BUNDLE_MARK).read_text(encoding="utf-8")).get("version", "?")
@@ -256,12 +260,15 @@ def install(
 
 def _remove_later(app: Path) -> None:
     """En Windows no se puede borrar la carpeta del Python que está corriendo: la borra un
-    `cmd` aparte cuando este proceso ya terminó."""
+    `cmd` aparte cuando este proceso ya terminó. Va como una sola línea (con `/s`, `cmd` le
+    saca solo las comillas de afuera), así una ruta con espacios llega entera a `rmdir`. Corre
+    parado en la carpeta de arriba: Windows no borra la carpeta en la que está un proceso."""
     flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
         subprocess, "CREATE_NEW_PROCESS_GROUP", 0
     )
     subprocess.Popen(
-        ["cmd.exe", "/c", "ping -n 3 127.0.0.1 >nul & rmdir /s /q", str(app)],
+        f'cmd.exe /d /s /c "ping -n 3 127.0.0.1 >nul & rmdir /s /q "{app}""',
+        cwd=app.parent,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -279,7 +286,7 @@ def uninstall(
     env = os.environ if env is None else env
     lay = layout(platform, Path.home() if home is None else home, env)
     settings = Settings()
-    _close_running(settings, env, stopper)
+    _close_running(env, stopper)
     remove_shortcuts(lay)
     if lay.app.exists():
         running_inside = Path(sys.prefix).resolve().is_relative_to(lay.app.resolve())

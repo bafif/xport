@@ -3,7 +3,8 @@
 - `xport` o `xport open`: arranca el servicio si no está corriendo y abre la página local en el
   navegador de siempre.
 - `xport start`: lo arranca sin abrir la página.
-- `xport stop`: lo baja (el instalador lo usa antes de reemplazar los archivos).
+- `xport stop`: lo baja (el instalador lo usa antes de reemplazar los archivos), con el número
+  de proceso que el servicio dice en `/healthz`.
 - `xport status`: dice si está corriendo.
 - `xport check`: dice si están el navegador, la pantalla virtual y la extensión, y cómo
   instalar lo que falte (el instalador lo muestra al terminar).
@@ -26,6 +27,7 @@ import io
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -43,7 +45,6 @@ from tweet_extractor.config import Settings
 from tweet_extractor.i18n import LANGS, argv_lang, parse_lang, set_lang, system_lang, t
 from tweet_extractor.service.browser import find_browser, find_virtual_display
 from tweet_extractor.service.notify import system_notify
-from tweet_extractor.service.pidfile import clear_pid, pid_path, read_pid
 from tweet_extractor.service.routers import SERVICE_NAME
 
 APP = "tweet_extractor.service.app:app"
@@ -51,6 +52,10 @@ APP = "tweet_extractor.service.app:app"
 DEFAULT_PORT = 8000
 READY_TIMEOUT_S = 60.0
 STOP_TIMEOUT_S = 15.0
+# En Windows, una conexión a un puerto cerrado de la propia máquina tarda unos dos segundos en
+# ser rechazada (reintenta antes de rendirse).
+CONNECT_TIMEOUT_S = 5.0
+HEALTH_TIMEOUT_S = 3.0
 POLL_S = 0.25
 LOG_FILE = "service.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
@@ -91,25 +96,33 @@ def log_path(settings: Settings) -> Path:
     return settings.xport_data_dir / LOG_FILE
 
 
-def probe(port: int, timeout: float = 1.0) -> Probe:
-    """Qué hay en `port` de esta computadora. Sin proxies: es la propia máquina. Un servicio
-    que todavía está arrancando no abre el puerto hasta estar listo (uvicorn), así que
-    rechaza la conexión: `FREE`."""
+def health(port: int) -> tuple[Probe, int | None]:
+    """Qué hay en `port` de esta computadora y, si es un xport, el número de su proceso, que
+    dice `/healthz` (uno anterior al 11/11/2026 no lo dice). Primero prueba solo la conexión:
+    así un puerto cerrado de Windows, que tarda en rechazarla, no se confunde con algo que
+    escucha y no contesta. Un servicio que todavía está arrancando no abre el puerto hasta
+    estar listo (uvicorn): `FREE`. Sin proxies: es la propia máquina."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=CONNECT_TIMEOUT_S):
+            pass
+    except ConnectionRefusedError:
+        return Probe.FREE, None
+    except OSError:
+        return Probe.OTHER, None
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with opener.open(f"http://127.0.0.1:{port}/healthz", timeout=timeout) as r:
+        with opener.open(f"http://127.0.0.1:{port}/healthz", timeout=HEALTH_TIMEOUT_S) as r:
             body = json.loads(r.read(4096))
-    except urllib.error.HTTPError:
-        return Probe.OTHER
-    except urllib.error.URLError as e:
-        return Probe.FREE if isinstance(e.reason, ConnectionRefusedError) else Probe.OTHER
-    except ConnectionRefusedError:
-        return Probe.FREE
-    except (OSError, ValueError):
-        return Probe.OTHER
-    if isinstance(body, dict) and body.get("service") == SERVICE_NAME:
-        return Probe.XPORT
-    return Probe.OTHER
+    except (OSError, ValueError):  # URLError y HTTPError también son OSError
+        return Probe.OTHER, None
+    if not (isinstance(body, dict) and body.get("service") == SERVICE_NAME):
+        return Probe.OTHER, None
+    pid = body.get("pid")
+    return Probe.XPORT, pid if isinstance(pid, int) and not isinstance(pid, bool) else None
+
+
+def probe(port: int) -> Probe:
+    return health(port)[0]
 
 
 def service_command(port: int, python: Path | None = None) -> list[str]:
@@ -220,6 +233,28 @@ def terminate(pid: int, force: bool = False) -> None:
         os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
 
 
+def _zombie(pid: int) -> bool:
+    """Si el proceso ya terminó y nadie lo esperó todavía: para `stop`, ya bajó. Pasa con el
+    servicio que levantó el native host, que no espera a su uvicorn hasta que el navegador
+    cierra el canal."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+        return stat.rpartition(")")[2].split()[:1] == ["Z"]
+    except OSError:
+        pass
+    try:  # macOS: sin /proc
+        out = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+    except OSError:
+        return False
+    return out.strip().startswith("Z")
+
+
 def is_alive(pid: int) -> bool:
     if sys.platform == "win32":
         out = subprocess.run(
@@ -236,11 +271,10 @@ def is_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
-    return True
+    return not _zombie(pid)
 
 
 def stop(
-    settings: Settings,
     port: int,
     *,
     killer: Killer = terminate,
@@ -248,20 +282,23 @@ def stop(
     timeout: float = STOP_TIMEOUT_S,
     sleep: Sleep = time.sleep,
 ) -> bool:
-    """Baja el xport que corre en `port` y espera a que su proceso termine (el instalador
-    reemplaza los archivos después). Devuelve `False` si no había ninguno."""
-    if probe(port) is not Probe.XPORT:
+    """Baja el xport que contesta en `port` y espera a que su proceso termine (el instalador
+    reemplaza los archivos después). El número de proceso lo da el propio servicio en
+    `/healthz`: es el que atiende el puerto ahora, y no uno anotado antes que el sistema pudo
+    haberle dado a otro programa. Devuelve `False` si no había ninguno."""
+    state, pid = health(port)
+    if state is not Probe.XPORT:
         return False
-    data_dir = settings.xport_data_dir
-    pid = read_pid(data_dir)
     if pid is None:
-        raise LaunchError(t("launcher.no_pid", path=pid_path(data_dir)))
+        raise LaunchError(t("launcher.no_pid", url=page_url(port)))
     for force in (False, True):
-        killer(pid, force)
+        try:
+            killer(pid, force)
+        except PermissionError as e:
+            raise LaunchError(t("launcher.not_yours", pid=pid)) from e
         deadline = time.monotonic() + (timeout if not force else 5.0)
         while time.monotonic() < deadline:
             if not alive(pid) and probe(port) is not Probe.XPORT:
-                clear_pid(data_dir, pid)
                 return True
             sleep(POLL_S)
     raise LaunchError(t("launcher.stop_failed", pid=pid))
@@ -378,7 +415,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "check":
             return 0 if print_requirements(settings) else 2
         if args.command == "stop":
-            print(t("launcher.stopped") if stop(settings, port) else t("launcher.not_running"))
+            print(t("launcher.stopped") if stop(port) else t("launcher.not_running"))
             return 0
         url, started = ensure_running(settings, port)
     except LaunchError as e:

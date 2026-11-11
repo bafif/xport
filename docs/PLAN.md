@@ -446,8 +446,8 @@ la extensión armada, el ícono y dos scripts. Lo arma `deploy/bundle/build.py` 
 pydantic-core y uvloop vienen compiladas; el de Linux pesa 47 MB comprimido y 158 MB instalado. Lo que corre el acceso
 directo es `xport` (`launcher.py`): si no hay un xport contestando en el 8000 o en el 8080, arranca el servicio separado
 de sí mismo, espera a que `/healthz` diga xport y abre la página; si algo sale mal, además de escribirlo lo muestra en
-una notificación, porque un acceso directo no tiene terminal. `xport stop` lo cierra con el pid que el servicio deja en
-la carpeta de datos al arrancar, y `xport check` dice si están Chrome, cage y la extensión, con el comando que instala
+una notificación, porque un acceso directo no tiene terminal. `xport stop` lo cierra con el número de proceso que el
+servicio dice en `/healthz`, y `xport check` dice si están Chrome, cage y la extensión, con el comando que instala
 cage en la distribución de cada uno. El instalador (`installer.py`) lo corre el Python del paquete, así sus mensajes
 salen en los dos idiomas y lo prueban los tests: cierra el xport que esté corriendo, copia la carpeta a
 `~/.local/lib/xport` (reemplaza la anterior entera), arma el `.desktop` y el comando `xport` en `~/.local/bin`, muestra
@@ -519,7 +519,7 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Imagen Alpine con nginx, build de la extensión en Podman, CI | `deploy/`, `.github/workflows/ci.yml` | CI |
 | README en castellano e inglés, página de GitHub Pages, logo e íconos generados | `README.md`, `README.en.md`, `docs/` | a ojo |
 | Castellano e inglés en todo: servicio, CLI, página local, extensión, sitio y documentos, con el idioma del equipo y un selector | `locales/`, `i18n.py`, `extension/locales/`, `lib/i18n.ts`, `docs/en/` | tests (catálogos completos y sin textos a mano, cada documento con su par); vitest |
-| El lanzador `xport`: arranca el servicio si no corre (o usa el que corre), abre la página, lo cierra y dice qué falta para capturar sin ventana | `launcher.py`, `service/pidfile.py` | tests, uno con el servicio de verdad; real en Linux (11/11) |
+| El lanzador `xport`: arranca el servicio si no corre (o usa el que corre), abre la página, lo cierra y dice qué falta para capturar sin ventana | `launcher.py`, `/healthz` | tests, uno con el servicio de verdad; real en Linux (11/11) |
 | El paquete con su propio Python y el instalador: copia, acceso directo, comando, desinstalación que deja los datos | `deploy/bundle/build.py`, `installer.py` | tests; real en Linux (11/11): armado, prueba de humo, instalado y desinstalado en un HOME de prueba; Windows y macOS solo en CI, **sin probar en esos sistemas** |
 | Primer arranque: la página ofrece iniciar sesión en X antes de la primera captura | `service/browser.py` (`login_now`), `POST /browser/login`, `service/page/` | tests con un Chrome falso; real (11/11): el botón en la página y el Chrome del inicio de sesión |
 

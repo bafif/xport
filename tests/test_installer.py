@@ -24,7 +24,7 @@ def _bundle(tmp_path: Path, version: str = "9.9.9", extra: str = "uno") -> Path:
     return root
 
 
-def _no_stop(settings: Settings, port: int) -> bool:
+def _no_stop(port: int) -> bool:
     return False
 
 
@@ -72,7 +72,7 @@ def test_cierra_el_que_corre_y_arranca_el_nuevo(
         tmp_path,
         _bundle(tmp_path),
         start=True,
-        stopper=lambda settings, port: True,
+        stopper=lambda port: True,
         starter=lambda cmd: started.append(cmd) or 0,
     )
     assert started == [[str(lay.app / "xport")]]
@@ -83,7 +83,7 @@ def test_cierra_el_que_corre_y_arranca_el_nuevo(
 def test_si_no_puede_cerrar_el_viejo_sigue(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def stuck(settings: Settings, port: int) -> bool:
+    def stuck(port: int) -> bool:
         raise LaunchError("sin pid")
 
     lay = _install(tmp_path, _bundle(tmp_path), stopper=stuck)
@@ -151,3 +151,17 @@ def test_rutas_raras_en_los_accesos(tmp_path: Path) -> None:
         line for line in installer.desktop_entry(app).splitlines() if line.startswith("Exec=")
     )
     assert exec_line == 'Exec="/home/ana \\\\$ \\\\"x\\\\"/lib/xport/xport"'
+
+
+def test_en_windows_la_carpeta_se_borra_despues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Una sola línea para `cmd /s /c`, así una ruta con espacios llega entera a `rmdir`, y
+    parado en la carpeta de arriba, que Windows no borra la carpeta en la que está un proceso."""
+    calls: list[tuple[object, dict[str, object]]] = []
+    monkeypatch.setattr(installer.subprocess, "Popen", lambda cmd, **kw: calls.append((cmd, kw)))
+    app = tmp_path / "Juan Perez" / "xport"
+    installer._remove_later(app)
+    ((cmd, kw),) = calls
+    assert cmd == f'cmd.exe /d /s /c "ping -n 3 127.0.0.1 >nul & rmdir /s /q "{app}""'
+    assert kw["cwd"] == app.parent

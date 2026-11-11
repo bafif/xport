@@ -480,8 +480,8 @@ the built extension, the icon and two scripts. `deploy/bundle/build.py` builds i
 pydantic-core and uvloop come compiled; the Linux one is 47 MB compressed and 158 MB installed. What the shortcut runs
 is `xport` (`launcher.py`): if no xport answers on 8000 or 8080, it starts the service detached from itself, waits for
 `/healthz` to say xport and opens the page; if something goes wrong, besides printing it, it shows it in a notification,
-because a shortcut has no terminal. `xport stop` closes it with the pid the service leaves in the data folder when it
-starts, and `xport check` says whether Chrome, cage and the extension are there, with the command that installs cage
+because a shortcut has no terminal. `xport stop` closes it with the process number the service gives in `/healthz`,
+and `xport check` says whether Chrome, cage and the extension are there, with the command that installs cage
 on each person's distribution. The installer (`installer.py`) is run by the package's Python, so its messages come in
 both languages and the tests cover it: it closes the running xport, copies the folder to `~/.local/lib/xport`
 (replacing the previous one whole), creates the `.desktop` entry and the `xport` command in `~/.local/bin`, shows what
@@ -554,7 +554,7 @@ What's in the code, where, and how far it's tested. "Real" means against x.com, 
 | Alpine image with nginx, extension build in Podman, CI | `deploy/`, `.github/workflows/ci.yml` | CI |
 | README in Spanish and English, GitHub Pages page, generated logo and icons | `README.md`, `README.en.md`, `docs/` | by eye |
 | Spanish and English everywhere: service, CLI, local page, extension, site and documents, with the computer's language and a selector | `locales/`, `i18n.py`, `extension/locales/`, `lib/i18n.ts`, `docs/en/` | tests (complete catalogs with no hard-coded texts, every document with its pair); vitest |
-| The `xport` launcher: starts the service if it is not running (or uses the running one), opens the page, closes it and tells what is missing to capture without a window | `launcher.py`, `service/pidfile.py` | tests, one with the real service; real on Linux (11/11) |
+| The `xport` launcher: starts the service if it is not running (or uses the running one), opens the page, closes it and tells what is missing to capture without a window | `launcher.py`, `/healthz` | tests, one with the real service; real on Linux (11/11) |
 | The package with its own Python and the installer: copy, shortcut, command, uninstall that keeps the data | `deploy/bundle/build.py`, `installer.py` | tests; real on Linux (11/11): build, smoke test, installed and uninstalled in a test HOME; Windows and macOS only in CI, **not tried on those systems** |
 | First launch: the page offers to log in to X before the first capture | `service/browser.py` (`login_now`), `POST /browser/login`, `service/page/` | tests with a fake Chrome; real (11/11): the button on the page and the login Chrome |
 

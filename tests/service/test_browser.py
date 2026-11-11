@@ -492,3 +492,24 @@ def test_login_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
             time.sleep(0.02)  # la ventana se mira cada 0,05 s
         assert body == {"state": "idle", "note": None, "session": True}
         assert len(h.login_windows) == 1
+
+
+async def test_no_login_window_while_a_tick_is_opening_chrome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Si la página pide iniciar sesión justo cuando el supervisor está abriendo Chrome, no se
+    abre una segunda ventana sobre el mismo perfil."""
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    h = Harness(tmp_path)
+    seen: list[bool] = []
+
+    async def launch(profile: Path, ext: Path, headless: bool, url: str) -> Browser:
+        seen.append(h.runner.login_now())
+        return await h.launch(profile, ext, headless, url)
+
+    h.runner._launcher = launch
+    await h.runner.tick(now=0)
+    assert seen == [False]
+    assert h.runner.status.state == RunnerState.RUNNING
+    assert h.login_windows == []
+    await h.runner.aclose()

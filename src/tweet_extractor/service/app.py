@@ -30,7 +30,6 @@ from tweet_extractor.service.jobs import (
     build_backend,
 )
 from tweet_extractor.service.notify import Notifier
-from tweet_extractor.service.pidfile import clear_pid, write_pid
 from tweet_extractor.service.routers import SERVICE_NAME, request_lang, router
 from tweet_extractor.storage.queue import CaptureQueue
 from tweet_extractor.storage.sqlite_store import SqliteStore
@@ -126,11 +125,8 @@ def create_app(
                 runner=runner,
             )
             runner.start()
-            # Para `xport stop` (launcher.py): recién ahora, ya sabiendo que es el único.
-            write_pid(cfg.xport_data_dir)
             yield
         finally:
-            clear_pid(cfg.xport_data_dir)
             # Orden importante: cancelar los jobs en vuelo y cerrar el navegador ANTES de
             # cerrar las conexiones (un run_job a mitad no debe tocar un gate/store cerrado).
             await runner.aclose()

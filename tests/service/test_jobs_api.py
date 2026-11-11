@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ def test_healthz(make_client: ClientFactory) -> None:
     with make_client() as client:
         r = client.get("/healthz")
         assert r.status_code == 200
-        assert r.json() == {"status": "ok", "service": "xport"}
+        assert r.json() == {"status": "ok", "service": "xport", "pid": os.getpid()}
 
 
 def test_gate_arranca_vacio(make_client: ClientFactory) -> None:

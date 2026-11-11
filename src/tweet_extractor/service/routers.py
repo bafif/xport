@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -39,8 +40,10 @@ router = APIRouter()
 
 
 @router.get("/healthz")
-async def healthz() -> dict[str, str]:
-    return {"status": "ok", "service": SERVICE_NAME}
+async def healthz() -> dict[str, str | int]:
+    """Que el servicio anda y es xport. `pid` es el proceso que atiende el puerto: con eso lo
+    cierra `xport stop` (launcher.py), lo haya arrancado quien sea."""
+    return {"status": "ok", "service": SERVICE_NAME, "pid": os.getpid()}
 
 
 @router.get("/gate", response_model=GateResponse)

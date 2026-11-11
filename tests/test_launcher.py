@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import socket
 import threading
+import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -15,7 +16,6 @@ import pytest
 from tweet_extractor import launcher
 from tweet_extractor.config import Settings
 from tweet_extractor.launcher import LaunchError, Probe
-from tweet_extractor.service.pidfile import read_pid, write_pid
 
 
 def _free_port() -> int:
@@ -49,7 +49,7 @@ def _server(status: int, body: object) -> Iterator[int]:
 
 @pytest.fixture
 def xport_port() -> Iterator[int]:
-    yield from _server(200, {"status": "ok", "service": "xport"})
+    yield from _server(200, {"status": "ok", "service": "xport", "pid": 4242})
 
 
 @pytest.fixture
@@ -67,6 +67,7 @@ def missing_port() -> Iterator[int]:
 
 def test_reconoce_a_xport(xport_port: int) -> None:
     assert launcher.probe(xport_port) is Probe.XPORT
+    assert launcher.health(xport_port) == (Probe.XPORT, 4242)
 
 
 def test_otro_programa_en_el_puerto(other_port: int, missing_port: int) -> None:
@@ -103,14 +104,17 @@ class FakeProc:
         return self.code
 
 
-def _probes(monkeypatch: pytest.MonkeyPatch, answers: dict[int, list[Probe]]) -> None:
-    """Cada puerto contesta su lista en orden; el último se repite."""
+def _probes(
+    monkeypatch: pytest.MonkeyPatch, answers: dict[int, list[Probe]], pid: int | None = 4242
+) -> None:
+    """Cada puerto contesta su lista en orden; el último se repite. Un xport dice `pid`."""
 
-    def fake(port: int, timeout: float = 1.0) -> Probe:
+    def fake(port: int) -> tuple[Probe, int | None]:
         seq = answers.get(port, [Probe.FREE])
-        return seq.pop(0) if len(seq) > 1 else seq[0]
+        state = seq.pop(0) if len(seq) > 1 else seq[0]
+        return state, pid if state is Probe.XPORT else None
 
-    monkeypatch.setattr(launcher, "probe", fake)
+    monkeypatch.setattr(launcher, "health", fake)
 
 
 def _no_spawn(port: int, log: Path) -> FakeProc:
@@ -170,23 +174,30 @@ def test_si_no_contesta_a_tiempo(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_bajar_sin_servicio(monkeypatch: pytest.MonkeyPatch) -> None:
     _probes(monkeypatch, {8000: [Probe.FREE]})
-    assert launcher.stop(Settings(), 8000, killer=lambda pid, force: None) is False
+    assert launcher.stop(8000, killer=lambda pid, force: None) is False
 
 
-def test_bajar_sin_pid(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bajar_un_xport_viejo_sin_pid(monkeypatch: pytest.MonkeyPatch) -> None:
+    _probes(monkeypatch, {8000: [Probe.XPORT]}, pid=None)
+    with pytest.raises(LaunchError, match="versión anterior"):
+        launcher.stop(8000, killer=lambda pid, force: None)
+
+
+def test_el_xport_de_otro_usuario_no_se_toca(monkeypatch: pytest.MonkeyPatch) -> None:
     _probes(monkeypatch, {8000: [Probe.XPORT]})
-    with pytest.raises(LaunchError, match="service.pid"):
-        launcher.stop(Settings(), 8000, killer=lambda pid, force: None)
+
+    def denied(pid: int, force: bool) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    with pytest.raises(LaunchError, match="otro usuario"):
+        launcher.stop(8000, killer=denied)
 
 
 def test_bajar_le_pide_que_cierre_y_espera(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = Settings()
-    write_pid(settings.xport_data_dir, 4242)
     _probes(monkeypatch, {8000: [Probe.XPORT, Probe.XPORT, Probe.FREE]})
     kills: list[tuple[int, bool]] = []
     lives = [True, False]
     stopped = launcher.stop(
-        settings,
         8000,
         killer=lambda pid, force: kills.append((pid, force)),
         alive=lambda pid: lives.pop(0) if len(lives) > 1 else lives[0],
@@ -194,17 +205,26 @@ def test_bajar_le_pide_que_cierre_y_espera(monkeypatch: pytest.MonkeyPatch) -> N
     )
     assert stopped is True
     assert kills == [(4242, False)]
-    assert read_pid(settings.xport_data_dir) is None
+
+
+def test_un_zombi_ya_bajo() -> None:
+    """El servicio del native host queda sin esperar cuando termina: igual cuenta como bajado."""
+    proc = launcher.subprocess.Popen(["true"])
+    try:
+        for _ in range(100):
+            if not launcher.is_alive(proc.pid):
+                break
+            time.sleep(0.02)
+        assert launcher.is_alive(proc.pid) is False  # todavía sin `wait`: es un zombi
+    finally:
+        proc.wait()
 
 
 def test_si_no_cierra_lo_fuerza(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = Settings()
-    write_pid(settings.xport_data_dir, 4242)
     _probes(monkeypatch, {8000: [Probe.XPORT]})
     kills: list[tuple[int, bool]] = []
     with pytest.raises(LaunchError, match="4242"):
         launcher.stop(
-            settings,
             8000,
             killer=lambda pid, force: kills.append((pid, force)),
             alive=lambda pid: True,
@@ -279,11 +299,9 @@ def test_arranca_y_baja_el_servicio_de_verdad(monkeypatch: pytest.MonkeyPatch) -
     try:
         url, started = launcher.ensure_running(settings, port, spawner=spawner)
         assert (url, started) == (f"http://localhost:{port}/", True)
-        assert launcher.probe(port) is Probe.XPORT
-        assert read_pid(settings.xport_data_dir) == procs[0].pid
-        assert launcher.stop(settings, port) is True
+        assert launcher.health(port) == (Probe.XPORT, procs[0].pid)
+        assert launcher.stop(port) is True
         assert launcher.probe(port) is Probe.FREE
-        assert read_pid(settings.xport_data_dir) is None
         # Cerró ordenado (uvicorn vuelve a levantar la señal al terminar: sale con -15).
         assert procs[0].wait(timeout=5) in (0, -15)
         log = (settings.xport_data_dir / "service.log").read_text(encoding="utf-8")

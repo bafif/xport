@@ -188,9 +188,14 @@ def posix_script(module: str, *args: str) -> str:
     )
 
 
-def cmd_script(module: str, *args: str, pause: bool = False) -> str:
+def cmd_script(module: str, *args: str, pause: bool = False, leave_dir: bool = False) -> str:
+    """`leave_dir`: corre parado en %TEMP% (el desinstalador: Windows no borra la carpeta en la
+    que está parada la consola). `%~dp0` sigue siendo la carpeta del script."""
     extra = "".join(f" {a}" for a in args)
-    lines = ["@echo off", f'"%~dp0python\\python.exe" -I -m {module}{extra} %*']
+    lines = ["@echo off"]
+    if leave_dir:
+        lines.append('cd /d "%TEMP%"')
+    lines.append(f'"%~dp0python\\python.exe" -I -m {module}{extra} %*')
     if pause:
         lines.append("pause")
     return "\n".join(lines) + "\n"
@@ -226,7 +231,7 @@ def stage(work: Path, os_name: str, arch: str) -> Path:
         )
         write(
             root / "uninstall.cmd",
-            cmd_script("tweet_extractor.installer", "uninstall", pause=True),
+            cmd_script("tweet_extractor.installer", "uninstall", pause=True, leave_dir=True),
             crlf=True,
         )
     else:
@@ -285,7 +290,7 @@ def macos_app(root: Path) -> Path:
 def archive(top: Path, out: Path, os_name: str) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     if os_name == "windows":
-        path = out.with_suffix(".zip")
+        path = out.with_name(out.name + ".zip")  # `with_suffix` cortaría en «0.2.1»
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             for file in sorted(top.rglob("*")):
                 z.write(file, file.relative_to(top.parent))

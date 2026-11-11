@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from collections.abc import Callable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -60,4 +61,8 @@ def test_arranca_si_en_el_puerto_hay_otra_cosa(
     not_json = fake_service(b"<html></html>")
     app = create_app(make_settings(tmp_path, xport_peer_ports=[other, not_json, 9]))
     with TestClient(app) as client:
-        assert client.get("/healthz").json() == {"status": "ok", "service": "xport"}
+        assert client.get("/healthz").json() == {
+            "status": "ok",
+            "service": "xport",
+            "pid": os.getpid(),
+        }

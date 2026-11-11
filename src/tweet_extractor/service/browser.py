@@ -380,6 +380,7 @@ class BrowserRunner:
         self._browser: Browser | None = None
         self._task: asyncio.Task[None] | None = None
         self._session: bool | None = None  # si el perfil tiene sesión de X (lo último que se vio)
+        self._in_tick = False  # una vuelta del supervisor a mitad (abriendo o cerrando Chrome)
         self._idle_since: float | None = None
         self._last_session_check = 0.0
         self._crashes = 0
@@ -440,7 +441,9 @@ class BrowserRunner:
         docs/PLAN.md). Solo con el navegador cerrado: capturando, la sesión la mira solo."""
         if self._status.state not in (RunnerState.IDLE, RunnerState.FAILED):
             return False
-        if self._browser is not None or (self._login_task and not self._login_task.done()):
+        if self._in_tick or self._browser is not None:
+            return False
+        if self._login_task is not None and not self._login_task.done():
             return False
         # Ya en LOGIN: así ninguna vuelta del supervisor abre el navegador mientras tanto.
         self._status = RunnerStatus(RunnerState.LOGIN, Note(key="runner.login"))
@@ -491,7 +494,16 @@ class BrowserRunner:
             log.exception("navegador de xport: no pude mirar la sesión del perfil")
 
     async def tick(self, now: float | None = None) -> None:
-        """Una vuelta: arranca, cuida o cierra el navegador según la cola."""
+        """Una vuelta: arranca, cuida o cierra el navegador según la cola. Mientras dura,
+        `login_now` no abre otra ventana: la vuelta puede estar abriendo Chrome o pidiendo
+        el inicio de sesión ella misma."""
+        self._in_tick = True
+        try:
+            await self._tick(now)
+        finally:
+            self._in_tick = False
+
+    async def _tick(self, now: float | None) -> None:
         now = time.monotonic() if now is None else now
         if self._status.state in (RunnerState.OFF, RunnerState.FAILED, RunnerState.LOGIN):
             return
