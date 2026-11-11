@@ -7,8 +7,9 @@
 - **Un navegador:** Google Chrome, Chromium o Microsoft Edge. Firefox sirve solo con la extensión cargada a mano.
 - **En Linux, [cage](https://github.com/cage-kiosk/cage):** la pantalla invisible donde corre el Chrome de xport. X no
   atiende a Chrome en modo `--headless`, así que xport lo abre en una pantalla que nadie ve. Se instala con
-  `sudo apt install cage` (Debian, Ubuntu), `sudo pacman -S cage` (Arch), `sudo dnf install cage` (Fedora) o `sudo apk add cage` (Alpine). Sin cage,
-  xport anda igual, pero la captura la hace la extensión en tu navegador, con la pestaña a la vista.
+  `sudo apt install cage` (Debian, Ubuntu), `sudo pacman -S cage` (Arch), `sudo dnf install cage` (Fedora) o
+  `sudo apk add cage` (Alpine). Sin cage, xport anda igual, pero la captura la hace la extensión en tu navegador, con
+  la pestaña a la vista.
 - **Una cuenta de X**, mejor aparte de la tuya: X puede limitar las cuentas que bajan muchos tweets.
 
 El instalador trae su propio Python: no hace falta instalar Python, uv ni Node.
@@ -25,7 +26,8 @@ tar -xzf xport-<versión>-linux-x86_64.tar.gz
 ./xport/install.sh
 ```
 
-En Alpine (y los otros Linux con musl), el paquete es `xport-<versión>-linux-x86_64-musl.tar.gz`; se instala igual.
+En Alpine (y los otros Linux con musl), el paquete es `xport-<versión>-linux-x86_64-musl.tar.gz`; se instala
+igual.
 
 Copia xport a `~/.local/lib/xport`, lo agrega al menú de aplicaciones y como el comando `xport` en `~/.local/bin`,
 avisa si falta algo (con el comando que lo instala en tu distribución) y abre la página. No pide contraseña.

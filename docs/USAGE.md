@@ -28,7 +28,7 @@ cuentas a la vez:
 4. **El CSV.** Cuando una captura termina, el servicio arma su CSV y avisa con una notificación del sistema (en Linux,
    un clic abre el archivo). El enlace queda en la página. Si se corta, la notificación dice por qué.
 
-Si el rango entero termina sin un solo tweet, xport mira la cuenta en X y dice por qué: no existe, está suspendida, es
+Si el rango entero termina sin un solo tweet, xport mira la cuenta en X y dice por qué: no existe, está suspendida, está
 protegida, bloqueó a la cuenta con que captura xport, o existe y es pública pero no escribió en esas fechas (o X la
 oculta de la búsqueda).
 

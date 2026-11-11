@@ -7,8 +7,8 @@
 - **A browser:** Google Chrome, Chromium or Microsoft Edge. Firefox only works with the extension loaded by hand.
 - **On Linux, [cage](https://github.com/cage-kiosk/cage):** the invisible screen xport's Chrome runs in. X does not
   serve Chrome in `--headless` mode, so xport opens it on a screen nobody sees. Install it with `sudo apt install cage`
-  (Debian, Ubuntu), `sudo pacman -S cage` (Arch), `sudo dnf install cage` (Fedora) or `sudo apk add cage` (Alpine). Without cage xport still works,
-  but the capture is done by the extension in your browser, with the tab in view.
+  (Debian, Ubuntu), `sudo pacman -S cage` (Arch), `sudo dnf install cage` (Fedora) or `sudo apk add cage` (Alpine).
+  Without cage xport still works, but the capture is done by the extension in your browser, with the tab in view.
 - **An X account**, preferably not your own: X may limit accounts that download many tweets.
 
 The installer brings its own Python: you do not need to install Python, uv or Node.
@@ -25,7 +25,8 @@ tar -xzf xport-<version>-linux-x86_64.tar.gz
 ./xport/install.sh
 ```
 
-On Alpine (and the other Linux with musl), the package is `xport-<version>-linux-x86_64-musl.tar.gz`; it installs the same way.
+On Alpine (and other Linux distributions with musl), the package is `xport-<version>-linux-x86_64-musl.tar.gz`; it
+installs the same way.
 
 It copies xport to `~/.local/lib/xport`, adds it to the applications menu and as the `xport` command in
 `~/.local/bin`, tells you if something is missing (with the command that installs it on your distribution) and opens
