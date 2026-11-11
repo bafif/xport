@@ -3,8 +3,11 @@
 [Español](README.md)
 
 Makes **the browser start and stop the local FastAPI on its own**, via the *native messaging*
-API. That way the extension no longer depends on having a `uvicorn` running by hand in WSL:
-open the extension → the backend comes up; close the browser → it goes down.
+API. That way you do not have to start the service by hand: open the extension → the backend
+comes up; close the browser → it goes down.
+
+With the [installer](../../docs/INSTALL.en.md) you do not need it: the «xport» shortcut starts the
+service. This is for running xport from the source.
 
 **It doesn't replace the HTTP service, it supervises it.** The extension still talks HTTP
 to `http://localhost:8000` (same as before). The Compliance Gate, the `mappers/` and the
@@ -27,7 +30,7 @@ browser --connectNative--> native host --launches--> uvicorn (FastAPI)
 
 ## Pick your case
 
-### A) Firefox runs on Windows, backend in WSL (the most common)
+### A) Firefox runs on Windows, backend in WSL
 
 From **PowerShell on Windows**, just once:
 
