@@ -36,6 +36,10 @@ installer.py   el instalador del paquete
 extension/     la extensión para Chrome y Firefox (WXT)
 ```
 
+`providers/factory.py` es el único lugar donde se elige entre twscrape y la API oficial (`PROVIDER_BACKEND`), y arma
+cada proveedor con su mapper. La CLI y el servicio comparten el orquestador (`orchestrator.run_job`), que recorre las
+sub-ventanas de cada cuenta.
+
 ## Decisiones de diseño
 
 **El tope de 24 horas**

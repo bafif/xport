@@ -1,42 +1,37 @@
 # xport: project plan and status
 
-[Español](PLAN.md)
+[Español](PLAN.md) · [Back to the README](../README.en.md)
 
 xport downloads the tweets of one or more X accounts between two dates and leaves one CSV per account with what
 matters: the account, the date, the text, the links the tweet carries and, if it quotes another tweet, which one. Quote
 tweets are in; retweets are not.
 
 This document holds the project's rules, the decisions and their reasons, what is done and tested, and what is left.
-Installation and usage are in the [README](../README.en.md) and in the documents under `docs/`.
+Installation and usage are in the [README](../README.en.md) and in the documents under `docs/`; the code's layers and
+how to develop, in [How it is built](ARCHITECTURE.en.md).
 
 ## What the CSV holds
 
-| Column | What it holds |
-|---|---|
-| `account` | the account's handle, lowercase |
-| `created_at` | the tweet's date and time, ISO 8601 in UTC |
-| `content` | the full text (for long tweets, the whole text and not the truncated one) |
-| `links` | the tweet's external URLs (`expanded_url`), separated by spaces |
-| `quoted_tweet_id`, `quoted_tweet_url` | the quoted tweet, if any |
+The columns are in the [README](../README.en.md#what-the-csv-has). What was decided about their content:
 
-If a tweet was edited and is captured again, the latest version stays.
-
-Of the replies, the account's own threads stay, and the replies the account wrote inside other people's conversations
-are left out. The export says how many were left out, so the difference between what was captured and what was
-exported does not look like data loss.
-
-The file defaults are settled: UTF-8 without BOM, comma as separator, every field quoted (the text has line breaks and
-commas), dates in UTC and the name `<account>_<since>_<until>.csv`, so the same range is rewritten and different ranges
-live side by side. The encoding and the separator can be changed to open it in an Excel set to Spanish (`utf-8-sig` and
-`;`). Media is kept only as a URL, never downloaded, and only one level of quotes is kept.
+- `content` has the full text, long tweets included, and `links` the external URLs (`expanded_url`).
+- If a tweet was edited and is captured again, the latest version stays.
+- Of the replies, the account's own threads stay, and the ones the account wrote inside other people's conversations
+  are left out. The export says how many were left out, so the difference between what was captured and what was
+  exported does not look like data loss.
+- The file defaults are settled: UTF-8 without BOM, comma as separator, every field quoted (the text has line breaks
+  and commas), dates in UTC and the name `<account>_<since>_<until>.csv`, so the same range is rewritten and different
+  ranges live side by side. The encoding and the separator can be changed to open it in an Excel set to Spanish
+  (`utf-8-sig` and `;`).
+- Media is kept only as a URL, never downloaded, and only one level of quotes is kept.
 
 ## The context
 
 - Reading X without paying means using the same GraphQL endpoints the website uses, with a logged-in session. The
   official API charges for every post read.
 - A user's timeline stops at about 3,200 tweets. The `from:user` search has no such ceiling.
-- X's terms forbid scraping and set a fine of 15,000 dollars for every million posts accessed in any 24-hour period.
-  That is why the first thing is to make crossing that cap impossible, in code.
+- X's terms set a fine of 15,000 dollars for every million posts accessed in any 24-hour period. That is why the first
+  thing is to make crossing that cap impossible, in code.
 
 ## Rules that are not negotiable
 
@@ -76,29 +71,6 @@ Several parts of the code refer to these rules by number.
    browser is ever needed, it goes in another image.
 6. **CORS in a single place.** FastAPI handles it; nginx adds no CORS headers.
 
-## How it is put together
-
-It is layered, and each layer only knows the one below:
-
-```
-providers/     where the data comes from, behind TweetProvider (twscrape, official API)
-mappers/       raw GraphQL → domain model
-domain/        Tweet and TweetLink (pydantic v2)
-compliance/    the cap's ledger (SlidingWindowGate) and GatedProvider
-storage/       data SQLite (deduplicated, checkpoints), the capture queue and streaming CSV export
-datadir.py     moving the old data (`data/`) to the per-user folder
-service/       FastAPI: jobs, capture ingest, the queue, export, cap status, notifications,
-               xport's browser (`service/browser.py`) and the local page (`service/page/`)
-cli.py         the command line (Typer)
-launcher.py    the xport command: starts the service and opens the page
-installer.py   the package's installer (`deploy/bundle/build.py` builds it)
-extension/     extension for Chrome and Firefox (WXT, one codebase)
-```
-
-`providers/factory.py` is the only place where scraping or the official API is chosen (the `PROVIDER_BACKEND`
-variable), and it builds each provider with its mapper. The orchestrator (`orchestrator.run_job`) walks the
-sub-windows of each account and is shared by the CLI and the service.
-
 ## How capture works
 
 Server-side scraping with twscrape is blocked: x.com signs every request with an `x-client-transaction-id` that
@@ -122,15 +94,15 @@ the queue's work; the interface is a local page that opens in the everyday brows
   is off or gave up, to anyone.
 - **When a person is needed, the profile opens with a window:** to log in to X the first time, or when X ends the
   session (the `auth_token` cookie is missing or a tab ended up on the login). The window is a regular Chrome window,
-  without the pipe: a small app-mode window did not let a real account finish logging in.
+  without the pipe: a small app-mode window does not let a real account finish logging in.
 - **None of this clashes with the rules:** it is not Selenium or Playwright, nothing goes into the service image
   (rule 5) and everything seen goes through `/ingest` and the cap (rule 1).
 
 **The limits of X's search.**
 
 - The search goes to the second and in UTC: `from:<account> since_time:<s> until_time:<s>`. `since:` and `until:` take
-  days in the searcher's time zone and include the `until:` day, so the first hours of the start day were lost and an
-  extra day was requested.
+  days in the searcher's time zone and include the `until:` day: with them, the first hours of the start day would be
+  lost and an extra day would be requested.
 - Each search settles at about a thousand results. When it settles before `since`, the next one starts at the second
   of the oldest tweet loaded, plus one, so another tweet from the same second is not lost. If a search brings nothing
   older, the range is done.
@@ -161,14 +133,14 @@ What is in the code, where, and how far it is tested. «Real» means against x.c
 
 | What | Where | Tested |
 |---|---|---|
-| 900,000-access cap: rolling window, counts accesses without deduplicating, reserves before requesting, separate ledger, atomic across processes | `compliance/` | tests (blocking, waiting, `BEGIN IMMEDIATE`); real: it counted every post seen |
+| 900,000-access cap: rolling window, counts accesses without deduplicating, reserves before requesting, separate ledger, atomic across processes | `compliance/` | tests (blocking, waiting, `BEGIN IMMEDIATE`); real: it counts every post seen |
 | Strict `Tweet` model (UTC, clean ids and URLs, quoted tweet complete or nothing) | `domain/models.py` | tests |
 | Mapper: retweets out, quotes in their three places, full text of long tweets, links without a target or self-links out, the quoted tweet's link on x.com | `mappers/twscrape_mapper.py` | tests; real |
 | Replies: own threads in, other people's conversations out, applied on export and counted in `excluded_replies` | `storage/`, `POST /export` | tests; real |
 | Storage: dedupe by id with the latest version, lowercase handles, checkpoint per sub-window | `storage/sqlite_store.py` | tests |
 | Streaming, atomic CSV, `<account>_<since>_<until>.csv` | `storage/csv_exporter.py` | tests; real |
 | In-page capture: `fetch` and XHR patch, bridge, relay in batches of 20 pages | `extension/entrypoints/` | real |
-| Crawl: scroll, «Retry», reload with backoff, bound at the second of the oldest tweet, resuming from the database | `autoscroll.content.ts`, `lib/autoscroll.ts`, `lib/queue.ts`, `POST /progress` | vitest and tests; real: a day with 2,830 tweets came out whole |
+| Crawl: scroll, «Retry», reload with backoff, bound at the second of the oldest tweet, resuming from the database | `autoscroll.content.ts`, `lib/autoscroll.ts`, `lib/queue.ts`, `POST /progress` | vitest and tests; real: a day with 2,830 tweets comes out whole |
 | Crawl cut-offs: no service, full cap, 429, `over_cap`, rejection, twenty unrecorded pages | `lib/ingest.ts`, `background.ts`, popup | vitest of `decideIngest`; real: the service down, the popup without a service and the full cap |
 | Pausing the crawl with the tab hidden, with a notice | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest; real in Chrome |
 | Waiting for X: on a 429 or with no quota, it waits for the reset off the search and carries on; with few searches, it spreads the remaining ones | `lib/rate.ts`, `capture-main.content.ts`, `background.ts`, the queue's `waiting` state | vitest of `decideRate` and `waitStep`; tests; real: three waits in a row |
@@ -198,21 +170,21 @@ What is in the code, where, and how far it is tested. «Real» means against x.c
 
 The numbers stay because the code cites them. Each item says what it is and, if something is left, what.
 
-### Fixed errors
+### Capture and the cap's ledger
 
 1. **Pausing the crawl with the tab hidden.** Done and tried in Chrome.
 2. **Making an x.com shape change noticeable.** Done. If the response envelope ever changes and not the tweet,
    `/ingest` sees zero tweets and cannot tell it from an empty page: that is not covered.
 3. **Excel set to Spanish.** Done. Opening an exported CSV with the checkbox in an Excel set to Spanish is left.
-4. **A single cap ledger.** Done. An xport from before this change does not say `service` in `/healthz`, so an old
-   service still running is not detected: after updating, it has to be stopped.
+4. **A single cap ledger.** Done: one data folder per user for the service, the CLI and the native host, and the
+   service does not start if another xport already answers.
 
-### Tried in a browser
+### Checks in a browser
 
 5. **The cut-offs in a browser.** All three work: the service down in the middle of a capture (the crawl cuts after 20
    unrecorded pages and the queue resumes when the service is back), the popup without a service and the full cap. An
-   edge: what the extension holds in memory unsent is lost if the browser closes in that second and a half, and those
-   accesses do not reach the cap. It is a few pages at most.
+   edge: the extension sends what it captured every second and a half; if the browser closes in between, what it did
+   not send is lost and those accesses do not reach the cap. It is a few pages at most.
 6. **The windowless browser and its assumptions.** The search loads and scrolling brings more in a Chrome driven by the
    service; X rejects `HeadlessChrome`, so it runs inside cage. `x-rate-limit-*` comes in `SearchTimeline` and the page
    can read it. `since_time:` and `until_time:` work to the second in «Latest». Edge, Windows and macOS were not tried.
@@ -226,8 +198,8 @@ The numbers stay because the code cites them. Each item says what it is and, if 
 8. **The local page.** Done (`service/page/`, no build step), with the `Origin` check, inclusive dates with shortcuts,
    per-capture progress and the cap with its daily summary.
 9. **Notify when done and export by itself.** Done (`service/notify.py`): on Linux with `notify-send`, where the click
-   opens the CSV; on Windows with a PowerShell toast, and on macOS with `osascript`, without a click. Trying them by hand
-   is left.
+   opens the CSV; on Windows with a PowerShell toast, and on macOS with `osascript`, without a click. Trying them by
+   hand is left.
 10. **Account that does not exist, is suspended or protected.** Done and tried. A capture that ends without a single
     tweet in the range takes its tab to `x.com/<account>/following`, which requests `UserByScreenName` without loading
     posts; `mappers/account_mapper.py` interprets it. The protected account that xport's account follows and the block
@@ -282,5 +254,3 @@ The numbers stay because the code cites them. Each item says what it is and, if 
 - **How many accounts in parallel:** one, in line (item 7).
 - **A Windows browser with the service in WSL:** stays as it is and untried; with the Windows installer it no longer
   makes sense.
-
-To set up the development environment, see [How it is built](ARCHITECTURE.en.md#developing).

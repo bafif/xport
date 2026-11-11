@@ -36,6 +36,10 @@ installer.py   the package's installer
 extension/     the extension for Chrome and Firefox (WXT)
 ```
 
+`providers/factory.py` is the only place that chooses between twscrape and the official API (`PROVIDER_BACKEND`), and
+it builds each provider with its mapper. The CLI and the service share the orchestrator (`orchestrator.run_job`), which
+walks the sub-windows of each account.
+
 ## Design decisions
 
 **The 24-hour cap**
