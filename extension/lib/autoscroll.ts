@@ -14,12 +14,14 @@ export const AUTOSCROLL_MSG = 'xport-autoscroll' as const;
 
 // `ping`: el background pregunta si la pestaña sigue en una búsqueda de captura, para
 // reusarla con la próxima de la cola en vez de abrir otra. `stale`: si quedó en una búsqueda
-// vieja de la cuenta del crawl (ver `isStaleSearch`), para llevarla a la actual.
-export type AutoscrollAction = 'start' | 'stop' | 'ping' | 'stale';
+// vieja de la cuenta del crawl (ver `isStaleSearch`), para llevarla a la actual. `at-check`:
+// si sigue donde la dejó la comprobación de la cuenta `account` (ver lib/account.ts).
+export type AutoscrollAction = 'start' | 'stop' | 'ping' | 'stale' | 'at-check';
 
 export interface AutoscrollMsg {
   type: typeof AUTOSCROLL_MSG;
   action: AutoscrollAction;
+  account?: string;
 }
 
 // Cadencia y cortes.

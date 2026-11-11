@@ -106,6 +106,9 @@ export interface CaptureReport {
   note?: Note; // el motivo, si se cortó: el servicio lo muestra en el idioma de quien mira
   resume_at?: string; // esperando a X: cuándo sigue (ISO 8601)
   by_user?: boolean; // la cortó la persona: el servicio no lo notifica
+  // Con `done` y ni un tweet en el rango: la respuesta cruda de UserByScreenName (punto 10),
+  // que interpreta el servicio.
+  user?: Record<string, unknown>;
 }
 
 export interface ResetResult {

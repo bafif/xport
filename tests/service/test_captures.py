@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import date
 from pathlib import Path
@@ -11,10 +12,11 @@ from fastapi.testclient import TestClient
 from tests.providers._fixtures import search_response, tweet_entry
 from tests.service.conftest import make_settings
 from tweet_extractor.compliance.gate import SlidingWindowGate
+from tweet_extractor.domain.account import AccountCheck, AccountStatus
 from tweet_extractor.i18n import t
 from tweet_extractor.service import notify
 from tweet_extractor.service.app import create_app, origin_allowed
-from tweet_extractor.service.captures import EMPTY_NOTE
+from tweet_extractor.service.captures import EMPTY_NOTE, empty_note
 from tweet_extractor.service.notify import Notifier
 
 RANGE = {"since": "2023-01-01", "until": "2023-02-01"}  # los tweets de prueba son del 4/1/2023
@@ -102,6 +104,73 @@ def test_sin_un_solo_tweet_lo_dice(tmp_path: Path) -> None:
         assert done["csv"] is None and done["download_url"] is None
         assert sent.wait(1)[0][1] == EMPTY_NOTE.render() == t("note.empty")
         assert client.get(f"/captures/{cap['id']}/csv").status_code == 404
+
+
+USERS = json.loads(
+    (Path(__file__).parents[1] / "mappers" / "fixtures" / "user_by_screen_name.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.mark.parametrize(
+    ("case", "key", "says"),
+    [
+        ("not_found", "note.account_not_found", "no existe en X"),
+        ("suspended", "note.account_suspended", "X suspendió la cuenta @nadie"),
+        ("protected", "note.account_protected", "es una cuenta protegida"),
+        ("active", "note.account_quiet", "existe y es pública"),
+    ],
+)
+def test_sin_tweets_dice_por_que_segun_la_cuenta(
+    tmp_path: Path, case: str, key: str, says: str
+) -> None:
+    # La extensión abre el perfil y manda el `UserByScreenName` crudo con el `done` (punto 10).
+    sent = Sent()
+    with _client(tmp_path, sent) as client:
+        (cap,) = client.post("/captures", json={"accounts": ["nadie"], **RANGE}).json()
+        client.post("/captures/next")
+        done = _report(client, cap["id"], "done", user=USERS[case])
+        assert done["note"] == {"key": key, "params": {"account": "nadie"}}
+        assert done["csv"] is None
+        assert says in sent.wait(1)[0][1]
+        (listed,) = client.get("/captures").json()
+        assert listed["note"]["key"] == key
+        english = client.get("/captures", headers={"accept-language": "en"}).json()
+        assert english[0]["note"] == listed["note"]  # se guarda la clave, no el texto
+
+
+def test_cada_estado_de_cuenta_tiene_su_aviso() -> None:
+    for status in AccountStatus:
+        note = empty_note("nadie", AccountCheck(status=status, reason="Withheld"))
+        assert note.known(), status
+        assert "@nadie" in note.render("es") and "@nadie" in note.render("en")
+    unavailable = empty_note("nadie", AccountCheck(status=AccountStatus.UNAVAILABLE))
+    assert unavailable.render("es").endswith("(?).")
+
+
+def test_una_respuesta_que_no_se_entiende_da_el_aviso_de_siempre(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    sent = Sent()
+    with _client(tmp_path, sent) as client:
+        (cap,) = client.post("/captures", json={"accounts": ["nadie"], **RANGE}).json()
+        client.post("/captures/next")
+        raro = {"data": {}, "errors": [{"code": 88, "message": "Rate limit exceeded"}]}
+        done = _report(client, cap["id"], "done", user=raro)
+        assert done["note"] == {"key": "note.empty", "params": {}}
+        assert sent.wait(1)[0][1] == t("note.empty")
+    assert "UserByScreenName" in caplog.text and "Rate limit exceeded" in caplog.text
+
+
+def test_con_tweets_la_cuenta_no_cambia_nada(tmp_path: Path) -> None:
+    sent = Sent()
+    with _client(tmp_path, sent) as client:
+        (cap,) = client.post("/captures", json={"accounts": ["uno"], **RANGE}).json()
+        client.post("/captures/next")
+        _ingest(client, "uno", "1")
+        done = _report(client, cap["id"], "done", user=USERS["suspended"])
+        assert done["note"] is None and done["exported"] == 1
 
 
 def test_un_corte_avisa_y_una_cancelacion_no(tmp_path: Path) -> None:

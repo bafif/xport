@@ -7,13 +7,18 @@ su CSV y manda una notificación del sistema; un corte también avisa, con su mo
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import UTC, date, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
 from fastapi.responses import FileResponse
 
+from tweet_extractor.domain.account import AccountCheck, AccountStatus
 from tweet_extractor.i18n import Note, number, t
+from tweet_extractor.mappers.account_mapper import map_account
+from tweet_extractor.mappers.base import MapperError
 from tweet_extractor.service.routers import LangDep, SvcDep
 from tweet_extractor.service.schemas import (
     BrowserOut,
@@ -26,8 +31,50 @@ from tweet_extractor.storage.csv_exporter import export_account
 from tweet_extractor.storage.queue import Capture, CaptureState
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+# Cuánto de la respuesta va al log cuando x.com cambia el formato de `UserByScreenName`.
+_EXAMPLE_CHARS = 2000
 
 EMPTY_NOTE = Note(key="note.empty")
+
+# Por qué una captura no trajo ni un tweet, según cómo ve X a la cuenta (punto 10).
+ACCOUNT_NOTES = {
+    AccountStatus.ACTIVE: "note.account_quiet",
+    AccountStatus.PROTECTED: "note.account_protected",
+    AccountStatus.SUSPENDED: "note.account_suspended",
+    AccountStatus.NOT_FOUND: "note.account_not_found",
+    AccountStatus.BLOCKED: "note.account_blocked",
+    AccountStatus.UNAVAILABLE: "note.account_unavailable",
+}
+
+
+def _account(raw: dict[str, Any] | None, account: str) -> AccountCheck | None:
+    """El estado de la cuenta según la respuesta de `UserByScreenName`, si la extensión la
+    mandó y se entiende. Si x.com cambió el formato, queda en el log y el aviso es el de
+    siempre: nunca se afirma que una cuenta no existe por no entender la respuesta."""
+    if raw is None:
+        return None
+    try:
+        return map_account(raw)
+    except MapperError as exc:
+        log.warning(
+            "x.com cambió el formato de UserByScreenName (@%s): %s. Ejemplo: %s",
+            account,
+            exc,
+            json.dumps(raw, ensure_ascii=False)[:_EXAMPLE_CHARS],
+        )
+        return None
+
+
+def empty_note(account: str, check: AccountCheck | None) -> Note:
+    """El aviso de una captura sin un solo tweet en el rango."""
+    if check is None:
+        return EMPTY_NOTE
+    params: dict[str, str | int | Note] = {"account": account}
+    if check.status == AccountStatus.UNAVAILABLE:
+        params["reason"] = check.reason or "?"
+    return Note(key=ACCOUNT_NOTES[check.status], params=params)
 
 
 def _utc(day: date) -> datetime:
@@ -76,17 +123,18 @@ async def _out(svc: SvcDep, cap: Capture) -> CaptureOut:
     )
 
 
-async def _finish(svc: SvcDep, cap: Capture) -> Capture:
+async def _finish(svc: SvcDep, cap: Capture, check: AccountCheck | None = None) -> Capture:
     """Exporta el CSV de una captura que terminó y avisa. Sin un solo tweet en el rango no
-    hay CSV que valga: se dice por qué puede ser (punto 10)."""
+    hay CSV que valga: se dice por qué, según cómo ve X a la cuenta si se sabe (punto 10)."""
     since, until = _utc(cap.since), _utc(cap.until)
     _, total = await svc.store.account_extent(cap.account, since=since, until=until)
     title = t("notify.done", account=cap.account)
     if total == 0:
+        note = empty_note(cap.account, check)
         cap = await svc.queue.record_export(
-            cap.id, csv=None, exported=0, excluded_replies=0, note=EMPTY_NOTE.dump()
+            cap.id, csv=None, exported=0, excluded_replies=0, note=note.dump()
         )
-        svc.notifier.post(title, EMPTY_NOTE.render())
+        svc.notifier.post(title, note.render())
         return cap
     path, exported = await export_account(
         svc.store,
@@ -149,8 +197,9 @@ async def report_state(
     capture_id: int, body: CaptureReport, svc: SvcDep, lang: LangDep
 ) -> CaptureOut:
     """Lo que avisa la extensión (en curso, en pausa, esperando a X, terminada, cortada) o
-    la persona al cancelarla. Terminada: el servicio exporta el CSV y lo notifica. Cortada:
-    se notifica el motivo, salvo que la haya cortado la persona. Esperando a X no se
+    la persona al cancelarla. Terminada: el servicio exporta el CSV y lo notifica; si no hubo
+    ni un tweet, el aviso dice por qué según el `UserByScreenName` que manda la extensión.
+    Cortada: se notifica el motivo, salvo que la haya cortado la persona. Esperando a X no se
     notifica: sigue sola."""
     note = body.note.dump() if isinstance(body.note, Note) else None
     cap, changed = await svc.queue.set_state(
@@ -161,7 +210,7 @@ async def report_state(
             status.HTTP_404_NOT_FOUND, detail=t("error.capture_not_found", lang, id=capture_id)
         )
     if changed and cap.state == CaptureState.DONE:
-        cap = await _finish(svc, cap)
+        cap = await _finish(svc, cap, _account(body.user, cap.account))
     elif changed and cap.state == CaptureState.STOPPED and not body.by_user:
         why = Note.load(cap.note)
         svc.notifier.post(

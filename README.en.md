@@ -61,7 +61,9 @@ opens in your usual browser and handles several accounts at once:
    queue; what was already stored stays.
 4. **The CSV:** when one finishes, the service builds its CSV by itself and says so with a system notification, which
    on Linux opens the file with a click. The link stays on the page. If the whole range ends without a single tweet,
-   it says so: the account may not exist, be protected or have written nothing in those dates. If it stops (the cap,
+   it looks the account up on X and says why: it doesn't exist, it's suspended, it's protected, it blocked the X
+   account xport captures with, or it exists and is public but posted nothing in those dates (or X hides it from
+   search). If it stops (the cap,
    the service, a change on x.com), the notification says why.
 
 Below, the page shows the cap: what was seen in the last 24 hours and a per-day summary of what was seen before, which

@@ -31,9 +31,16 @@ export const STORAGE_RUNNER = 'xport:runner';
 // Operaciones que capturamos. MVP: SearchTimeline (rango de fechas vía la búsqueda
 // from:user since: until:). UserTweets* son timeline de perfil (otro envelope) — el
 // backend hoy extrae SearchTimeline; las demás quedan para una fase siguiente.
-export const CAPTURED_OPS = ['SearchTimeline', 'UserTweets', 'UserTweetsAndReplies'] as const;
+// UserByScreenName no trae tweets: dice si la cuenta existe, está suspendida o es protegida
+// (punto 10 de docs/PLAN.md), y solo se usa cuando una captura terminó sin ninguno.
+export const CAPTURED_OPS = [
+  'SearchTimeline',
+  'UserTweets',
+  'UserTweetsAndReplies',
+  'UserByScreenName',
+] as const;
 
-const OP_RE = /\/(SearchTimeline|UserTweets|UserTweetsAndReplies)(\?|$)/;
+const OP_RE = /\/(SearchTimeline|UserTweets|UserTweetsAndReplies|UserByScreenName)(\?|$)/;
 
 export interface CaptureMsg {
   source: typeof CAPTURE_SOURCE;
@@ -66,6 +73,19 @@ export function accountFromUrl(url: string): string | null {
     if (!variables) return null;
     const parsed = JSON.parse(variables) as { rawQuery?: unknown };
     return typeof parsed.rawQuery === 'string' ? accountFromQuery(parsed.rawQuery) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** El handle por el que pregunta una URL de UserByScreenName (`variables.screen_name`), en
+ *  minúsculas. `null` si no aplica o no se puede leer. */
+export function screenNameFromUrl(url: string): string | null {
+  try {
+    const variables = new URL(url, 'https://x.com').searchParams.get('variables');
+    if (!variables) return null;
+    const parsed = JSON.parse(variables) as { screen_name?: unknown };
+    return typeof parsed.screen_name === 'string' ? parsed.screen_name.toLowerCase() : null;
   } catch {
     return null;
   }

@@ -130,6 +130,9 @@ class CaptureReport(BaseModel):
     note: Note | str | None = None
     resume_at: datetime | None = None  # `waiting`: cuándo vuelve a buscar (punto 11)
     by_user: bool = False  # la cortó la persona: no hace falta avisarle
+    # Con `done` y ni un tweet en el rango: la respuesta cruda de `UserByScreenName`, que la
+    # extensión capturó en el perfil de la cuenta y no interpreta (punto 10; la lee mappers/).
+    user: dict[str, Any] | None = None
 
     @field_validator("note")
     @classmethod

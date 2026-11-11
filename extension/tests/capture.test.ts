@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { accountFromQuery, accountFromUrl, matchOp } from '../lib/capture';
+import { accountFromQuery, accountFromUrl, matchOp, screenNameFromUrl } from '../lib/capture';
 
 describe('matchOp', () => {
   it('reconoce la operación por nombre, sin importar el queryId', () => {
     expect(matchOp('/i/api/graphql/AbC123/SearchTimeline?variables=%7B%7D')).toBe('SearchTimeline');
     expect(matchOp('https://x.com/i/api/graphql/zzz/UserTweets')).toBe('UserTweets');
     expect(matchOp('/i/api/graphql/AbC123/HomeTimeline?x=1')).toBeNull();
+    expect(matchOp('/i/api/graphql/Q/UserByScreenName?variables=%7B%7D')).toBe('UserByScreenName');
   });
 });
 
@@ -29,5 +30,18 @@ describe('accountFromUrl', () => {
     expect(accountFromUrl(userTweets)).toBeNull();
     expect(accountFromUrl('/i/api/graphql/AbC/SearchTimeline?variables=no-es-json')).toBeNull();
     expect(accountFromUrl('/i/api/graphql/AbC/SearchTimeline')).toBeNull();
+  });
+});
+
+describe('screenNameFromUrl', () => {
+  it('lee el handle por el que pregunta UserByScreenName, en minúsculas', () => {
+    const variables = JSON.stringify({ screen_name: 'TayandYou', withGrokTranslatedBio: false });
+    const url = `/i/api/graphql/Q/UserByScreenName?variables=${encodeURIComponent(variables)}`;
+    expect(screenNameFromUrl(url)).toBe('tayandyou');
+  });
+  it('devuelve null si la URL no trae el handle', () => {
+    expect(screenNameFromUrl('/i/api/graphql/Q/UserByScreenName')).toBeNull();
+    expect(screenNameFromUrl('/i/api/graphql/Q/UserByScreenName?variables=%7B%7D')).toBeNull();
+    expect(screenNameFromUrl('/i/api/graphql/Q/UserByScreenName?variables=no')).toBeNull();
   });
 });

@@ -62,8 +62,9 @@ para varias cuentas a la vez:
    qué parte del rango cubre, cuántos tweets lleva y a qué hora entró la última página. «Cancelar» la saca de la cola;
    lo que ya se guardó queda.
 4. **El CSV:** cuando una termina, el servicio arma su CSV solo y avisa con una notificación del sistema, que en Linux
-   abre el archivo con un clic. El enlace queda en la página. Si el rango entero termina sin un solo tweet, lo dice:
-   puede que la cuenta no exista, sea protegida o no haya escrito en esas fechas. Si se corta (el tope, el servicio,
+   abre el archivo con un clic. El enlace queda en la página. Si el rango entero termina sin un solo tweet, mira la
+   cuenta en X y dice por qué: no existe, está suspendida, es protegida, bloqueó a la cuenta con que captura xport, o
+   existe y es pública pero no escribió en esas fechas (o X la oculta de la búsqueda). Si se corta (el tope, el servicio,
    un cambio de x.com), la notificación dice por qué.
 
 Abajo, la página muestra el tope: lo visto en las últimas 24 horas y un resumen por día de lo visto antes, que es solo

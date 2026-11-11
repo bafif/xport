@@ -1,5 +1,13 @@
 import { browser } from 'wxt/browser';
 
+import {
+  type AccountCheck,
+  answersCheck,
+  checkStep,
+  checkUrl,
+  STORAGE_CHECK,
+  userPayload,
+} from '../lib/account';
 import { type CaptureOut, type CaptureReport, XportClient } from '../lib/api';
 import { AUTOSCROLL_MSG, crawlUrl, type CrawlState, narrowed, untilTime } from '../lib/autoscroll';
 import {
@@ -15,6 +23,7 @@ import {
   STORAGE_QUEUE_TAB,
   STORAGE_RUNNER,
   STORAGE_STATUS,
+  screenNameFromUrl,
 } from '../lib/capture';
 import type { Note } from '../lib/i18n';
 import { decideIngest, type IngestFlags, MAX_PAGES_PER_POST, stopNotice } from '../lib/ingest';
@@ -103,6 +112,13 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((msg: unknown): void => {
     const m = msg as Partial<CaptureMsg> | null;
     if (!m || m.source !== CAPTURE_SOURCE || typeof m.url !== 'string') return;
+    if (m.op === 'UserByScreenName') {
+      // No trae tweets: solo sirve si una comprobación de cuenta la espera (punto 10).
+      const screenName = screenNameFromUrl(m.url);
+      const data = m.data;
+      void serial(() => onUserLookup(screenName, data));
+      return;
+    }
     const account = accountFromUrl(m.url);
     if (!account) return; // MVP: solo capturas de búsqueda from:user
     const buf = buffers.get(account) ?? [];
@@ -201,19 +217,24 @@ export default defineBackground(() => {
     return new XportClient(await getBase(), typeof runner === 'string' ? runner : undefined);
   }
 
+  /** Le avisa al servicio el estado de una captura. Devuelve si lo aceptó. */
   async function report(
     id: number,
     state: 'running' | 'paused' | 'waiting' | 'done' | 'stopped',
     note?: Note,
     resumeAt?: number,
-  ): Promise<void> {
+    user?: Record<string, unknown>,
+  ): Promise<boolean> {
     const body: CaptureReport = { state };
     if (note) body.note = note;
     if (resumeAt !== undefined) body.resume_at = new Date(resumeAt).toISOString();
+    if (user) body.user = user;
     try {
       await (await client()).captureState(id, body);
+      return true;
     } catch (err) {
       console.warn('[xport] no pude avisarle al servicio el estado de la captura', id, err);
+      return false;
     }
   }
 
@@ -251,6 +272,19 @@ export default defineBackground(() => {
 
   async function pollQueue(): Promise<void> {
     if (!(await captureEnabled())) return; // captura apagada: no se toma trabajo
+    const check = await readCheck();
+    switch (checkStep(check, Date.now())) {
+      case 'waiting':
+        return; // la cola sigue cuando conteste x.com o pase el plazo
+      case 'expired':
+        if (check) {
+          console.warn('[xport] x.com no dijo nada de @' + check.account + ': termino sin mirar la cuenta');
+          await finishCheck(check);
+        }
+        break;
+      case 'none':
+        break;
+    }
     const api = await client();
     let next: CaptureOut | null;
     try {
@@ -304,6 +338,26 @@ export default defineBackground(() => {
    *  búsqueda de captura (así no se apilan pestañas); si no, abre otra. */
   async function openSearch(crawl: CrawlState): Promise<void> {
     const url = crawlUrl(crawl);
+    // La pestaña donde se miró la cuenta de la captura anterior es nuestra si sigue ahí, aunque
+    // ya no esté en una búsqueda.
+    const check = await readCheck();
+    if (check?.finished) {
+      await browser.storage.local.remove(STORAGE_CHECK);
+      try {
+        const here: unknown = await browser.tabs.sendMessage(check.tabId, {
+          type: AUTOSCROLL_MSG,
+          action: 'at-check',
+          account: check.account,
+        });
+        if (here === true) {
+          await browser.tabs.update(check.tabId, { url, active: true });
+          await browser.storage.local.set({ [STORAGE_QUEUE_TAB]: check.tabId });
+          return;
+        }
+      } catch {
+        // se cerró, o ya no es de x.com: se sigue como siempre
+      }
+    }
     const prev = (await browser.storage.local.get(STORAGE_QUEUE_TAB))[STORAGE_QUEUE_TAB];
     if (typeof prev === 'number') {
       try {
@@ -442,7 +496,74 @@ export default defineBackground(() => {
   async function onCrawlEvent(m: CrawlMsg, tabId: number | undefined): Promise<void> {
     if (m.event === 'waiting' && tabId !== undefined) await parkTab(tabId);
     if (typeof m.captureId !== 'number') return;
+    if (m.event === 'done' && tabId !== undefined && (await startCheck(m.captureId, tabId))) {
+      return; // el `done` lo avisa la comprobación de la cuenta
+    }
     await report(m.captureId, reportedState(m.event), undefined, m.resumeAt);
+  }
+
+  // --- Por qué no hubo tweets (punto 10 de docs/PLAN.md) ---------------------------------
+  // Una captura de la cola que termina sin un solo tweet guardado en el rango no avisa el
+  // `done` enseguida: su pestaña va a `x.com/<cuenta>/following`, que pide UserByScreenName
+  // sin cargar posts, y el `done` lleva esa respuesta cruda. Mientras tanto la cola no
+  // avanza; si x.com no contesta en el plazo, termina con el aviso de siempre.
+
+  async function readCheck(): Promise<AccountCheck | null> {
+    return ((await browser.storage.local.get(STORAGE_CHECK))[STORAGE_CHECK] ??
+      null) as AccountCheck | null;
+  }
+
+  /** Arranca la comprobación si la captura no guardó ni un tweet en el rango. Devuelve si
+   *  arrancó (entonces el `done` lo avisa `finishCheck`). */
+  async function startCheck(captureId: number, tabId: number): Promise<boolean> {
+    const crawl = await readCrawl();
+    if (!crawl || crawl.captureId !== captureId) return false;
+    let captured: number;
+    try {
+      captured = (
+        await (await client()).progress({
+          account: crawl.account,
+          since: crawl.since,
+          until: crawl.until,
+        })
+      ).captured;
+    } catch {
+      return false; // sin servicio: el `done` de siempre (que también puede fallar)
+    }
+    if (captured > 0) return false;
+    const check: AccountCheck = {
+      captureId,
+      account: crawl.account,
+      tabId,
+      startedAt: Date.now(),
+    };
+    console.debug('[xport] la captura', captureId, 'no trajo tweets: miro la cuenta en', checkUrl(check.account));
+    await browser.storage.local.set({ [STORAGE_CHECK]: check });
+    // El crawl terminó: sin su estado, ni esta pestaña ni otra lo retoman.
+    await browser.storage.local.remove([STORAGE_CRAWL, STORAGE_PAUSED]);
+    try {
+      await browser.tabs.update(tabId, { url: checkUrl(check.account) });
+    } catch {
+      await finishCheck(check); // la pestaña ya no está
+    }
+    return true;
+  }
+
+  /** La respuesta de UserByScreenName de la cuenta que se está mirando: la captura termina y
+   *  la cola sigue sin esperar a la alarma. */
+  async function onUserLookup(screenName: string | null, data: unknown): Promise<void> {
+    const check = await readCheck();
+    if (!answersCheck(check, screenName)) return;
+    await finishCheck(check, userPayload(data));
+    await pollQueue();
+  }
+
+  /** Avisa el `done` de la captura, con la respuesta de x.com si la hay. Si el servicio no
+   *  la acepta, avisa sin ella: una captura que no termina se volvería a crawlear. */
+  async function finishCheck(check: AccountCheck, user?: Record<string, unknown>): Promise<void> {
+    await browser.storage.local.set({ [STORAGE_CHECK]: { ...check, finished: true } });
+    const ok = await report(check.captureId, 'done', undefined, undefined, user);
+    if (!ok && user) await report(check.captureId, 'done');
   }
 
   async function captureEnabled(): Promise<boolean> {

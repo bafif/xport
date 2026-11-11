@@ -24,6 +24,7 @@ import {
   sinceTime,
   untilTime,
 } from '../lib/autoscroll';
+import { onCheckPage } from '../lib/account';
 import { STORAGE_CRAWL, STORAGE_PAUSED, STORAGE_STATUS } from '../lib/capture';
 import type { Msg } from '../lib/i18n';
 import { CLAIM_MSG, CRAWL_MSG, type CrawlEvent, type CrawlMsg } from '../lib/queue';
@@ -69,6 +70,10 @@ export default defineContentScript({
       if (m.action === 'ping') {
         // ¿Esta pestaña sigue en una búsqueda de captura? Si sí, el background la reusa.
         return Promise.resolve(isCaptureSearch(location.href));
+      }
+      if (m.action === 'at-check') {
+        // ¿Sigue donde la dejó la comprobación de la cuenta? Si sí, la próxima captura la reusa.
+        return Promise.resolve(onCheckPage(location.href, m.account ?? ''));
       }
       if (m.action === 'stale') {
         // ¿Esta pestaña quedó en una búsqueda vieja del crawl? Si sí, el background la

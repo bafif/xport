@@ -1,0 +1,68 @@
+{
+  "active": {
+    "data": {
+      "user": {
+        "result": {
+          "__typename": "User",
+          "rest_id": "11348282",
+          "core": {
+            "created_at": "Wed Dec 19 20:20:32 +0000 2007",
+            "name": "NASA",
+            "screen_name": "NASA"
+          },
+          "privacy": {
+            "protected": false
+          },
+          "relationship_perspectives": {
+            "blocked_by": false,
+            "blocking": false,
+            "followed_by": false,
+            "following": false,
+            "live_following": false,
+            "muting": false
+          }
+        }
+      }
+    }
+  },
+  "protected": {
+    "data": {
+      "user": {
+        "result": {
+          "__typename": "User",
+          "rest_id": "4531940473",
+          "core": {
+            "created_at": "Fri Dec 11 21:17:47 +0000 2015",
+            "name": "TayTweets",
+            "screen_name": "TayandYou"
+          },
+          "privacy": {
+            "protected": true
+          },
+          "relationship_perspectives": {
+            "blocked_by": false,
+            "blocking": false,
+            "followed_by": false,
+            "following": false,
+            "live_following": false,
+            "muting": false
+          }
+        }
+      }
+    }
+  },
+  "suspended": {
+    "data": {
+      "user": {
+        "result": {
+          "__typename": "UserUnavailable",
+          "message": "User is suspended",
+          "reason": "Suspended"
+        }
+      }
+    }
+  },
+  "not_found": {
+    "data": {}
+  }
+}
