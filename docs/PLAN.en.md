@@ -464,22 +464,31 @@ restarted, showed that a range with tweets ends with its CSV without looking the
 row use a single tab: the check's tab is reused only if it's still where it was left, so a tab id from another
 session is left alone.
 
+**November 11, later: Phases 1 and 3 in a browser.** With the same windowed Chrome inside cage and the extension,
+driven through the debugging pipe, I opened the local page and queued @nasa and @esa from its form, September 15 to 30,
+2025. Halfway through the first one I put another tab in front: the capture went to "paused" and, when I came back, it
+went on by itself and finished with the whole range (35 tweets, the oldest from the 15th). @esa's started by itself
+afterwards and both CSVs came out (12 tweets in @esa's: two replies to other people's conversations were left out), in
+11 searches and with no error in the page's console. The only thing that showed up: when switching the language with
+the selector, the form's notice ("Queued: …") stayed in the previous language; now it's redone, and an error the
+service already built is cleared.
+
 ## Where it stands today
 
 It works, and I've used it against real x.com: in June and on November 6 in Chrome Beta, already with
 that early morning's stops in the code. That time it worked end to end: the host brought up the service,
 the batches went in and the cap counted every post seen. On November 10, without a window and with the
 queue, I tested the stops (the service down mid-capture, the popup without the service and the cap full)
-and they worked. Phase 1 (November 7) still has no manual test: the pause with the tab hidden, the stop
-on format change and the CSV opened in an Excel in Spanish have tests, but not a manual test. Same for
-Phase 3 (November 10): the local page and the notifications have tests and a smoke test against the
-service, but haven't gone through a browser; the queue has, in the Phase 4 and item 10 tests. Phase 4
-(November 10), waiting for X on the rate limit and the per-second search, was tested against x.com: a day
-of @AmazonHelp with 2,830 tweets came out in full, hitting X's search limit three times. Since the night
-of November 10, on Linux, the service captures with its own Chrome inside cage, with no window in sight
-(Phase 5), and everything is in Spanish and English. Since the 11th, a capture that brings no tweet says
-why, based on how X sees the account (item 10). The tests run offline, mypy in strict mode and ruff pass,
-and the Alpine image and the extension build in CI.
+and they worked. From Phase 1 (November 7), the stop on format change and the CSV opened in an Excel in
+Spanish have tests, but not a manual test; the pause with the tab hidden was tested on November 11 in
+Chrome. From Phase 3 (November 10), the notifications have tests but weren't tested by hand; the queue
+and the local page went through Chrome: on the 11th, two accounts queued from the page came out in two
+CSVs without touching anything. Phase 4 (November 10), waiting for X on the rate limit and the per-second
+search, was tested against x.com: a day of @AmazonHelp with 2,830 tweets came out in full, hitting X's
+search limit three times. Since the night of November 10, on Linux, the service captures with its own
+Chrome inside cage, with no window in sight (Phase 5), and everything is in Spanish and English. Since
+the 11th, a capture that brings no tweet says why, based on how X sees the account (item 10). The tests
+run offline, mypy in strict mode and ruff pass, and the Alpine image and the extension build in CI.
 
 Server-side scraping with twscrape is implemented and tested offline, but it's still blocked by the
 x.com change: it fails closed with a clear error. The official API is implemented for whoever has a
@@ -501,14 +510,14 @@ What's in the code, where, and how far it's tested. "Real" means against x.com, 
 | Adaptive crawl: scroll, "Retry", reload with backoff, range narrowing to the second of the oldest tweet, resume from the database | `autoscroll.content.ts`, `POST /progress` | real; pure functions with vitest |
 | Crawl stops: no service, cap full, 429, `over_cap`, rejection, twenty unrecorded pages | `lib/ingest.ts`, `background.ts`, popup | vitest for `decideIngest`; real without a window (Nov 10): the service down, the popup without the service and the cap full |
 | Per-second search in UTC (`since_time:`/`until_time:`): the bound drops to the second of the oldest tweet and the crawl ends; no saturated days and no lost first hours | `lib/autoscroll.ts` (`nextBound`), `lib/queue.ts` (`startPlan`), `POST /progress` | vitest and tests; real (Nov 10): a day of 2,830 tweets came out in full, all 24 hours |
-| Crawl pause with the tab hidden, with a notice in the popup | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest for `decideStep`; **no manual test** |
+| Crawl pause with the tab hidden, with a notice in the popup | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest for `decideStep`; real (Nov 11): with another tab in front it went to "paused" and, when back, finished whole |
 | Waiting for X: on a 429 or with no quota, the capture waits for the reset outside the search and continues on its own; with few searches left, it spreads them out | `lib/rate.ts`, `capture-main.content.ts`, `autoscroll.content.ts`, `background.ts`, queue `waiting` state | vitest for `decideRate` and `waitStep`; queue tests; real (Nov 10): three waits for the reset, each on its own and with the tab on the local page |
 | Browser restart mid-capture: resumes from what's stored, not from the top, and crawls a single tab | `background.ts` (`withFrontier`, `claim`), `lib/queue.ts` (`resumeBound`, `claimAllowed`) | vitest; real (Nov 10): each stretch of the test restarted the browser |
 | x.com shape change: `rejected` and `format_changed` in `/ingest`, sample in the log, crawl stop | `service/ingest.py`, `lib/ingest.ts` | tests with a page of unknown shape; vitest |
 | CSV for Excel in Spanish from `/export` and the popup | `service/schemas.py`, popup | tests (BOM and `;`); **not opened in Excel** |
 | A single cap register: per-user data folder, the repo's `.env`, moving `data/`, doesn't start if another xport is running | `config.py`, `datadir.py`, `service/app.py` | tests (the CLI from two folders, the move, merging two registers, the second service) |
-| Capture queue: one per account, one at a time, persistent; the extension takes it with `alarms`; the popup and `tweet-extractor capture` enqueue | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (two accounts in two CSVs, states, restart); vitest; real (Nov 10 and 11): the Phase 4 test captures and four accounts in a row, without touching anything |
-| Local page at `/`, with `Origin` check | `service/page/`, `service/app.py` | tests and smoke test; **not opened in a browser** |
+| Capture queue: one per account, one at a time, persistent; the extension takes it with `alarms`; the popup and `tweet-extractor capture` enqueue | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (two accounts in two CSVs, states, restart); vitest; real (Nov 10 and 11): the Phase 4 test captures, four accounts in a row and two queued from the page, which came out in two CSVs without touching anything |
+| Local page at `/`, with `Origin` check | `service/page/`, `service/app.py` | tests; real (Nov 11): opened in Chrome, queued two accounts from the form and switched language, with no console errors |
 | Export and notification on finish; notice if the range has no tweets | `service/captures.py`, `service/notify.py` | tests with a fake notifier; **notifications not tested by hand** |
 | Why there were no tweets: the account doesn't exist, is suspended, is protected, blocked xport's, X doesn't show it, or exists and didn't post in those dates | `mappers/account_mapper.py`, `lib/account.ts`, `background.ts`, `service/captures.py` | tests with trimmed real responses; vitest; real (Nov 11): four cases in a row, with no access on the cap |
 | The service's own browser: Chrome with an xport profile inside cage, the extension loaded through the debugging pipe, the queue only for it, a small window to log in to X when needed, closed when the queue is empty | `service/browser.py`, `service/captures.py`, `lib/api.ts`, `background.ts` | tests with a fake Chrome; real (Nov 10): loads the extension, the marker, the virtual display, the bounce to login and the window |
@@ -614,8 +623,9 @@ couple of days).
 It's in the code and with tests (see "How I built it"). The numbers continue, because the rest of the
 plan cites them. What's missing is what needs a real browser or a real Excel:
 
-1. **Pause the crawl with the tab hidden.** Missing the manual test: switch tabs mid-capture, see the
-   notice in the popup, come back and check in `/progress` that the range stayed whole.
+1. **Pause the crawl with the tab hidden.** Tested on November 11 in Chrome: with another tab in front
+   the capture went to "paused", and when I came back it went on by itself and finished with the whole
+   range. The page showed the notice; I didn't look at the popup's.
 2. **Make an x.com shape change noticeable.** Done; the test uses a page of unknown shape. If someday
    the response envelope changes and not the tweet, `/ingest` sees zero tweets and can't tell it apart
    from an empty page: that's not covered.
@@ -670,16 +680,16 @@ Tested on Linux with Chrome Beta 158, without a window, a separate X account and
 It's in the code and with tests (see "How I built it"). The numbers continue, because the rest of the
 plan cites them. What's missing is running it through a browser and what each item says:
 
-7. **Capture queue.** Done: `POST /captures`, `GET /captures`, `POST /captures/next` and
-   `POST /captures/{id}/state`, in `queue.db`, and `tweet-extractor capture`; the popup's "Capture ▶"
-   also enqueues. Missing the manual test: two accounts queued from the page that come out in two CSVs
-   without touching anything in between. If the queue's tab is closed, the background reopens it; if
-   the person uses it for something else, the capture stays in progress without advancing until they
-   cancel it (the invisible browser solves this, item 13). The "waiting for X" state arrived with
-   item 11.
+7. **Capture queue.** Done: `POST /captures`, `GET /captures`, `POST /captures/next` and `POST
+   /captures/{id}/state`, in `queue.db`, and `tweet-extractor capture`; the popup's "Capture ▶" also
+   enqueues. Tested on November 11: two accounts queued from the page came out in two CSVs without
+   touching anything in between. If the queue's tab is closed, the background reopens it; if the person
+   uses it for something else, the capture stays in progress without advancing until they cancel it (the
+   invisible browser solves this, item 13). The "waiting for X" state arrived with item 11.
 8. **The local page.** Done (`service/page/`, no build), with the `Origin` check, inclusive dates with
-   shortcuts, per-capture progress and the cap with its daily summary. Missing: open it in a real
-   browser. The popup's "Captured" counter stays as it was, until the popup goes away.
+   shortcuts, per-capture progress and the cap with its daily summary. Opened on November 11 in Chrome,
+   in both languages and with no console errors. The popup's "Captured" counter stays as it was, until
+   the popup goes away.
 9. **Notify when it finishes and export on its own.** Done in the service (`service/notify.py`): on
    Linux with `notify-send`, where the click opens the CSV; on Windows with a PowerShell toast, and on
    macOS with `osascript`, without click. None was tested by hand, and the Windows and macOS ones never
