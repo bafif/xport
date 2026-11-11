@@ -169,9 +169,19 @@ excelInput.addEventListener('change', () => {
   localStorage.setItem(EXCEL_KEY, String(excelInput.checked));
 });
 
+// El aviso del formulario. Uno del catálogo llega como función que lo arma en el idioma actual,
+// así se rehace al cambiar de idioma; uno ya armado (un error que contestó el servicio) se borra.
+let formNote = null;
+
 function say(text, isError = false) {
-  formMsg.textContent = text;
+  formNote = typeof text === 'function' ? { text, isError } : null;
+  formMsg.textContent = typeof text === 'function' ? text() : text;
   formMsg.className = isError ? 'error' : '';
+}
+
+function resay() {
+  if (formNote) say(formNote.text, formNote.isError);
+  else say('');
 }
 
 form.addEventListener('submit', async (event) => {
@@ -179,10 +189,10 @@ form.addEventListener('submit', async (event) => {
   const accounts = accountsInput.value.trim();
   const since = sinceInput.value;
   const last = untilInclusive();
-  if (!accounts) return say(t('page.need_accounts'), true);
-  if (!since) return say(t('page.need_since'), true);
-  if (since > last) return say(t('page.order'), true);
-  if (last > today()) return say(t('page.future'), true);
+  if (!accounts) return say(() => t('page.need_accounts'), true);
+  if (!since) return say(() => t('page.need_since'), true);
+  if (since > last) return say(() => t('page.order'), true);
+  if (last > today()) return say(() => t('page.future'), true);
   try {
     const body = { accounts: [accounts], since, until: addDays(last, 1) };
     const caps = await api('/captures', {
@@ -190,7 +200,7 @@ form.addEventListener('submit', async (event) => {
       body: JSON.stringify({ ...body, ...(excelInput.checked ? EXCEL_ES : {}) }),
     });
     const names = caps.map((c) => `@${c.account}`).join(', ');
-    say(t('page.queued', { names }));
+    say(() => t('page.queued', { names }));
     accountsInput.value = '';
     await refresh();
   } catch (err) {
@@ -382,6 +392,7 @@ function applyStrings() {
   $('lang').value = lang;
   fillYears();
   renderRange();
+  resay();
 }
 
 $('lang').addEventListener('change', async () => {
