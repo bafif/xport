@@ -25,6 +25,8 @@ tar -xzf xport-<versión>-linux-x86_64.tar.gz
 ./xport/install.sh
 ```
 
+En Alpine (y los otros Linux con musl), el paquete es `xport-<versión>-linux-x86_64-musl.tar.gz`; se instala igual.
+
 Copia xport a `~/.local/lib/xport`, lo agrega al menú de aplicaciones y como el comando `xport` en `~/.local/bin`,
 avisa si falta algo (con el comando que lo instala en tu distribución) y abre la página. No pide contraseña.
 
@@ -128,7 +130,7 @@ El paquete queda en `dist/bundle/`:
 
 | Sistema | Paquete | Para instalarlo |
 |---|---|---|
-| Linux | `xport-<versión>-linux-x86_64.tar.gz` | `tar -xzf dist/bundle/xport-*-linux-*.tar.gz -C dist/bundle && dist/bundle/xport/install.sh` |
+| Linux (en Alpine, `…-linux-x86_64-musl.tar.gz`) | `xport-<versión>-linux-x86_64.tar.gz` | `tar -xzf dist/bundle/xport-*-linux-*.tar.gz -C dist/bundle && dist/bundle/xport/install.sh` |
 | Windows | `xport-<versión>-windows-x86_64.zip` | descomprimilo y doble clic en `xport\install.cmd` |
 | macOS | `xport-<versión>-macos-<arq>.tar.gz` | `tar -xzf dist/bundle/xport-*-macos-*.tar.gz -C /Applications && open /Applications/xport.app` |
 

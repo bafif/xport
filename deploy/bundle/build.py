@@ -9,7 +9,9 @@ con xport y las dependencias de `uv.lock` instaladas adentro, la extensión arma
 ícono, el lanzador `xport` y el instalador. Quien lo usa no necesita Python ni uv.
 
 Se arma en el mismo sistema para el que es, porque las dependencias compiladas (pydantic-core,
-uvloop) cambian de un sistema a otro: Linux en cualquier Linux con glibc, Windows y macOS en CI.
+uvloop) cambian de un sistema a otro. Linux sale en dos: `linux-x86_64`, armado en cualquier Linux
+con glibc (Debian, Ubuntu, Fedora, Arch…), y `linux-x86_64-musl`, armado en Alpine, para Alpine.
+Windows y macOS, en CI.
 
 - Linux: `.tar.gz` con la carpeta `xport/`; se instala con `xport/install.sh`.
 - Windows: `.zip` con la carpeta `xport/`; se instala con doble clic en `xport\\install.cmd`.
@@ -91,10 +93,13 @@ TRIM_WINDOWS = (
 
 
 def system() -> tuple[str, str]:
-    """(`linux` | `windows` | `macos`, `x86_64` | `arm64`)."""
+    """(`linux` | `windows` | `macos`, `x86_64` | `arm64`), con `-musl` en un Linux con musl
+    (Alpine): ahí uv baja el CPython para musl y las dependencias en sus ruedas musllinux."""
     name = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
     machine = platform.machine().lower()
     arch = {"amd64": "x86_64", "x64": "x86_64", "aarch64": "arm64"}.get(machine, machine)
+    if name == "linux" and any(Path("/lib").glob("ld-musl-*.so.1")):
+        arch += "-musl"
     return name, arch
 
 
