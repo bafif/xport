@@ -404,20 +404,48 @@ sesión por la base de cookies del perfil. Ya con sesión, la captura entró una
 el service worker de la extensión de antes de la Fase 4, guardado en el perfil con la misma versión. Ahora el servicio
 borra esa caché cada vez que levanta su Chrome.
 
+**10 de noviembre, a la noche: castellano e inglés.** Decidí que cada app hable el idioma del equipo: castellano si
+alguno de los idiomas preferidos lo es, inglés en cualquier otro caso, y siempre con un selector cuya elección manda.
+Hay un solo build y un solo release con los dos. El servicio, la CLI y la página local sacan sus textos de
+`locales/{es,en}.json` (`i18n.py`): la CLI sigue `--lang`, `XPORT_LANG` o el idioma del sistema, los errores HTTP el
+`Accept-Language` del pedido, y la página guarda la elección en el navegador. Los avisos que se guardan (el motivo de
+un corte, el estado del navegador de xport) van como clave y valores y se traducen al leerlos, así cada uno los lee en
+su idioma. La extensión tiene sus catálogos y un selector en el popup. El sitio manda a cada uno a su idioma una sola
+vez, cada documento tiene su par en el otro idioma y el CSV no se traduce. Los tests fallan si a un catálogo le falta
+una clave o si queda un texto escrito a mano.
+
+**11 de noviembre: por qué una captura no trajo nada (punto 10).** Para distinguir los casos hacía falta
+`UserByScreenName`, que la búsqueda no pide. Medí contra x.com qué pide cada página. El perfil carga también sus
+últimos tweets (`UserOriginalsTimeline`, unos veinte), que el tope tendría que contar. `x.com/<cuenta>/following` pide
+`UserByScreenName` y ningún post, y con una cuenta protegida redirige al perfil sin cargar tweets. La forma también
+cambió: ya no viene `legacy` y lo protegido está en `privacy.protected`; una suspendida llega como `UserUnavailable`
+con `reason: "Suspended"`, y una que no existe, como `{"data":{}}`. Ahora, cuando una captura de la cola termina sin
+un solo tweet guardado en el rango, la extensión lleva su pestaña a esa página y manda la respuesta cruda junto con el
+aviso de que terminó, y `mappers/` la interpreta. Los casos son seis: no existe, está suspendida, es protegida (y la
+cuenta de X con que captura xport no la sigue), bloqueó a esa cuenta, X no la muestra por otro motivo, o existe y es
+pública. En este último caso o no escribió en esas fechas, o X la oculta de la búsqueda, como a los bots de la
+Fase 4. Si x.com no contesta en 45 segundos o la respuesta no se entiende, queda el aviso de antes; mientras tanto la
+cola no avanza. Lo probé contra x.com con cuatro capturas encoladas seguidas, una por caso: un handle inventado, una
+cuenta suspendida, una protegida y una semana de 2006 de @nasa, que se creó en 2007. Cada una terminó con su aviso en
+unos once segundos sin tocar nada, y el tope no contó ningún acceso. Una segunda tanda, con el navegador reiniciado,
+mostró que un rango con tweets termina con su CSV sin mirar la cuenta, y que las capturas seguidas usan una sola
+pestaña: la de la comprobación se reusa solo si sigue donde quedó, así un id de pestaña de otra sesión no se toca.
+
 ## Dónde está hoy
 
-Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada
-en el código. Esa vez anduvo de punta a punta: el host levantó el servicio, los lotes entraron y el tope contó cada post
+Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada en
+el código. Esa vez anduvo de punta a punta: el host levantó el servicio, los lotes entraron y el tope contó cada post
 visto. El 10 de noviembre, sin ventana y con la cola, probé los cortes (el servicio caído a mitad de una captura, el
-popup sin servicio y el tope lleno) y anduvieron. Lo de la Fase 1 (7 de noviembre) sigue sin prueba a mano: la pausa
-con la pestaña oculta, el corte por cambio
-de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una prueba a mano. Lo mismo la Fase 3
-(10 de noviembre): la cola, la página local y las notificaciones tienen tests y una prueba de humo contra el servicio,
-pero no pasaron por un navegador. La Fase 4 (10 de noviembre), la espera a X ante el rate limit y la búsqueda al
-segundo, quedó probada contra x.com: un día de @AmazonHelp con 2.830 tweets salió entero, pasando tres veces por el
-límite de búsquedas de X. Desde el 10 de noviembre a la noche, en Linux, el servicio captura con su propio Chrome
-adentro de cage, sin ninguna ventana a la vista (la Fase 5). Los tests corren sin red, mypy en modo estricto y ruff
-pasan, y la imagen Alpine y la extensión se construyen en CI.
+popup sin servicio y el tope lleno) y anduvieron. Lo de la Fase 1 (7 de noviembre) sigue sin prueba a mano: la pausa con
+la pestaña oculta, el corte por cambio de formato y el CSV abierto en un Excel en castellano tienen tests, pero no una
+prueba a mano. Lo mismo la Fase 3 (10 de noviembre): la página local y las notificaciones tienen tests y una prueba de
+humo contra el servicio, pero no pasaron por un navegador; la cola sí, en las pruebas de la Fase 4 y del punto 10. La
+Fase 4 (10 de noviembre), la espera a X ante el rate limit y la búsqueda al segundo, quedó probada contra x.com: un día
+de @AmazonHelp con 2.830 tweets salió entero, pasando tres veces por el límite de búsquedas de X. Desde el 10 de
+noviembre a la noche, en Linux, el servicio captura con su propio Chrome adentro de cage, sin ninguna ventana a la vista
+(la Fase 5), y todo está en castellano y en inglés. Desde el 11, una captura que no trae ningún tweet dice por qué,
+según cómo ve X a la cuenta (punto 10). Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine
+y la extensión se construyen en CI.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
 cambio de x.com: falla cerrado con un error claro. La API oficial está implementada para quien tenga una clave paga,
@@ -445,9 +473,10 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Cambio de forma de x.com: `rejected` y `format_changed` en `/ingest`, ejemplo en el log, corte del crawl | `service/ingest.py`, `lib/ingest.ts` | tests con una página de forma desconocida; vitest |
 | CSV para Excel en castellano desde `/export` y el popup | `service/schemas.py`, popup | tests (BOM y `;`); **sin abrirlo en Excel** |
 | Un solo registro del tope: carpeta de datos por usuario, `.env` del repo, mudanza de `data/`, no arranca si ya corre otro xport | `config.py`, `datadir.py`, `service/app.py` | tests (la CLI desde dos carpetas, la mudanza, la suma de dos registros, el segundo servicio) |
-| Cola de capturas: una por cuenta, de a una, persistente; la extensión la toma con `alarms`; el popup y `tweet-extractor capture` encolan | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (dos cuentas en dos CSV, estados, reinicio); vitest; **no ejercitada en un navegador** |
+| Cola de capturas: una por cuenta, de a una, persistente; la extensión la toma con `alarms`; el popup y `tweet-extractor capture` encolan | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (dos cuentas en dos CSV, estados, reinicio); vitest; real (10 y 11/11): las capturas de la prueba de la Fase 4 y cuatro cuentas seguidas, sin tocar nada |
 | Página local en `/`, con chequeo de `Origin` | `service/page/`, `service/app.py` | tests y prueba de humo; **no abierta en un navegador** |
 | Export y notificación al terminar; aviso si el rango no tiene tweets | `service/captures.py`, `service/notify.py` | tests con un notificador falso; **notificaciones sin probar a mano** |
+| Por qué no hubo tweets: la cuenta no existe, está suspendida, es protegida, bloqueó a la de xport, X no la muestra, o existe y no escribió en esas fechas | `mappers/account_mapper.py`, `lib/account.ts`, `background.ts`, `service/captures.py` | tests con respuestas reales recortadas; vitest; real (11/11): cuatro casos seguidos, sin un acceso en el tope |
 | El navegador propio del servicio: Chrome con un perfil de xport adentro de cage, la extensión cargada por el pipe de depuración, la cola solo para él, ventana chica para iniciar sesión en X cuando hace falta, cerrado con la cola vacía | `service/browser.py`, `service/captures.py`, `lib/api.ts`, `background.ts` | tests con un Chrome falso; real (10/11): carga la extensión, la marca, la pantalla virtual, el rebote al inicio de sesión y la ventana |
 | Un crawl de antes de la cola ya no la frena | `lib/queue.ts` (`decideQueue`) | vitest; real (10/11): era lo que trababa mi captura |
 | Resumen diario del tope, aparte de la ventana | `compliance/gate.py` | tests (reserva y reconcile, poda, registro viejo, mudanza) |
@@ -459,6 +488,7 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | CLI y servicio sobre el mismo orquestador; jobs en memoria | `cli.py`, `orchestrator.py`, `service/` | tests |
 | Imagen Alpine con nginx, build de la extensión en Podman, CI | `deploy/`, `.github/workflows/ci.yml` | CI |
 | README en castellano e inglés, página de GitHub Pages, logo e íconos generados | `README.md`, `README.en.md`, `docs/` | a ojo |
+| Castellano e inglés en todo: servicio, CLI, página local, extensión, sitio y documentos, con el idioma del equipo y un selector | `locales/`, `i18n.py`, `extension/locales/`, `lib/i18n.ts`, `docs/en/` | tests (catálogos completos y sin textos a mano, cada documento con su par); vitest |
 
 ## Capturar sin el navegador adelante
 
@@ -599,10 +629,13 @@ Falta pasarla por un navegador y lo que dice cada punto:
 9. **Avisar cuando termina y exportar solo.** Hecho en el servicio (`service/notify.py`): en Linux con `notify-send`,
    donde el clic abre el CSV; en Windows con un toast de PowerShell, y en macOS con `osascript`, sin clic. Ninguna se
    probó a mano, y las de Windows y macOS ni siquiera corrieron.
-10. **Cuenta inexistente, suspendida o protegida.** Lo primero está: un rango entero sin tweets termina con «No encontré
-    tweets: ¿la cuenta existe, es pública y escribió en esas fechas?». Falta lo segundo: capturar `UserByScreenName`
-    (la búsqueda no lo pide; hay que abrir el perfil) y mapearlo en `mappers/` para distinguir los tres casos. Los tests
-    necesitan respuestas reales de x.com, así que va junto con la prueba del punto 6. Mediano.
+10. **Cuenta inexistente, suspendida o protegida.** Hecho el 11 de noviembre y probado contra x.com (ver «Cómo lo fui
+    construyendo»). Una captura que termina sin un solo tweet en el rango lleva su pestaña a `x.com/<cuenta>/following`,
+    que pide `UserByScreenName` sin cargar posts; `mappers/account_mapper.py` lo interpreta y el aviso dice si la cuenta
+    no existe, está suspendida, es protegida, bloqueó a la cuenta de X de xport, X no la muestra por otro motivo, o
+    existe y es pública pero la búsqueda no trajo nada. Los tests usan respuestas reales recortadas
+    (`tests/mappers/fixtures/`). La protegida que la cuenta de xport sigue y el bloqueo salen de esas mismas respuestas
+    tocadas a mano: no los pude medir.
 
 ### Fase 4: el crawl (hecha el 10 de noviembre)
 

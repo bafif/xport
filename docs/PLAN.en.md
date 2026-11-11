@@ -435,21 +435,51 @@ profile's cookie database. Once logged in, the capture took in one page and stal
 running the extension's service worker from before Phase 4, saved in the profile under the same
 version. Now the service clears that cache every time it starts its Chrome.
 
+**November 10, night: Spanish and English.** I decided each app speaks the computer's language: Spanish if any of
+the preferred languages is Spanish, English otherwise, and always with a selector whose choice wins. There is a
+single build and a single release with both. The service, the CLI and the local page take their texts from
+`locales/{es,en}.json` (`i18n.py`): the CLI follows `--lang`, `XPORT_LANG` or the system language, HTTP errors the
+request's `Accept-Language`, and the page keeps the choice in the browser. The notices that get stored (why a capture
+stopped, the state of xport's browser) are kept as a key and values and translated when read, so each person reads
+them in their language. The extension has its own catalogs and a selector in the popup. The site sends each visitor
+to their language once, every document has its pair in the other language, and the CSV is not translated. The tests
+fail if a catalog is missing a key or if a text is left hard-coded.
+
+**November 11: why a capture brought nothing (item 10).** Telling the cases apart needed `UserByScreenName`, which
+the search doesn't request. I measured against x.com what each page requests. The profile also loads its latest
+tweets (`UserOriginalsTimeline`, about twenty), which the cap would have to count. `x.com/<account>/following`
+requests `UserByScreenName` and no posts at all, and with a protected account it redirects to the profile without
+loading tweets. The shape changed too: `legacy` no longer comes and protection is in `privacy.protected`; a
+suspended account comes as `UserUnavailable` with `reason: "Suspended"`, and one that doesn't exist as
+`{"data":{}}`. Now, when a queued capture ends without a single tweet stored in the range, the extension takes its
+tab to that page and sends the raw response along with the notice that it finished, and `mappers/` interprets it.
+There are six cases: it doesn't exist, it's suspended, it's protected (and the X account xport captures with doesn't
+follow it), it blocked that account, X doesn't show it for another reason, or it exists and is public. In that last
+case either it didn't post between those dates, or X hides it from search, like the bots of Phase 4. If x.com doesn't
+answer within 45 seconds or the response isn't understood, the previous notice stays; meanwhile the queue doesn't
+move on. I tested it against x.com with four captures queued in a row, one per case: a made-up handle, a suspended
+account, a protected one and a week of 2006 of @nasa, which was created in 2007. Each one ended with its notice in
+about eleven seconds without touching anything, and the cap counted no access. A second batch, with the browser
+restarted, showed that a range with tweets ends with its CSV without looking the account up, and that captures in a
+row use a single tab: the check's tab is reused only if it's still where it was left, so a tab id from another
+session is left alone.
+
 ## Where it stands today
 
 It works, and I've used it against real x.com: in June and on November 6 in Chrome Beta, already with
-that early morning's stops in the code. That time it worked end to end: the host brought up the
-service, the batches went in and the cap counted every post seen. On November 10, without a window and
-with the queue, I tested the stops (the service down mid-capture, the popup without the service and the
-cap full) and they worked. Phase 1 (November 7) still has no manual test: the pause with the tab hidden,
-the stop on format change and the CSV opened in an Excel in Spanish have tests, but not a manual test.
-Same for Phase 3 (November 10): the queue, the local page and the notifications have tests and a smoke
-test against the service, but haven't gone through a browser. Phase 4 (November 10), waiting for X on
-the rate limit and the per-second search, was tested against x.com: a day of @AmazonHelp with 2,830
-tweets came out in full, hitting X's search limit three times. Since the night of November 10, on
-Linux, the service captures with its own Chrome inside cage, with no window in sight (Phase 5). The
-tests run offline, mypy in strict mode and ruff pass, and the Alpine image and the extension build in
-CI.
+that early morning's stops in the code. That time it worked end to end: the host brought up the service,
+the batches went in and the cap counted every post seen. On November 10, without a window and with the
+queue, I tested the stops (the service down mid-capture, the popup without the service and the cap full)
+and they worked. Phase 1 (November 7) still has no manual test: the pause with the tab hidden, the stop
+on format change and the CSV opened in an Excel in Spanish have tests, but not a manual test. Same for
+Phase 3 (November 10): the local page and the notifications have tests and a smoke test against the
+service, but haven't gone through a browser; the queue has, in the Phase 4 and item 10 tests. Phase 4
+(November 10), waiting for X on the rate limit and the per-second search, was tested against x.com: a day
+of @AmazonHelp with 2,830 tweets came out in full, hitting X's search limit three times. Since the night
+of November 10, on Linux, the service captures with its own Chrome inside cage, with no window in sight
+(Phase 5), and everything is in Spanish and English. Since the 11th, a capture that brings no tweet says
+why, based on how X sees the account (item 10). The tests run offline, mypy in strict mode and ruff pass,
+and the Alpine image and the extension build in CI.
 
 Server-side scraping with twscrape is implemented and tested offline, but it's still blocked by the
 x.com change: it fails closed with a clear error. The official API is implemented for whoever has a
@@ -477,9 +507,10 @@ What's in the code, where, and how far it's tested. "Real" means against x.com, 
 | x.com shape change: `rejected` and `format_changed` in `/ingest`, sample in the log, crawl stop | `service/ingest.py`, `lib/ingest.ts` | tests with a page of unknown shape; vitest |
 | CSV for Excel in Spanish from `/export` and the popup | `service/schemas.py`, popup | tests (BOM and `;`); **not opened in Excel** |
 | A single cap register: per-user data folder, the repo's `.env`, moving `data/`, doesn't start if another xport is running | `config.py`, `datadir.py`, `service/app.py` | tests (the CLI from two folders, the move, merging two registers, the second service) |
-| Capture queue: one per account, one at a time, persistent; the extension takes it with `alarms`; the popup and `tweet-extractor capture` enqueue | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (two accounts in two CSVs, states, restart); vitest; **not exercised in a browser** |
+| Capture queue: one per account, one at a time, persistent; the extension takes it with `alarms`; the popup and `tweet-extractor capture` enqueue | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (two accounts in two CSVs, states, restart); vitest; real (Nov 10 and 11): the Phase 4 test captures and four accounts in a row, without touching anything |
 | Local page at `/`, with `Origin` check | `service/page/`, `service/app.py` | tests and smoke test; **not opened in a browser** |
 | Export and notification on finish; notice if the range has no tweets | `service/captures.py`, `service/notify.py` | tests with a fake notifier; **notifications not tested by hand** |
+| Why there were no tweets: the account doesn't exist, is suspended, is protected, blocked xport's, X doesn't show it, or exists and didn't post in those dates | `mappers/account_mapper.py`, `lib/account.ts`, `background.ts`, `service/captures.py` | tests with trimmed real responses; vitest; real (Nov 11): four cases in a row, with no access on the cap |
 | The service's own browser: Chrome with an xport profile inside cage, the extension loaded through the debugging pipe, the queue only for it, a small window to log in to X when needed, closed when the queue is empty | `service/browser.py`, `service/captures.py`, `lib/api.ts`, `background.ts` | tests with a fake Chrome; real (Nov 10): loads the extension, the marker, the virtual display, the bounce to login and the window |
 | A pre-queue crawl no longer blocks it | `lib/queue.ts` (`decideQueue`) | vitest; real (Nov 10): it was what blocked my capture |
 | Daily cap summary, separate from the window | `compliance/gate.py` | tests (reserve and reconcile, pruning, old register, move) |
@@ -491,6 +522,7 @@ What's in the code, where, and how far it's tested. "Real" means against x.com, 
 | CLI and service on the same orchestrator; in-memory jobs | `cli.py`, `orchestrator.py`, `service/` | tests |
 | Alpine image with nginx, extension build in Podman, CI | `deploy/`, `.github/workflows/ci.yml` | CI |
 | README in Spanish and English, GitHub Pages page, generated logo and icons | `README.md`, `README.en.md`, `docs/` | by eye |
+| Spanish and English everywhere: service, CLI, local page, extension, site and documents, with the computer's language and a selector | `locales/`, `i18n.py`, `extension/locales/`, `lib/i18n.ts`, `docs/en/` | tests (complete catalogs with no hard-coded texts, every document with its pair); vitest |
 
 ## Capturing without the browser in front
 
@@ -652,11 +684,14 @@ plan cites them. What's missing is running it through a browser and what each it
    Linux with `notify-send`, where the click opens the CSV; on Windows with a PowerShell toast, and on
    macOS with `osascript`, without click. None was tested by hand, and the Windows and macOS ones never
    even ran.
-10. **Nonexistent, suspended or protected account.** The first part is there: a whole range without
-    tweets ends with "No tweets found: does the account exist, is it public, and did it post in those
-    dates?". The second part is missing: capture `UserByScreenName` (the search doesn't request it; the
-    profile has to be opened) and map it in `mappers/` to tell the three cases apart. The tests need
-    real x.com responses, so it goes together with the item 6 test. Medium.
+10. **Nonexistent, suspended or protected account.** Done on November 11 and tested against x.com
+    (see "How I built it"). A capture that ends without a single tweet in the range takes its tab to
+    `x.com/<account>/following`, which requests `UserByScreenName` without loading posts;
+    `mappers/account_mapper.py` interprets it and the notice says whether the account doesn't exist, is
+    suspended, is protected, blocked xport's X account, X doesn't show it for another reason, or it exists
+    and is public but the search brought nothing. The tests use trimmed real responses
+    (`tests/mappers/fixtures/`). A protected account that xport's account follows and the block come from
+    those same responses edited by hand: I couldn't measure them.
 
 ### Phase 4: the crawl (done on November 10)
 
