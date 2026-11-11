@@ -107,3 +107,16 @@ def test_carpeta_de_datos_relativa_es_error(monkeypatch):
     monkeypatch.setenv("XPORT_DATA_DIR", "datos")
     with pytest.raises(ValidationError, match="absoluta"):
         Settings(_env_file=None)
+
+
+def test_reconoce_la_instalacion_por_su_marca(tmp_path):
+    """Instalado (punto 14 de docs/PLAN.md), el Python propio vive en `<raíz>/python` y la
+    raíz tiene `xport-bundle.json`: de ahí salen la extensión y el `.env`."""
+    from tweet_extractor.config import BUNDLE_ROOT, find_bundle_root
+
+    prefix = tmp_path / "xport" / "python"
+    prefix.mkdir(parents=True)
+    assert find_bundle_root(prefix) is None
+    (tmp_path / "xport" / "xport-bundle.json").write_text("{}")
+    assert find_bundle_root(prefix) == (tmp_path / "xport").resolve()
+    assert BUNDLE_ROOT is None  # los tests corren desde el repo, con su venv

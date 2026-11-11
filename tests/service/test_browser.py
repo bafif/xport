@@ -4,6 +4,7 @@ falso: nunca se lanza un navegador de verdad."""
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -432,3 +433,62 @@ async def test_each_start_drops_the_cached_extension_worker(tmp_path: Path) -> N
     await h.runner.tick(now=0)
     assert h.runner.status.state == RunnerState.RUNNING
     assert not (tmp_path / "browser" / "Default" / "Service Worker").exists()
+
+
+# ── el primer arranque: iniciar sesión desde la página (punto 14 de docs/PLAN.md) ──
+
+
+async def test_the_page_opens_the_login_before_the_first_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    h = Harness(tmp_path, pending=False, session=False, login_after=2)
+    assert h.runner.session is None  # todavía no miró el perfil
+    await h.runner._look_at_profile()
+    assert h.runner.session is False
+    assert h.runner.login_now() is True
+    assert h.runner.status.state == RunnerState.LOGIN
+    assert h.runner.login_now() is False  # no abre una segunda ventana
+    assert h.runner._login_task is not None
+    await h.runner._login_task
+    assert h.launches == [(False, LOGIN_URL)]  # solo la ventana común, sin navegador oculto
+    assert h.runner.status.state == RunnerState.IDLE
+    assert h.runner.session is True
+
+
+async def test_no_login_window_while_capturing(tmp_path: Path) -> None:
+    h = Harness(tmp_path)
+    await h.runner.tick(now=0)
+    assert h.runner.status.state == RunnerState.RUNNING
+    assert h.runner.session is True
+    assert h.runner.login_now() is False
+    await h.runner.aclose()
+
+
+async def test_off_has_no_session_to_report(tmp_path: Path) -> None:
+    h = Harness(tmp_path, xport_browser_cage=tmp_path / "no-hay-cage")
+    assert h.runner.status.state == RunnerState.OFF
+    assert h.runner.session is None
+    assert h.runner.login_now() is False
+
+
+def test_login_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    app = create_app(make_settings(tmp_path))
+    with TestClient(app) as client:
+        off = client.post("/browser/login")
+        assert off.status_code == 409 and "apagado" in off.json()["detail"]
+        (tmp_path / "h").mkdir()
+        h = Harness(tmp_path / "h", pending=False, session=False, login_after=3)
+        h.runner.LOGIN_POLL_S = 0.05
+        app.state.svc.runner = h.runner
+        r = client.post("/browser/login")
+        assert r.status_code == 200 and r.json()["state"] == "login"
+        assert client.post("/browser/login").json()["state"] == "login"  # sin otra ventana
+        for _ in range(100):
+            body = client.get("/browser").json()
+            if body["state"] == "idle":
+                break
+            time.sleep(0.02)  # la ventana se mira cada 0,05 s
+        assert body == {"state": "idle", "note": None, "session": True}
+        assert len(h.login_windows) == 1

@@ -17,15 +17,28 @@ ProviderBackend = Literal["twscrape", "official"]
 _ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT: Path | None = _ROOT if (_ROOT / "pyproject.toml").is_file() else None
 
-# La extensión armada para Chrome (`bash deploy/extension-build.sh`), que el servicio le carga
-# a su navegador sin ventana (punto 13 de docs/PLAN.md).
-DEFAULT_EXTENSION_DIR: Path | None = (
-    REPO_ROOT / "extension" / "dist" / "chrome-mv3" if REPO_ROOT else None
-)
+# Instalado con el instalador (punto 14 de docs/PLAN.md, `deploy/bundle/`): el Python propio
+# vive en `<raíz>/python`, la raíz tiene la marca `xport-bundle.json` y la extensión armada va
+# en `<raíz>/extension`.
+BUNDLE_MARK = "xport-bundle.json"
 
-# El `.env` se lee siempre del repo, no de la carpeta desde donde se arranca: si no, la CLI
-# corrida desde otra carpeta no veía la misma configuración que el servicio.
-ENV_FILE: Path = REPO_ROOT / ".env" if REPO_ROOT else Path(".env")
+
+def find_bundle_root(prefix: Path) -> Path | None:
+    root = prefix.resolve().parent
+    return root if (root / BUNDLE_MARK).is_file() else None
+
+
+BUNDLE_ROOT: Path | None = find_bundle_root(Path(sys.prefix))
+
+# La extensión armada para Chrome que el servicio le carga a su navegador sin ventana (punto 13
+# de docs/PLAN.md): la de `bash deploy/extension-build.sh` en el repo, o la del instalador.
+DEFAULT_EXTENSION_DIR: Path | None = (
+    REPO_ROOT / "extension" / "dist" / "chrome-mv3"
+    if REPO_ROOT
+    else BUNDLE_ROOT / "extension"
+    if BUNDLE_ROOT
+    else None
+)
 
 
 def default_data_dir() -> Path:
@@ -40,6 +53,12 @@ def default_data_dir() -> Path:
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "xport"
     return Path.home() / ".local" / "share" / "xport"
+
+
+# El `.env` se lee siempre del mismo lugar, no de la carpeta desde donde se arranca: si no, la
+# CLI corrida desde otra carpeta no veía la misma configuración que el servicio. En el repo, el
+# del repo; instalado, el de la carpeta de datos (un acceso directo arranca en cualquier lado).
+ENV_FILE: Path = REPO_ROOT / ".env" if REPO_ROOT else default_data_dir() / ".env"
 
 
 def _legacy_data_dirs() -> list[Path]:

@@ -13,7 +13,7 @@ from tweet_extractor.compliance.gate import ComplianceError, SlidingWindowGate
 from tweet_extractor.compliance.gated_provider import GatedProvider
 from tweet_extractor.config import Settings
 from tweet_extractor.datadir import migrate_legacy_data
-from tweet_extractor.i18n import Lang, number, parse_lang, set_lang, system_lang, t
+from tweet_extractor.i18n import Lang, argv_lang, number, parse_lang, set_lang, system_lang, t
 from tweet_extractor.mappers.base import MapperError
 from tweet_extractor.orchestrator import AccountResult, run_job
 from tweet_extractor.providers.base import ProviderError
@@ -22,24 +22,13 @@ from tweet_extractor.storage.csv_exporter import DEFAULT_DELIMITER, DEFAULT_ENCO
 from tweet_extractor.storage.queue import Capture, CaptureQueue
 from tweet_extractor.storage.sqlite_store import SqliteStore
 
-
-def _argv_lang(argv: list[str]) -> str | None:
-    """El `--lang` de la línea de comandos. Se lee antes de armar la CLI porque la ayuda de
-    Typer se arma al importar: así `--help` también sale en el idioma pedido."""
-    for i, arg in enumerate(argv):
-        if arg == "--lang" and i + 1 < len(argv):
-            return argv[i + 1]
-        if arg.startswith("--lang="):
-            return arg.removeprefix("--lang=")
-    return None
-
-
-set_lang(parse_lang(_argv_lang(sys.argv[1:])) or system_lang())
+# La ayuda de Typer se arma al importar: `--lang` se lee antes, así `--help` sale en ese idioma.
+set_lang(parse_lang(argv_lang(sys.argv[1:])) or system_lang())
 
 app = typer.Typer(help=t("cli.help"), add_completion=False)
 
 # `--lang` va en la CLI y en cada comando, así anda antes o después del comando. La ayuda ya
-# salió en ese idioma (`_argv_lang`); acá se fija para los mensajes.
+# salió en ese idioma (`argv_lang`); acá se fija para los mensajes.
 LangOption = Annotated[Lang | None, typer.Option("--lang", help=t("cli.opt_lang"))]
 
 

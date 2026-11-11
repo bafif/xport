@@ -152,6 +152,9 @@ class BrowserOut(BaseModel):
 
     state: Literal["off", "idle", "running", "login", "failed"]
     note: Note | None
+    # Si el perfil de xport tiene sesión de X (`None`: no se sabe todavía, o está apagado). Sin
+    # sesión, la página ofrece iniciarla antes de la primera captura.
+    session: bool | None = None
 
 
 class CaptureOut(BaseModel):

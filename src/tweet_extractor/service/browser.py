@@ -376,8 +376,10 @@ class BrowserRunner:
         self._login_launcher = login_launcher or self._launch_login
         self._session_probe = session_probe
         self._login_window: LoginWindow | None = None
+        self._login_task: asyncio.Task[None] | None = None
         self._browser: Browser | None = None
         self._task: asyncio.Task[None] | None = None
+        self._session: bool | None = None  # si el perfil tiene sesión de X (lo último que se vio)
         self._idle_since: float | None = None
         self._last_session_check = 0.0
         self._crashes = 0
@@ -410,6 +412,12 @@ class BrowserRunner:
         return self._status
 
     @property
+    def session(self) -> bool | None:
+        """Si el perfil de xport tiene sesión de X, según lo último que se miró. `None`:
+        todavía no se miró, o el navegador de xport está apagado."""
+        return None if self._status.state == RunnerState.OFF else self._session
+
+    @property
     def active(self) -> bool:
         """Si el navegador de xport es el que toma la cola."""
         return self._status.state not in (RunnerState.OFF, RunnerState.FAILED)
@@ -426,6 +434,19 @@ class BrowserRunner:
             self._env_cookie_tried = False
             self._status = RunnerStatus(RunnerState.IDLE)
 
+    def login_now(self) -> bool:
+        """Abre ya la ventana para iniciar sesión en X, sin esperar a que haya una captura:
+        la página lo ofrece mientras el perfil no tiene sesión (la primera vez, punto 14 de
+        docs/PLAN.md). Solo con el navegador cerrado: capturando, la sesión la mira solo."""
+        if self._status.state not in (RunnerState.IDLE, RunnerState.FAILED):
+            return False
+        if self._browser is not None or (self._login_task and not self._login_task.done()):
+            return False
+        # Ya en LOGIN: así ninguna vuelta del supervisor abre el navegador mientras tanto.
+        self._status = RunnerStatus(RunnerState.LOGIN, Note(key="runner.login"))
+        self._login_task = asyncio.create_task(self._login(), name="xport-login")
+        return True
+
     # ── ciclo de vida ──
 
     def start(self) -> None:
@@ -434,6 +455,11 @@ class BrowserRunner:
         self._task = asyncio.create_task(self._supervise(), name="xport-browser")
 
     async def aclose(self) -> None:
+        if self._login_task is not None:
+            self._login_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._login_task
+            self._login_task = None
         if self._login_window is not None:
             await close_login_window(self._login_window)
             self._login_window = None
@@ -445,6 +471,7 @@ class BrowserRunner:
         await self._close_browser()
 
     async def _supervise(self) -> None:
+        await self._look_at_profile()
         while True:
             try:
                 await self.tick()
@@ -453,6 +480,15 @@ class BrowserRunner:
             except Exception:  # noqa: BLE001 — el supervisor no se cae por un error suelto
                 log.exception("navegador de xport: error en la vuelta del supervisor")
             await asyncio.sleep(self.POLL_S)
+
+    async def _look_at_profile(self) -> None:
+        """Si el perfil ya tiene sesión de X, para que la página ofrezca iniciarla antes de la
+        primera captura."""
+        try:
+            profile = self._settings.browser_profile_dir
+            self._session = await asyncio.to_thread(self._session_probe, profile)
+        except Exception:  # noqa: BLE001 — es solo un aviso para la página
+            log.exception("navegador de xport: no pude mirar la sesión del perfil")
 
     async def tick(self, now: float | None = None) -> None:
         """Una vuelta: arranca, cuida o cierra el navegador según la cola."""
@@ -490,6 +526,7 @@ class BrowserRunner:
                 self._crash(Note(key="runner.error_page"))
                 return
             if not await self._ensure_session(browser):
+                self._session = False
                 await self._login()
 
     async def _stuck_on_error(self, browser: Browser) -> bool:
@@ -535,7 +572,8 @@ class BrowserRunner:
         self._browser = browser
         try:
             ext_id = await self._load_extension(browser)
-            if not await self._ensure_session(browser):
+            self._session = await self._ensure_session(browser)
+            if not self._session:
                 await self._login()
                 return
             await self._mark(browser, ext_id)
@@ -634,6 +672,7 @@ class BrowserRunner:
                 closed = window.returncode is not None
                 if await asyncio.to_thread(self._session_probe, profile):
                     log.info("navegador de xport: sesión de X iniciada")
+                    self._session = True
                     self._status = RunnerStatus(RunnerState.IDLE)
                     self._crashes = 0
                     self._env_cookie_tried = True  # la del `.env` ya no hace falta

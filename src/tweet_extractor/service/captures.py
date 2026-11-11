@@ -19,6 +19,8 @@ from tweet_extractor.domain.account import AccountCheck, AccountStatus
 from tweet_extractor.i18n import Note, number, t
 from tweet_extractor.mappers.account_mapper import map_account
 from tweet_extractor.mappers.base import MapperError
+from tweet_extractor.service.browser import RunnerState
+from tweet_extractor.service.jobs import ServiceState
 from tweet_extractor.service.routers import LangDep, SvcDep
 from tweet_extractor.service.schemas import (
     BrowserOut,
@@ -232,13 +234,29 @@ async def capture_csv(capture_id: int, svc: SvcDep, lang: LangDep) -> FileRespon
     return FileResponse(path, media_type="text/csv", filename=cap.csv)
 
 
-@router.get("/browser", response_model=BrowserOut)
-async def browser_status(svc: SvcDep) -> BrowserOut:
-    """En qué anda el navegador sin ventana de xport, para la página."""
+def _browser_out(svc: ServiceState) -> BrowserOut:
     if svc.runner is None:
         return BrowserOut(state="off", note=None)
     st = svc.runner.status
-    return BrowserOut(state=st.state.value, note=st.note)
+    return BrowserOut(state=st.state.value, note=st.note, session=svc.runner.session)
+
+
+@router.get("/browser", response_model=BrowserOut)
+async def browser_status(svc: SvcDep) -> BrowserOut:
+    """En qué anda el navegador sin ventana de xport, para la página."""
+    return _browser_out(svc)
+
+
+@router.post("/browser/login", response_model=BrowserOut)
+async def browser_login(svc: SvcDep, lang: LangDep) -> BrowserOut:
+    """Abre la ventana para iniciar sesión en X en el perfil de xport, sin esperar a una
+    captura (la página lo ofrece la primera vez). Si ya está abierta, no abre otra."""
+    runner = svc.runner
+    if runner is None or runner.status.state == RunnerState.OFF:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=t("error.browser_off", lang))
+    if runner.status.state != RunnerState.LOGIN and not runner.login_now():
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=t("error.browser_busy", lang))
+    return _browser_out(svc)
 
 
 @router.get("/gate/days", response_model=list[GateDay])

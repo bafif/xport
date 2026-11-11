@@ -354,11 +354,30 @@ function renderGate(g, days) {
 // de siempre, que necesita la pestaña a la vista (punto 13 de docs/PLAN.md).
 const OWN_BROWSER = ['idle', 'running', 'login'];
 
+// Sin sesión de X en el perfil de xport (la primera vez), la página ofrece iniciarla antes de
+// la primera captura; también si la persona cerró la ventana sin terminar (punto 14).
 function renderBrowser(b) {
-  $('browser').textContent = OWN_BROWSER.includes(b.state)
-    ? t(`page.browser_${b.state}`)
-    : `${b.note ? `${note(b.note)} ` : ''}${t('page.browser_extension')}`;
+  const firstLogin = b.state === 'idle' && b.session === false;
+  $('browser').textContent = firstLogin
+    ? t('page.browser_first_login')
+    : OWN_BROWSER.includes(b.state)
+      ? t(`page.browser_${b.state}`)
+      : `${b.note ? `${note(b.note)} ` : ''}${t('page.browser_extension')}`;
+  $('login-row').hidden = !(firstLogin || (b.state === 'failed' && b.session === false));
+  if ($('login-row').hidden) $('login-msg').textContent = '';
 }
+
+$('login').addEventListener('click', async () => {
+  $('login').disabled = true;
+  $('login-msg').textContent = '';
+  try {
+    renderBrowser(await api('/browser/login', { method: 'POST' }));
+  } catch (e) {
+    $('login-msg').textContent = e.message;
+  } finally {
+    $('login').disabled = false;
+  }
+});
 
 // --- Ciclo ----------------------------------------------------------------------------
 

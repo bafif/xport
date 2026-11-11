@@ -106,6 +106,17 @@ def accept_lang(header: str | None) -> Lang | None:
     return pick(tags) if tags else None
 
 
+def argv_lang(argv: list[str]) -> str | None:
+    """El `--lang` de una línea de comandos (la CLI, el lanzador). Se lee antes de armarla
+    porque la ayuda se arma al importar: así `--help` también sale en el idioma pedido."""
+    for i, arg in enumerate(argv):
+        if arg == "--lang" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--lang="):
+            return arg.removeprefix("--lang=")
+    return None
+
+
 _current: Lang | None = None
 
 
