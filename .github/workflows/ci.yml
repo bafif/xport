@@ -1,5 +1,6 @@
 # Lint, types and tests for the Python service; Podman builds of the service
-# image (Alpine) and of the browser extension. GitHub-hosted runners only.
+# image (Alpine) and of the browser extension; the installable package on Linux,
+# Windows and macOS, with a smoke test. GitHub-hosted runners only.
 name: ci
 
 on:
@@ -32,3 +33,27 @@ jobs:
         run: >-
           bash deploy/extension-build.sh
       - run: ls extension/dist/chrome-mv3/manifest.json extension/dist/firefox-mv2/manifest.json
+
+  # The installable package (item 14 of docs/PLAN.md) on the three systems: it is built with
+  # its own Python, and the smoke test starts its service, checks that it answers and closes
+  # it. Each system builds its own copy of the extension with Node (no Podman on Windows or
+  # macOS runners).
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: extension (Chrome MV3)
+        shell: bash
+        working-directory: extension
+        run: npm ci && npm run build:chrome
+      - uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
+      - name: package + smoke test
+        shell: bash
+        run: uv run python deploy/bundle/build.py --smoke

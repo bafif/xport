@@ -32,7 +32,13 @@ from pathlib import Path
 
 from tweet_extractor.config import BUNDLE_MARK, BUNDLE_ROOT, Settings
 from tweet_extractor.i18n import LANGS, argv_lang, parse_lang, set_lang, system_lang, t
-from tweet_extractor.launcher import LaunchError, port_from_env, print_requirements, stop
+from tweet_extractor.launcher import (
+    LaunchError,
+    port_from_env,
+    print_requirements,
+    safe_console,
+    stop,
+)
 
 ICON = "xport.png"
 WINDOWS_ICON = "xport.ico"
@@ -285,6 +291,7 @@ def uninstall(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    safe_console()
     args_list = list(sys.argv[1:] if argv is None else argv)
     set_lang(parse_lang(argv_lang(args_list)) or system_lang())
     parser = argparse.ArgumentParser(prog="install", description=t("installer.help"))

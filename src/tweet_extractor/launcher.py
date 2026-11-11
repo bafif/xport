@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import io
 import json
 import os
 import signal
@@ -337,6 +338,14 @@ def report(message: str, *, notify: bool) -> None:
         asyncio.run(system_notify(t("launcher.failed_title"), message))
 
 
+def safe_console() -> None:
+    """Que un carácter que la salida no tiene no corte el programa: la consola de Windows
+    redirigida a un archivo escribe en su página de códigos vieja, que no tiene ✔."""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="replace")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="xport", description=t("launcher.help"))
     parser.add_argument(
@@ -347,6 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    safe_console()
     args_list = list(sys.argv[1:] if argv is None else argv)
     set_lang(parse_lang(argv_lang(args_list)) or system_lang())
     args = build_parser().parse_args(args_list)
