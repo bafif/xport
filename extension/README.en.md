@@ -1,73 +1,61 @@
 # xport: the extension
 
-[Español](README.md)
+[Español](README.md) · [Back to the README](../README.en.md)
 
-Chrome (MV3) + Firefox extension, with shared code via [WXT](https://wxt.dev).
-It's the main way to capture tweets:
+Extension for Chrome (MV3) and Firefox (MV2), from one codebase thanks to [WXT](https://wxt.dev). It is what captures:
 
-- **In-page capture:** the content scripts capture the
-  GraphQL responses that x.com already downloads during search, and the background sends them
-  to the local service's `POST /ingest`. The extension **doesn't parse GraphQL**:
-  the backend maps, stores, and logs the accesses in the Compliance Gate.
-- **Adaptive crawl:** "Capture" opens the search for the account and the range,
-  scrolls on its own and, if x.com cuts off before reaching the start date, narrows the
-  range and searches again. If X throttles the search, the next capture picks up
-  from what's already been saved (`POST /progress`).
-- **Single-flow popup:** account + from + to → Capture / Stop /
-  Export CSV, plus the gate status.
-- **Auto-start (optional):** with the native host in
-  `deploy/native-host/`, the browser starts and stops the service on its own.
+- **It takes work from the service's queue** (`POST /captures/next`) and opens X's search for each capture. It runs in
+  xport's Chrome, inside an invisible screen, or in the person's browser when that Chrome is not there.
+- **It captures what x.com already downloads:** the content scripts copy the search's GraphQL responses and the
+  background sends them to `POST /ingest`. The extension **does not interpret GraphQL**: the service maps them, stores
+  them and records the accesses in the cap.
+- **It goes through the search by itself:** it scrolls, retries blank loads, carries on from the second of the oldest
+  tweet when X stops the search, waits when the search quota runs out and resumes from what was stored
+  (`POST /progress`).
+- **It stops when the cap cannot count:** with no service, with the cap full or if the service rejects a batch.
+- **The popup** queues an account, exports the CSV and shows the cap's status, in English or Spanish.
 
-## Requirements
+## Where things are
 
-- Node (see `.node-version` → 22). In development I manage it with `fnm`; in a container
-  you don't need it, because the Node image is pinned.
-- The xport service running (see the repo root): `uv run fastapi dev
-  src/tweet_extractor/service/app.py`, or `podman compose -f deploy/compose.yaml up`.
+| File | What it does |
+|---|---|
+| `entrypoints/background.ts` | the queue, the capture tabs, sending to the service |
+| `entrypoints/capture-main.content.ts`, `capture-bridge.content.ts` | the `fetch` and XHR patch on x.com and the bridge to the background |
+| `entrypoints/autoscroll.content.ts` | going through the search |
+| `entrypoints/popup/` | the popup |
+| `lib/` | the pure logic, with its tests: queue, cap, X's limits, account without tweets, language |
+| `locales/` | the texts in Spanish and English |
 
 ## Commands
 
-Without Node on the machine, from the repo root (Podman):
+Without Node on the machine, from the repository root and with Podman:
 
 ```bash
-bash deploy/extension-build.sh
+bash deploy/extension-build.sh   # type check, tests and both versions in dist/
 ```
 
-With local Node:
+With Node 22 (the version is in `.node-version`), from `extension/`:
 
 ```bash
-fnm use            # pins Node to the version in .node-version
-npm ci             # installs deps from package-lock.json (runs `wxt prepare`)
-npm run dev        # WXT dev (Chrome) with HMR
-npm run dev:firefox
-npm run compile    # tsc --noEmit (typecheck)
-npm run build      # → dist/chrome-mv3 and dist/firefox-mv2
-npm run zip        # packages for uploading to the stores
+npm ci                 # dependencies from package-lock.json
+npm run dev            # Chrome with hot reload
+npm run dev:firefox    # the same in Firefox
+npm run compile        # type check
+npm test               # tests (vitest)
+npm run build          # dist/chrome-mv3 and dist/firefox-mv2
+npm run build:chrome   # Chrome only, what the installer uses
+npm run zip            # the zips to publish
 ```
 
-## Loading unsigned (dev)
+To load it by hand in the browser, see [Install](../docs/INSTALL.en.md#the-extension-in-your-browser).
 
-- **Chrome**: `chrome://extensions` → developer mode → "Load unpacked"
-  → `dist/chrome-mv3`.
-- **Firefox**: `about:debugging` → "This Firefox" → "Load Temporary Add-on"
-  → `dist/firefox-mv2/manifest.json`.
+## Why it needs no CORS
 
-## Why it doesn't need CORS from the server
-
-The popup is an *extension page*. With `host_permissions` on the service's
-host (`http://localhost/*`, `http://127.0.0.1/*`), its cross-origin `fetch` calls
-aren't subject to CORS. FastAPI's `CORS_ALLOW_ORIGINS` is only needed if
-a *content script* or a web page calls the API in the future.
+The popup is an extension page. With `host_permissions` on the service (`http://localhost/*`,
+`http://127.0.0.1/*`), its `fetch` calls are not subject to CORS. `CORS_ALLOW_ORIGINS` would only be needed if a web
+page called the API.
 
 ## Icons
 
-WXT auto-discovers `public/icon/{size}.png` and wires them up on its own in the Chrome and Firefox manifests
-(including `action.default_icon`, the one in the address bar).
-To regenerate them: save the 1024×1024 master to `scripts/icon-master.png` and run
-`./scripts/make-icons.sh` (it detects ImageMagick / `sips` / Pillow). Details in
-`scripts/README.en.md`.
-
-## To do
-
-- A documented end-to-end check of the full flow in a real browser.
-- The native messaging bridge from a browser on Windows to WSL.
+WXT picks up `public/icon/{size}.png` and puts them in the Chrome and Firefox manifests. They come from
+`scripts/icon-master.png` with `./scripts/make-icons.sh`; details in [scripts/README.en.md](scripts/README.en.md).

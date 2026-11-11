@@ -172,8 +172,8 @@ export function showSeconds(s: number): string {
 }
 
 /** La query de una búsqueda. `account` ya sin `@`; las cotas en segundos UTC. X toma
- *  `since:`/`until:` como días en la hora de quien busca y deja adentro el de `until:` (lo
- *  midió la Fase 2): `since_time:`/`until_time:` van al segundo y en UTC. */
+ *  `since:`/`until:` como días en la hora de quien busca y deja adentro el de `until:` (medido
+ *  contra x.com): `since_time:`/`until_time:` van al segundo y en UTC. */
 export function searchQuery(account: string, since: number, until: number): string {
   return `from:${account} since_time:${since} until_time:${until}`;
 }

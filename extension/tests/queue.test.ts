@@ -149,7 +149,7 @@ describe('eventos del crawl', () => {
 
   it('reconoce una pestaña de búsqueda de captura', () => {
     expect(isCaptureSearch(searchUrl('nasa', 1704067200, 1735689600))).toBe(true);
-    // las de antes de la Fase 4 (días en la hora de quien busca) ya no son de xport
+    // las de versiones anteriores (días en la hora de quien busca) ya no son de xport
     expect(
       isCaptureSearch('https://x.com/search?q=from%3Anasa%20since%3A2024-01-01%20until%3A2025-01-01&f=live'),
     ).toBe(false);

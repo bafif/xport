@@ -1,6 +1,6 @@
 // El rate limit de la búsqueda de X (punto 11 de docs/PLAN.md). Puro y testeable.
 //
-// X deja 50 búsquedas cada 15 minutos por cuenta (lo midió la Fase 2): cada página de
+// X deja 50 búsquedas cada 15 minutos por cuenta (medido contra x.com): cada página de
 // `SearchTimeline` gasta una, y al agotarse responde 429 hasta el reset. El parche de `fetch`
 // (capture-main) ya ve esas respuestas; manda aparte su status y los encabezados
 // `x-rate-limit-*`, que son HTTP y no GraphQL (la regla 4 se mantiene: la extensión no

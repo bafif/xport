@@ -1,6 +1,4 @@
-/* La estética de xport: la de X en «Lights out» y lo propio, que sale del logo (ver docs/img/generar.py):
-   la esquina-flecha azul arriba a la derecha marca lo que sale, la letra monoespaciada va en los datos y la grilla
-   de arriba son las celdas de un CSV. */
+/* El sitio de xport: docs/index.html y docs/en/index.html. */
 :root {
   color-scheme: dark;
   --bg: #000;
@@ -92,11 +90,29 @@ img { max-width: 100%; height: auto; display: block; }
   clip-path: polygon(0 0, 100% 0, 100% 100%);
 }
 
-.popup { display: grid; grid-template-columns: minmax(0, 300px) 1fr; gap: 40px; align-items: start; }
-.popup .marco { border-radius: 16px; border: 1px solid var(--border); }
-.popup ol { padding-left: 20px; margin: 0; }
-.popup li { margin-bottom: 14px; }
-@media (max-width: 720px) { .popup { grid-template-columns: 1fr; } }
+.uso { display: grid; grid-template-columns: minmax(0, 320px) 1fr; gap: 40px; align-items: start; }
+.uso .marco { border-radius: 16px; border: 1px solid var(--border); }
+.uso ol { padding-left: 20px; margin: 0; }
+.uso li { margin-bottom: 14px; }
+
+code { font: 0.9em var(--mono); background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  padding: 1px 6px; }
+
+.sistemas { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin: 24px 0; }
+.sistema { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; }
+.sistema h3 { margin: 0 0 10px; font-size: 19px; }
+.sistema p { margin: 0; font-size: 15px; }
+.sistema pre { margin: 0 0 12px; padding: 10px 12px; overflow-x: auto; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 10px; font: 13px/1.6 var(--mono); }
+.sistema code { background: var(--bg); }
+
+@media (max-width: 720px) {
+  .uso, .sistemas { grid-template-columns: 1fr; }
+  .uso .marco { max-width: 360px; }
+  /* Los diagramas no se achican hasta ser ilegibles: se desplazan de costado. */
+  .figura { overflow-x: auto; }
+  .figura img { min-width: 640px; }
+}
 
 .csv { background: var(--card); border: 1px solid var(--border); border-radius: 16px; }
 .csv p { margin: 0; padding: 12px 18px; border-bottom: 1px solid var(--border); font: 14px var(--mono); }

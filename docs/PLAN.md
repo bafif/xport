@@ -2,14 +2,12 @@
 
 [English](PLAN.en.md)
 
-Armé xport para bajar los tweets de una o varias cuentas de X entre dos fechas y quedarme con un
-CSV por cuenta que tenga solo lo que me interesa: la cuenta, la fecha, el texto, los links que el
-tweet trae y, si cita a otro tweet, a cuál. Los quote tweets entran; los retweets no.
+xport baja los tweets de una o varias cuentas de X entre dos fechas y deja un CSV por cuenta con lo que importa: la
+cuenta, la fecha, el texto, los links que el tweet trae y, si cita a otro tweet, a cuál. Los quote tweets entran; los
+retweets no.
 
-Este documento junta en un solo lugar lo que antes estaba repartido entre el plan inicial, una
-especificación por cada parte y una nota de estado. Cuenta qué decidí y por qué, en qué orden lo
-fui construyendo, en qué punto está y qué me falta. El README tiene el uso y la configuración; acá
-va el razonamiento.
+Este documento tiene las reglas del proyecto, las decisiones con su porqué, qué está hecho y probado, y qué falta. La
+instalación y el uso están en el [README](../README.md) y en los documentos de `docs/`.
 
 ## Qué sale en el CSV
 
@@ -21,77 +19,62 @@ va el razonamiento.
 | `links` | las URLs externas del tweet (`expanded_url`), separadas por espacio |
 | `quoted_tweet_id`, `quoted_tweet_url` | el tweet citado, si lo hay |
 
-Si un tweet se editó y lo vuelvo a capturar, queda la última versión.
+Si un tweet se editó y se vuelve a capturar, queda la última versión.
 
-De las respuestas me quedo con los hilos propios de la cuenta y dejo afuera las respuestas que la
-cuenta escribió dentro de conversaciones ajenas. El export avisa cuántas quedaron afuera, para que
-la diferencia entre lo capturado y lo exportado no parezca una pérdida de datos.
+De las respuestas quedan los hilos propios de la cuenta, y quedan afuera las respuestas que la cuenta escribió dentro
+de conversaciones ajenas. El export avisa cuántas quedaron afuera, para que la diferencia entre lo capturado y lo
+exportado no parezca una pérdida de datos.
 
-Los defaults del archivo los cerré el 13 de junio y no los pienso volver a discutir: UTF-8 sin BOM,
-coma como separador, todos los campos entre comillas (el texto trae saltos de línea y comas), fechas
-en UTC y nombre `<account>_<since>_<until>.csv`, así un mismo rango se reescribe y rangos distintos
-conviven. El encoding y el separador se pueden cambiar por parámetro para abrirlo en un Excel
-configurado en español (`utf-8-sig` y `;`). La media se guarda solo como URL, no se descarga, y de
-las citas guardo un solo nivel.
+Los defaults del archivo están cerrados: UTF-8 sin BOM, coma como separador, todos los campos entre comillas (el texto
+trae saltos de línea y comas), fechas en UTC y nombre `<account>_<since>_<until>.csv`, así un mismo rango se reescribe
+y rangos distintos conviven. El encoding y el separador se pueden cambiar para abrirlo en un Excel configurado en
+castellano (`utf-8-sig` y `;`). La media se guarda solo como URL, no se descarga, y de las citas se guarda un solo
+nivel.
 
-## De dónde partí
+## El contexto
 
-Antes de escribir código revisé qué se podía usar en 2026 para leer X sin pagar:
-
-- snscrape anda a medias y sin mantenimiento, y Nitter murió en 2024 cuando X eliminó las cuentas
-  de invitado. Lo que sigue vivo (twscrape, twikit, Scweet) usa las cookies de una cuenta logueada
-  contra los mismos endpoints GraphQL que usa la web.
-- La API oficial no tiene un plan gratis útil: desde febrero de 2026 se paga por lectura, y los
-  planes fijos con búsqueda histórica completa están cerrados para cuentas nuevas o cuestan miles
-  de dólares por mes.
-- El timeline de un usuario se corta en unos 3.200 tweets. La búsqueda `from:usuario since:… until:…`
-  no tiene ese techo si el rango se parte en ventanas más chicas.
-- Los términos de X fijan una multa de 15.000 dólares por cada millón de
-  posts accedidos en cualquier período de 24 horas.
-
-De ahí salió el plan: empezar con twscrape detrás de una interfaz propia, dejar preparado el lugar
-para la API oficial, y antes que nada construir algo que haga imposible, por código, pasar el tope
-de los términos.
+- Leer X sin pagar quiere decir usar los mismos endpoints GraphQL que usa la web, con una sesión iniciada. La API
+  oficial cobra por cada post leído.
+- El timeline de un usuario se corta en unos 3.200 tweets. La búsqueda `from:usuario` no tiene ese techo.
+- Los términos de X fijan una multa de 15.000 dólares por cada millón de posts accedidos en
+  cualquier período de 24 horas. Por eso lo primero es que sea imposible, por código, pasar ese tope.
 
 ## Reglas que no se negocian
 
 Varias partes del código remiten a estas reglas por número.
 
 1. **El tope de accesos.** Ningún camino de la app puede acceder a más de 900.000 posts en 24 horas.
-   - El tope es 900.000 y no un millón para dejar margen ante cualquier duda sobre qué cuenta como
-     acceso. Es uno solo para toda la app, porque el límite de los términos es por cliente y no por
-     cuenta de X. Es una constante del código: no se cambia desde el `.env`.
-   - La ventana es deslizante: el uso en un momento dado es la suma de todo lo registrado en los
-     últimos 86.400 segundos. Un contador por día calendario no sirve, porque permitiría casi dos
-     millones entre las 23 y la 1.
-   - Se cuentan accesos, no filas guardadas. Suma todo tweet que llega en una respuesta: el que cita,
-     el citado que viene embebido y los retweets que después descarto. El registro nunca deduplica;
-     contar de más es seguro y contar de menos no.
-   - En el scraping activo se reserva antes de pedir una cota superior de lo que puede traer la
-     página (el tamaño de página por tres, por los citados embebidos). Si no entra, espera a que lo
-     viejo salga de la ventana; cuando llega la respuesta, se ajusta la reserva al conteo real.
-   - El registro vive en un SQLite de auditoría aparte del de los tweets, así sobrevive a que se borre
-     la base de datos, y en la carpeta de datos por usuario, la misma para el servicio, la CLI y el native
-     host. Si ya responde otro xport, el servicio no arranca. Cada ciclo de leer, decidir y escribir corre bajo un lock y dentro de una
-     transacción `BEGIN IMMEDIATE`, así tampoco dos procesos con el mismo registro (la CLI y el
-     servicio) pueden colarse entre el chequeo y la escritura.
-   - Todo camino de acceso pasa por el mismo registro. Los proveedores del lado del servidor van
-     envueltos en `GatedProvider`. La captura del navegador registra después lo que ya accedió,
-     también lo que el servidor rechaza: rechazar no borra un acceso. Pasado el tope, el servidor
-     responde 429 y la extensión corta el crawl.
-   - La captura no ve lo que el registro no puede contar. La extensión no arranca una captura si el
-     servicio no responde o si el tope está lleno, y la corta si el servicio rechaza un lote, avisa
-     el tope o deja de responder con páginas sin registrar.
-   - Los tests fuerzan las dos cosas que importan: que bloquee cuando no hay lugar y que espere hasta
-     que el evento más viejo salga de la ventana.
-2. **Secretos fuera del repo.** Las cookies (`auth_token`, `ct0`) y cualquier credencial van en el
-   `.env`, que está ignorado. El repo solo tiene `.env.example` sin valores.
-3. **Quotes sí, retweets no.** Un tweet con `retweeted_status_result` se descarta (pero su acceso se
-   cuenta).
-4. **El GraphQL se interpreta solo en `mappers/`.** Ni los proveedores ni la extensión parsean
-   tweets; los `queryId` rotan con cada deploy de x.com, así que se busca la operación por nombre.
-5. **Sin navegador en la imagen del servicio.** La imagen es Alpine y Chromium sobre musl no vale la pena.
-   Si alguna vez hace falta un proveedor con navegador, va en otra imagen.
+   - El tope es 900.000 y no un millón para dejar margen ante cualquier duda sobre qué cuenta como acceso. Es uno solo
+     para toda la app, porque el límite de los términos es por cliente y no por cuenta de X. Es una constante del
+     código: no se cambia desde el `.env`.
+   - La ventana es deslizante: el uso en un momento dado es la suma de todo lo registrado en los últimos 86.400
+     segundos. Un contador por día calendario no sirve, porque permitiría casi dos millones entre las 23 y la 1.
+   - Se cuentan accesos, no filas guardadas. Suma todo tweet que llega en una respuesta: el que cita, el citado que
+     viene embebido y los retweets que después se descartan. El registro nunca deduplica; contar de más es seguro y
+     contar de menos no.
+   - En el scraping activo se reserva antes de pedir una cota superior de lo que puede traer la página (el tamaño de
+     página por tres, por los citados embebidos). Si no entra, espera a que lo viejo salga de la ventana; cuando llega
+     la respuesta, se ajusta la reserva al conteo real.
+   - El registro vive en un SQLite de auditoría aparte del de los tweets, así sobrevive a que se borre la base de
+     datos, y en la carpeta de datos por usuario, la misma para el servicio, la CLI y el native host. Si ya responde
+     otro xport, el servicio no arranca. Cada ciclo de leer, decidir y escribir corre bajo un lock y dentro de una
+     transacción `BEGIN IMMEDIATE`, así tampoco dos procesos con el mismo registro (la CLI y el servicio) pueden
+     colarse entre el chequeo y la escritura.
+   - Todo camino de acceso pasa por el mismo registro. Los proveedores del lado del servidor van envueltos en
+     `GatedProvider`. La captura del navegador registra después lo que ya accedió, también lo que el servidor rechaza:
+     rechazar no borra un acceso. Pasado el tope, el servidor responde 429 y la extensión corta el crawl.
+   - La captura no ve lo que el registro no puede contar. La extensión no arranca una captura si el servicio no
+     responde o si el tope está lleno, y la corta si el servicio rechaza un lote, avisa el tope o deja de responder con
+     páginas sin registrar.
+   - Los tests fuerzan las dos cosas que importan: que bloquee cuando no hay lugar y que espere hasta que el evento más
+     viejo salga de la ventana.
+2. **Secretos fuera del repo.** Las cookies (`auth_token`, `ct0`) y cualquier credencial van en el `.env`, que está
+   ignorado. El repo solo tiene `.env.example` sin valores.
+3. **Quotes sí, retweets no.** Un tweet con `retweeted_status_result` se descarta (pero su acceso se cuenta).
+4. **El GraphQL se interpreta solo en `mappers/`.** Ni los proveedores ni la extensión parsean tweets; los `queryId`
+   rotan con cada deploy de x.com, así que se busca la operación por nombre.
+5. **Sin navegador en la imagen del servicio.** La imagen es Alpine y Chromium sobre musl no vale la pena. Si alguna vez
+   hace falta un proveedor con navegador, va en otra imagen.
 6. **CORS en un solo lugar.** Lo maneja FastAPI; nginx no agrega encabezados de CORS.
 
 ## Cómo está armado
@@ -105,381 +88,75 @@ domain/        Tweet y TweetLink (pydantic v2)
 compliance/    el registro del tope (SlidingWindowGate) y GatedProvider
 storage/       SQLite de datos (deduplicado, checkpoints), la cola de capturas y export CSV en streaming
 datadir.py     la mudanza de los datos viejos (`data/`) a la carpeta por usuario
-service/       FastAPI: jobs, ingesta de la captura, la cola, export, estado del tope, notificaciones
-               y la página local (`service/page/`)
+service/       FastAPI: jobs, ingesta de la captura, la cola, export, estado del tope, notificaciones,
+               el navegador de xport (`service/browser.py`) y la página local (`service/page/`)
 cli.py         la línea de comandos (Typer)
+launcher.py    el comando xport: arranca el servicio y abre la página
+installer.py   el instalador del paquete (`deploy/bundle/build.py` lo arma)
 extension/     extensión para Chrome y Firefox (WXT, un solo código)
 ```
 
-`providers/factory.py` es el único lugar donde se elige entre scraping y API oficial (variable
-`PROVIDER_BACKEND`), y arma cada proveedor con su mapper. El orquestador (`orchestrator.run_job`)
-recorre las sub-ventanas de cada cuenta y lo comparten la CLI y el servicio.
+`providers/factory.py` es el único lugar donde se elige entre scraping y API oficial (variable `PROVIDER_BACKEND`), y
+arma cada proveedor con su mapper. El orquestador (`orchestrator.run_job`) recorre las sub-ventanas de cada cuenta y
+lo comparten la CLI y el servicio.
 
-## Cómo lo fui construyendo
+## Cómo se captura
 
-**4 de junio: el tope primero.** Armé el proyecto con uv y lo primero que escribí fue el registro del
-tope y el contrato de los proveedores, antes de cualquier línea de scraping. Respecto del boceto
-inicial cambié tres cosas: la reserva se identifica por un id autoincremental y no por la hora
-(dos reservas en el mismo segundo se pisaban), la reserva ocurre de verdad antes del pedido, y el
-reloj y la espera se pueden inyectar para probar la ventana sin esperar 24 horas. La espera, además,
-corre fuera del lock.
+El scraping del lado del servidor con twscrape está bloqueado: x.com firma cada pedido con un
+`x-client-transaction-id` que twscrape ya no sabe calcular. Por eso la captura es en el navegador: la extensión copia
+el GraphQL que x.com ya descarga en la búsqueda y lo manda a `POST /ingest`, que reusa `mappers/` y `storage/`. El
+navegador calcula la firma solo y la forma de las respuestas es la misma, así que el resto del código sirve para los
+dos caminos.
 
-**8 de junio: endurecer y publicar.** Ajusté el cierre de la conexión del registro, preparé el repo
-para hacerlo público (README, licencia MIT) y armé el modelo de dominio. El `Tweet` tiene solo las
-columnas del CSV más el `id`, que es la clave de la base. Valida la forma de manera estricta (fecha
-con zona horaria y pasada a UTC, ids y URLs sin vacíos ni caracteres de control, el id y la URL del
-citado juntos o ninguno, campos extra prohibidos), pero deja libre el texto: puede venir vacío y se
-guarda tal cual, con sus saltos de línea. Lo revisé dos veces a fondo y de esas revisiones salieron
-validaciones más finas, como rechazar fechas que se desbordan al pasarlas a UTC.
+**Por qué un Chrome propio que maneja el servicio.** Con la búsqueda en una pestaña del navegador de todos los días, la
+captura depende de que esa pestaña quede a la vista: con la pestaña oculta, el navegador deja de dibujar la página,
+frena sus timers y x.com deja de cargar. Una ventana propia sin foco no alcanza, porque Chrome en Windows y macOS marca
+como oculta una ventana que otra tapa entera, y «dejá esa ventana a la vista» es una regla técnica que nadie tiene por
+qué entender. Así que el servicio arranca un Chrome (o Chromium, o Edge) con un perfil propio de xport, le carga la
+extensión y le da el trabajo de la cola; la interfaz es una página local que se abre en el navegador de siempre.
 
-**9 de junio: el proveedor de twscrape.** Lo integré a nivel de página y no de tweet, porque el tope
-necesita reservar antes de cada pedido. Toda la dependencia de los internos de twscrape quedó en un
-solo archivo (`providers/_twscrape_gql.py`), y la frontera quedó clara: el proveedor recorre el
-sobre de la respuesta (entradas, cursores, conteo de accesos) y entrega los tweets crudos; el mapper
-es el que los interpreta. El rango se parte en sub-ventanas fijas alineadas a días UTC, y la red se
-inyecta para que todos los tests corran sin conexión.
+- **X rechaza `HeadlessChrome` con un 403**, así que ese Chrome corre con ventana, pero adentro de cage, una pantalla
+  virtual que nadie ve. No se disfraza el navegador. Sin cage (hoy, en Windows y macOS) no se usa, y la captura la hace
+  la extensión del navegador de la persona, con la pausa que avisa cuando la pestaña queda oculta.
+- **Chrome con marca ignora `--load-extension`**, así que la extensión se carga con `Extensions.loadUnpacked` por
+  `--remote-debugging-pipe`, sin guardarla en el perfil, y recibe la marca `xport:runner` con
+  `Extensions.setStorageItems`. `POST /captures/next` solo le da trabajo a quien manda `x-xport-runner`; si el runner
+  está apagado o se rindió, a cualquiera.
+- **Cuando hace falta una persona, el perfil se abre con ventana:** para iniciar sesión en X la primera vez, o cuando X
+  cierra la sesión (falta la cookie `auth_token` o una pestaña quedó en el login). La ventana es una ventana común de
+  Chrome, sin el pipe: una ventana chica en modo aplicación no dejaba terminar el inicio de sesión con una cuenta real.
+- **Nada de esto choca con las reglas:** no es Selenium ni Playwright, nada entra en la imagen del servicio (regla 5) y
+  todo lo que se ve pasa por `/ingest` y el tope (regla 1).
 
-**13 de junio: las cuatro fases en código.** Ese día cerré lo que había planeado en cuatro etapas:
+**Los límites de la búsqueda de X.**
 
-- El mapper: descarta retweets y tweets borrados devolviendo `None`, pero lanza un error si la forma
-  del GraphQL no es la esperada, así una rotación de x.com se nota como error y no como un CSV vacío.
-  Desenvuelve `TweetWithVisibilityResults`, busca el citado en sus tres lugares posibles, se queda
-  con el texto completo de los tweets largos y filtra los links sin destino o que apuntan al propio
-  tweet.
-- La política de respuestas por raíz de conversación: se conservan las respuestas cuya conversación
-  empezó en un tweet de la misma cuenta. Se aplica al exportar y sobre toda la colección, no por
-  página. Tiene una limitación conocida: si la raíz cae fuera del rango pedido, sus respuestas dentro
-  del rango se pierden.
-- El almacenamiento: SQLite con `INSERT OR IGNORE` por id (las ventanas pueden solaparse) y un
-  checkpoint por sub-ventana, para que un reintento no vuelva a pedir lo que ya terminó (cada pedido
-  repetido gasta tope). El CSV se escribe en streaming y de forma atómica: si falla a mitad, queda el
-  archivo anterior.
-- La CLI y el orquestador. Después, la factory y un proveedor de la API oficial que falla cerrado:
-  documenta el pedido a `/2/users/:id/tweets`, pero no implementé el mapeo porque no tengo con qué
-  verificarlo contra respuestas reales.
-- El servicio FastAPI sobre el mismo orquestador, con el registro del tope y la base como instancias
-  únicas, nginx adelante y una imagen Alpine multi-stage con el registro en un volumen aparte.
-- La extensión, con WXT, en su primera forma: un popup que le pide trabajos al servicio local.
+- La búsqueda va al segundo y en UTC: `from:<cuenta> since_time:<s> until_time:<s>`. `since:` y `until:` toman días en
+  la hora de quien busca y dejan adentro el día de `until:`, así que se perdían las primeras horas del día de inicio y
+  se pedía un día de más.
+- Cada búsqueda se asienta en unos mil resultados. Cuando se asienta antes de `since`, la siguiente arranca en el
+  segundo del tweet más viejo cargado, más uno, para no perder otro del mismo segundo. Si una búsqueda no trae nada más
+  viejo, el rango terminó.
+- X deja hacer 50 búsquedas cada 15 minutos por cuenta. Ante un 429, o con el cupo en cero, la captura queda
+  esperando (`waiting`, con `resume_at`) hasta el reset más 15 segundos, con la pestaña fuera de la búsqueda, y sigue
+  sola. Con pocas búsquedas en el cupo, reparte las que quedan.
+- Las cargas en blanco (la ruedita o «Something went wrong») se reintentan con backoff; no son el fin de los datos.
 
-**14 de junio: twscrape deja de andar y cambio de camino.** Probé por primera vez con cookies reales y
-el proveedor falló cerrado, como tenía que fallar. El problema no era de xport: x.com había migrado
-su cliente web a Vite y twscrape ya no podía calcular el encabezado `x-client-transaction-id`, sin
-el cual X rechaza los pedidos. No había versión nueva que lo arreglara. Evalué cuatro salidas:
-esperar un arreglo, parchear el cálculo yo mismo, pasar a la API oficial paga o capturar desde el
-navegador el GraphQL que x.com ya descarga. Parchear implicaba reconstruir el algoritmo sobre el
-bundle nuevo y volver a hacerlo cada pocas semanas. La captura en el navegador es inmune a eso: el
-navegador calcula el encabezado solo, la forma del JSON no cambió y los mappers se reusan tal cual.
-Elegí la captura y la implementé ese mismo día:
+## Dónde está
 
-- La extensión parchea `fetch` y `XMLHttpRequest` en la página, clona las respuestas de
-  `SearchTimeline` sin tocar las que usa x.com y las pasa al servicio por `POST /ingest`, junto con
-  el nombre de la operación. No interpreta nada.
-- El servicio extrae, mapea, guarda deduplicado y registra los accesos con `record`: como el acceso
-  ya pasó en el navegador, no hay nada que reservar. Contar todas las capturas, aunque alguna repita
-  una página que el navegador sacó de su caché, sigue siendo lo seguro.
-- El export pasó a ser a pedido (`POST /export`) y filtra por el rango de fechas.
+Funciona contra x.com, de punta a punta, en Linux: la cola y la página local, la captura con el Chrome propio adentro de
+cage, la espera ante el límite de búsquedas, la búsqueda al segundo (un día de 2.830 tweets sale entero), los cortes
+(el servicio caído a mitad de una captura, el popup sin servicio y el tope lleno), la pausa con la pestaña oculta, el
+aviso de por qué una captura no trajo tweets y el instalador con su primer inicio de sesión. Todo está en castellano y
+en inglés.
 
-**15 al 17 de junio: usarla de verdad.** Con el uso real contra x.com aparecieron los problemas que
-los tests no podían mostrar, y de ahí salió casi todo lo que la extensión hace hoy:
+Lo que no se probó a mano: abrir un CSV con la casilla de Excel en un Excel configurado en castellano, las
+notificaciones del sistema, el instalador en Windows y en macOS, y el arranque automático con un navegador de Windows y
+el servicio en WSL. Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen Alpine, la extensión y el
+paquete de los tres sistemas se construyen en CI.
 
-- La extensión abre la búsqueda sola y la scrollea hasta el fondo. Si carga en blanco reintenta con
-  espera creciente, si X muestra "Reintentar" lo aprieta, y si hay un spinner espera.
-- La búsqueda en vivo se frena en unos mil resultados. Cuando el scroll se estanca antes de llegar a
-  la fecha de inicio, la extensión achica el rango hasta el día del tweet más viejo cargado y busca
-  de nuevo, hasta cubrir todo el período. El día se lee de lo que la página ya muestra, sin
-  interpretar GraphQL.
-- X también frena el endpoint de búsqueda por horas. Para no empezar de cero, `POST /progress` dice
-  hasta dónde llegan los datos guardados y la captura sigue desde ahí. Como sale de la base del
-  servicio y no del navegador, sobrevive aunque se borre el estado de la extensión.
-- Si el día más viejo ya tiene muchísimos tweets (800 o más), seguir incluyéndolo dejaría la captura
-  trabada ahí, así que se saltea y se pierde su cola. El umbral es alto a propósito: que no cargue
-  nada es un problema de conexión y se reintenta, no se saltea.
-- El 16 sumé un host de native messaging para que el navegador levante y baje el servicio solo, sin
-  tener que dejarlo corriendo a mano. Supervisa el mismo servicio y usa el mismo registro del tope.
-
-**19 de junio: terminaciones.** `POST /reset` borra lo capturado de una cuenta sin tocar el registro
-del tope, la extensión tiene iconos y el instalador para Windows pasó a ASCII puro, con un modo que
-mantiene vivo el service worker de Chrome.
-
-**31 de octubre: puesta al día.** nginx aceptaba como mucho 1 MB y devolvía 413 a los lotes grandes
-de `/ingest`, que la extensión descartaba sin registrarlos en el tope; ahora acepta lotes grandes.
-Sumé el build de la extensión en un contenedor (no hace falta Node en la máquina), el README en inglés y la
-integración continua con ruff, mypy, los tests y los dos builds.
-
-**1 de noviembre.** Este documento reemplazó al plan inicial, a las especificaciones de cada parte y
-a la nota de estado.
-
-**6 de noviembre: auditoría del plan.** Revisé cada decisión contra el código. Las de fondo se
-sostienen: el tope con ventana deslizante que cuenta accesos, la captura en el navegador, los mappers
-como único lugar que interpreta GraphQL y los defaults del CSV. Lo que no se sostenía era cómo se
-cumplía el tope en la captura del navegador, y lo arreglé junto con otros cuatro problemas:
-
-- En la captura del navegador el tope no frenaba nada. Pasado el tope, `/ingest` respondía 429 sin
-  registrar el lote, y la extensión lo descartaba y seguía scrolleando: accesos reales que el registro
-  nunca contaba. Peor, si el servicio no respondía, el popup arrancaba la captura igual, y lo que
-  juntaba el buffer (hasta mil páginas) se perdía sin contarse. Ahora el servidor registra también lo
-  que rechaza, y la extensión no arranca sin servicio o sin lugar en el tope, y corta el crawl ante un
-  429, un `over_cap`, cualquier otro rechazo o veinte páginas pendientes sin servicio. Además, los
-  lotes van de a veinte páginas: uno solo con todo lo acumulado podía pasar los 32 MB de nginx y
-  perderse con un 413.
-- El lock del registro era de `asyncio`, o sea, de un solo proceso: la CLI y el servicio sobre el
-  mismo registro podían leer el mismo uso y pasar los dos. Ahora el ciclo corre en una transacción
-  `BEGIN IMMEDIATE`, con un test que falla sin ella.
-- Los handles de X no distinguen mayúsculas, pero el almacenamiento sí: capturar «NASA» un día y
-  «nasa» otro partía los datos en dos cuentas, y la reanudación y el export veían una parte. Ahora se
-  guardan en minúsculas, y al abrir la base se pasa a minúsculas lo que ya estaba.
-- El compose no fijaba `CAPTURES_DIR`, así que el export de capturas escribía dentro de `/app`, que
-  es de root, con el servicio corriendo como otro usuario: fallaba, y lo escrito se habría perdido con
-  el contenedor. Ahora va al volumen de datos.
-- La paginación del lado del servidor solo cortaba si se repetía el cursor. Al final de una búsqueda
-  X puede devolver páginas vacías con cursor nuevo, cada una gastando tope; ahora corta tras tres
-  vacías seguidas, como twscrape, que corta en la primera.
-
-El README pasó al castellano, con un espejo en inglés (`README.en.md`).
-
-Después de revisar el informe decidí cuatro cosas más, y quedaron hechas el mismo día:
-
-- **Tweets editados:** queda la última versión capturada, no la primera.
-- **API oficial:** twscrape queda dormido, pero la API oficial paga pasó a estar implementada para quien
-  tenga una clave. Usa la búsqueda de archivo completo (el timeline de usuario no pasa de los ~3.200
-  posts más recientes), sin retweets y sin expansions, que X cobra desde el 22 de noviembre de 2026.
-  Está armada con la documentación de X y probada con respuestas fabricadas: no la pude probar contra
-  la API real porque no tengo una clave paga. Las docs de X hoy se contradicen en los nombres
-  (`tweet.fields` en las guías, `post.fields` en las páginas generadas); uso los de siempre.
-- **Servicio local:** solo atiende pedidos dirigidos a `localhost` o `127.0.0.1`, contra DNS rebinding.
-- **Tests de la extensión:** vitest, con las funciones puras de `extension/lib/`, entre ellas la que
-  decide cuándo cortar el crawl. Corren dentro del build de la extensión, así que también en CI.
-
-**6 de noviembre, a la tarde: GitHub.** El repo ya era público. Revisé el historial entero buscando cookies,
-tokens y claves, y no había ninguna. Lo único personal era la ruta de mi home en el instalador de Windows, que pasó a
-pedirse por parámetro. Sumé imágenes al README (dos diagramas que salen de `docs/img/generar.py` y una captura del
-popup real con datos de ejemplo) y una página del proyecto en `docs/index.html`, que GitHub Pages publica desde la
-carpeta `docs/` de `main`.
-
-**6 de noviembre: la estética.** Redibujé el logo en vector (`docs/img/logo.svg`, sale de `generar.py`) y de ahí
-salen los íconos de la extensión. La página, el popup y los diagramas pasaron al negro de X («Lights out»), con lo
-propio sacado del logo: la esquina-flecha azul en lo que sale, el logo en el encabezado, la letra monoespaciada en los
-datos y la grilla de un CSV de fondo. La página suma un ejemplo del CSV y una tarjeta para compartir
-(`docs/img/social.png`).
-
-**6 de noviembre: Chrome.** El arranque automático no andaba en Chrome Beta ni en Chromium: el instalador escribía
-solo en la carpeta de Chrome estable. Ahora escribe en la de cada variante que esté instalada. La extensión de Chrome
-tiene un id fijo, que sale de una clave pública en el manifest, así que ya no hay que copiarlo a mano. Y el host
-reconoce cuándo lo lanza Chrome y deja el servicio vivo aunque el service worker se duerma; antes eso dependía de una
-variable que solo ponía el instalador de Windows.
-
-**6 de noviembre: la primera captura en Chrome Beta.** Anduvo sin errores: el host arrancó el servicio, todos los
-lotes entraron y el tope contó cada post visto. En los datos apareció un problema: el link al tweet citado era el
-permalink tal cual lo daba X, casi siempre en twitter.com y a veces un t.co, que no lleva al tweet. Ahora es siempre
-de x.com, y los ya guardados se corrigen solos al arrancar el servicio.
-
-**6 de noviembre, a la noche: segunda revisión.** Volví a pasar cada decisión pensando en lo cómodo que es usarla y en
-si se puede usar sin tener el navegador adelante. Las decisiones de fondo siguen en pie: el tope, la captura en el
-navegador, los mappers como único lugar que interpreta GraphQL y los defaults del CSV. Lo que encontré quedó en
-«Pendiente», con prioridad y lo que hace falta para cerrarlo. Dos cosas pueden perder datos sin aviso: la captura confía
-en que la pestaña esté a la vista, y `/ingest` descarta en silencio los tweets que el mapper no entiende.
-
-**7 de noviembre: decisiones.** Con esa revisión a la vista decidí tres cosas. La captura sin el navegador adelante va
-con un Chrome invisible que maneja el servicio, y no con una ventana sin foco. Los cuatro errores que encontró la
-revisión se arreglan todos. Y entran todas las mejoras propuestas. En cada decisión mandó el paso que sigue: un
-instalador cómodo para Windows, macOS y Linux, y que usarla no pida saber nada técnico. El porqué está en «Capturar sin
-el navegador adelante», y el orden de trabajo, en «Pendiente».
-
-**7 de noviembre: la Fase 1, los cuatro errores.** Quedaron arreglados en el código y con tests; lo que pide un navegador
-o un Excel de verdad sigue abierto en «Pendiente»:
-
-- La captura se pone en pausa con la pestaña oculta. La decisión de cada scroll pasó a una función pura (`decideStep`):
-  con la pestaña oculta, o si se ocultó en medio del paso, no cuenta el scroll quieto, así que nunca lo toma por la pared
-  de los mil resultados. El crawl espera el `visibilitychange`, sin timers (Chrome los frena en una pestaña oculta), y el
-  popup muestra «La captura de @cuenta está en pausa: su pestaña quedó oculta» mientras dure.
-- Un cambio de forma de x.com se nota. `/ingest` cuenta los tweets que el mapper no entiende (`rejected`); si son más de
-  la mitad del lote, marca `format_changed`, deja en el log un ejemplo recortado del tweet y la extensión corta el crawl
-  con «x.com cambió el formato de los datos: hay que actualizar xport». Lo que sí se entiende se guarda y todo se cuenta
-  en el tope.
-- `/export` acepta `encoding` y `delimiter`, validados como en `/jobs` (un codec que exista, un solo carácter), y el
-  popup tiene la casilla «Para Excel en castellano», que se recuerda.
-- Un solo registro del tope. Los datos y el registro pasaron a la carpeta fija por usuario (`XPORT_DATA_DIR` la
-  cambia, siempre absoluta), y el `.env` se lee del repo aunque la CLI corra desde otra carpeta. Las rutas relativas
-  cuelgan de esa carpeta, y las del `.env.example` viejo (`data/…`) apuntan a lo mismo que los valores por defecto. La
-  primera vez se muda lo que haya en el `data/` del repo y en el de la carpeta actual, solo si tiene un registro: se
-  mueve, no se copia, y si en la carpeta nueva ya hay un registro, los accesos del viejo se le suman y el viejo se
-  borra. Las bases de tweets no se mezclan: si ya hay una, la vieja queda donde estaba y se avisa. El servicio, antes de
-  abrir nada, busca otro xport en 8000 y 8080 (`/healthz` ahora dice `service: xport`) y, si lo encuentra, no arranca y
-  explica por qué. Uvicorn corre el lifespan antes de abrir su puerto, así que lo que responde es siempre otro proceso.
-  El compose queda para CI y despliegue.
-
-**10 de noviembre: la Fase 3, la cola y la página local.** Todo con tests; nada pasó todavía por un navegador:
-
-- La cola vive en `queue.db`, en la carpeta de datos, y la escriben el servicio y la CLI, así que lo que lee y decide va
-  en `BEGIN IMMEDIATE`. Una captura por cuenta; la misma cuenta y rango en cola no se repite. Una terminada o cortada no
-  cambia más, para que un aviso tardío de la extensión no la reviva. `POST /captures/next` devuelve la que está en curso
-  o toma la siguiente (por eso es POST y no GET), y con el tope lleno no empieza ninguna (regla 1).
-- La extensión mira la cola con `alarms` cada medio minuto, al arrancar y cuando el popup encola. La decisión es una
-  función pura (`decideQueue`): sin crawl arranca la que diga el servicio; con crawl sigue mientras sea la que va, y si
-  la cancelaron se corta. Desde dónde arranca sale de `/progress`, como hacía el popup (`startPlan`). El content script
-  avisa la pausa y el fin, y espera la respuesta antes de borrar el crawl: así la vuelta siguiente no arranca de nuevo
-  la que acaba de terminar. Reusa la pestaña de la captura anterior si sigue en una búsqueda de captura y, si se cerró,
-  la vuelve a abrir.
-- El «Capturar ▶» del popup pasó a encolar: hay un solo camino, y todas las capturas exportan y avisan al terminar.
-- Al terminar, el servicio exporta el CSV con el formato de la captura y manda la notificación; un corte avisa con su
-  motivo, salvo que lo haya hecho la persona. Sin un solo tweet en el rango no hay CSV, y se dice por qué puede ser.
-- La página se sirve en `/`, sin build. Los pedidos que cambian algo con un `Origin` que no es el de la página ni el de
-  una extensión reciben 403; sin `Origin` (la CLI, curl) pasan. nginx pasa el `Host` con el puerto, para que la
-  comparación ande detrás del compose.
-- El tope ganó un resumen por día (`access_daily`, en la base de auditoría) que se escribe en la misma transacción que
-  cada acceso, se corrige con cada `reconcile`, no se poda y el tope no lee nunca. Un registro viejo lo arma con lo que
-  tenga en la ventana, y la mudanza de un `data/` viejo suma también su historia.
-- La CLI tiene dos comandos: `extract` (el de antes, ahora con nombre) y `capture`.
-
-**10 de noviembre, más tarde: la Fase 2, probada contra x.com sin ventana.** Con Chrome Beta 158 en Linux, un perfil
-propio en la carpeta de datos de la cuenta que corre la prueba y una cuenta de X aparte. La
-extensión se cargó por `--remote-debugging-pipe` y la red se miró por el mismo canal, sin tocar la página. Lo que salió
-está en la Fase 2, más abajo. Lo más grave fue un error del crawl: X toma ADENTRO el día de `until:`, así que achicar a
-`until:<día más viejo>` no avanzaba cuando ese día era el más viejo, y el crawl recargaba la misma búsqueda sin fin. Lo vi
-pasar: gastó las 50 búsquedas de la ventana de X y siguió con un 429 cada cuatro segundos. `nextUntil` ahora baja la
-cota siempre (si no baja, pasa al día anterior), y la reanudación de `startPlan` pide hasta el día más viejo, no hasta el
-siguiente. El mismo mes que antes quedaba en bucle terminó entero en 11 búsquedas.
-
-**10 de noviembre, a la noche: la Fase 4, el crawl.** En el código y con tests: vitest de `decideRate`, `nextBound`,
-`startPlan` y `waitStep`, y pytest del estado `waiting`, de la columna nueva en una cola vieja y de `/progress` con la
-hora. Lo que cambia está en los puntos 11 y 12, más abajo. Además:
-
-- El «techo de unos mil resultados por búsqueda» de junio coincide justo con 50 búsquedas de 20 tweets, el cupo de X en
-  15 minutos: puede que nunca haya sido un techo de la búsqueda sino el rate limit. El crawl no necesita saberlo: ante un
-  429 espera, y si una búsqueda se asienta antes de `since` sin un 429, achica al segundo y sigue.
-- La cola suma la columna `resume_at`; una `queue.db` de la Fase 3 la recibe al abrirse. Los `IN (…)` de la cola se arman
-  con el largo de las tuplas de estados, que ahora tienen uno más.
-- La prueba contra x.com quedó a medias. Para encontrar un día de más de mil tweets sondeé la primera página de varias
-  cuentas, un sondeo por cuenta: @AmazonHelp hacía unos 170 tweets por hora a las 14 UTC del lunes 9, @RailwaySeva y
-  @JioCare unos 70 de día y 10 de noche (justo mil por día), @ANI unos 600 por día, y los bots que contestan menciones no
-  aparecen en la búsqueda. Lo sondeado entra por `/ingest` y mueve el frente de reanudación (el más viejo guardado), así
-  que antes de capturar hay que borrar lo de esa cuenta. La captura de @AmazonHelp del 9 no llegó a scrollear: Chrome
-  corrió el service worker de la prueba anterior, guardado en la caché del perfil (la búsqueda salió con
-  `since:`/`until:`), y subir la versión del manifest no alcanzó: hubo que apartar la carpeta `Service Worker` del perfil.
-  Es cosa de cargar la extensión por el pipe en un perfil que ya la tenía; «Recargar» en `chrome://extensions` vuelve a
-  registrar el service worker. En el medio la máquina se quedó sin memoria y la prueba se cortó una vez. Con el background
-  nuevo, un día de @nasa anduvo hasta el achique: la búsqueda salió con `since_time:`/`until_time:` (x.com no la
-  reescribe, ni con las dos cotas en medianoche), retomó en el tweet más viejo guardado más un segundo y bajó la cota al
-  segundo del más viejo cargado. Ahí X mandó la cuenta aparte a `x.com/account/access`, con un desafío de
-  Cloudflare, y la prueba quedó esperando a que una persona la verifique (detectarlo es el punto 13).
-- Una captura en curso cuando se actualiza la extensión deja su crawl con el formato viejo, y el navegador restaura la
-  pestaña con la búsqueda vieja: ahí el crawl nuevo no arranca y la captura quedaba trabada (pasó en la prueba). El
-  background le pregunta a la pestaña de la captura si quedó en una búsqueda vieja de la misma cuenta (`isStaleSearch`)
-  y, si sí, la lleva a la actual. Si la persona usa esa pestaña para otra cosa de x.com, no la toca.
-
-**10 de noviembre, a la noche, después: la Fase 4 contra x.com.** Bautista verificó la cuenta aparte en una
-ventana y la prueba siguió. Como la máquina andaba corta de memoria y un proceso en segundo plano se corta solo, el
-navegador corrió en tramos de diez minutos: cada tramo lo cerraba y lo volvía a abrir, y la captura seguía desde lo que
-quedaba. El 9 de noviembre de @AmazonHelp salió entero en 53 minutos: 2.830 tweets, las 24 horas, el hueco más largo de
-8 minutos a las 23:29. El CSV trae 17: el resto son respuestas a conversaciones ajenas. En el medio:
-
-- La primera búsqueda trajo 880 tweets (44 páginas) sin frenarse; lo que la cortó fue el cupo. Es otra señal de que el
-  «techo de mil» de junio era el rate limit.
-- Con menos de 10 búsquedas en el cupo, el ritmo bajó solo a una página cada 80 segundos. Al llegar a cero, la captura
-  quedó «esperando a X» con la hora del reset, la pestaña pasó a la página local y, pasada la hora, volvió a la búsqueda.
-  Pasó tres veces.
-- Un día de @nasa terminó solo: la búsqueda hasta el segundo del tweet más viejo no trajo nada más y la captura cerró
-  con su CSV en 49 segundos.
-- Los reinicios mostraron dos errores, ya arreglados. Al reabrir la búsqueda se volvía a pedir desde arriba, porque lo
-  avanzado scrolleando dentro de una búsqueda no queda en el estado del crawl: ahora el background baja la cota al tweet
-  más viejo guardado (`resumeBound`) al reabrir la pestaña o al terminar una espera. Y el navegador restaura la pestaña
-  de la captura mientras el background abre otra, así que dos pestañas crawleaban lo mismo: ahora cada pestaña
-  reclama la captura antes de arrancar (`claim`) y crawlea una sola.
-- El tope contó 4.145 accesos en toda la prueba, con los sondeos y lo que se volvió a pedir.
-
-**10 de noviembre, a la noche: la Fase 5, el navegador propio del servicio.** Quise capturar todos mis tweets y la
-cola no arrancaba: en la extensión de mi Chrome había quedado el crawl del 6 de noviembre, de antes de la cola, y
-`decideQueue` lo dejaba seguir para siempre aunque no tuviera pestaña. Ahora un crawl de antes de la cola le cede el
-lugar a la primera captura que aparezca. Y como la idea era no tener que tocar nada, armé el punto 13: el servicio
-levanta su propio Chrome con un perfil de xport, le carga la extensión por el pipe de depuración y le deja una marca en
-su storage; `POST /captures/next` solo le da trabajo a quien muestra esa marca, así la extensión de mi navegador de
-todos los días no abre pestañas. Al probarlo contra x.com, X le contestó 403 a todo: desde esa tarde rechaza cualquier
-pedido que se presente como `HeadlessChrome` (con `curl` y ese user-agent, 403; con el de Chrome, 200). No lo disfracé:
-pasé al plan B que ya estaba decidido, el mismo Chrome con ventana adentro de cage sin pantalla real, y ahí X lo ve
-como un Chrome común y la página está «visible». La cookie de la cuenta aparte del `.env` ya no servía (la búsqueda
-rebota al inicio de sesión, que ahora vive en `/i/jf/onboarding`): el servicio lo nota, borra las cookies del perfil y
-abre una ventana chica para iniciar sesión una vez. Con mi cuenta, esa ventana chica en modo aplicación y con el pipe
-no dejaba pasar de «Continuar»; pasó a ser una ventana común de Chrome, sin el pipe, y el servicio se entera de la
-sesión por la base de cookies del perfil. Ya con sesión, la captura entró una página y se quedó: Chrome seguía corriendo
-el service worker de la extensión de antes de la Fase 4, guardado en el perfil con la misma versión. Ahora el servicio
-borra esa caché cada vez que levanta su Chrome.
-
-**10 de noviembre, a la noche: castellano e inglés.** Decidí que cada app hable el idioma del equipo: castellano si
-alguno de los idiomas preferidos lo es, inglés en cualquier otro caso, y siempre con un selector cuya elección manda.
-Hay un solo build y un solo release con los dos. El servicio, la CLI y la página local sacan sus textos de
-`locales/{es,en}.json` (`i18n.py`): la CLI sigue `--lang`, `XPORT_LANG` o el idioma del sistema, los errores HTTP el
-`Accept-Language` del pedido, y la página guarda la elección en el navegador. Los avisos que se guardan (el motivo de
-un corte, el estado del navegador de xport) van como clave y valores y se traducen al leerlos, así cada uno los lee en
-su idioma. La extensión tiene sus catálogos y un selector en el popup. El sitio manda a cada uno a su idioma una sola
-vez, cada documento tiene su par en el otro idioma y el CSV no se traduce. Los tests fallan si a un catálogo le falta
-una clave o si queda un texto escrito a mano.
-
-**11 de noviembre: por qué una captura no trajo nada (punto 10).** Para distinguir los casos hacía falta
-`UserByScreenName`, que la búsqueda no pide. Medí contra x.com qué pide cada página. El perfil carga también sus
-últimos tweets (`UserOriginalsTimeline`, unos veinte), que el tope tendría que contar. `x.com/<cuenta>/following` pide
-`UserByScreenName` y ningún post, y con una cuenta protegida redirige al perfil sin cargar tweets. La forma también
-cambió: ya no viene `legacy` y lo protegido está en `privacy.protected`; una suspendida llega como `UserUnavailable`
-con `reason: "Suspended"`, y una que no existe, como `{"data":{}}`. Ahora, cuando una captura de la cola termina sin
-un solo tweet guardado en el rango, la extensión lleva su pestaña a esa página y manda la respuesta cruda junto con el
-aviso de que terminó, y `mappers/` la interpreta. Los casos son seis: no existe, está suspendida, es protegida (y la
-cuenta de X con que captura xport no la sigue), bloqueó a esa cuenta, X no la muestra por otro motivo, o existe y es
-pública. En este último caso o no escribió en esas fechas, o X la oculta de la búsqueda, como a los bots de la
-Fase 4. Si x.com no contesta en 45 segundos o la respuesta no se entiende, queda el aviso de antes; mientras tanto la
-cola no avanza. Lo probé contra x.com con cuatro capturas encoladas seguidas, una por caso: un handle inventado, una
-cuenta suspendida, una protegida y una semana de 2006 de @nasa, que se creó en 2007. Cada una terminó con su aviso en
-unos once segundos sin tocar nada, y el tope no contó ningún acceso. Una segunda tanda, con el navegador reiniciado,
-mostró que un rango con tweets termina con su CSV sin mirar la cuenta, y que las capturas seguidas usan una sola
-pestaña: la de la comprobación se reusa solo si sigue donde quedó, así un id de pestaña de otra sesión no se toca.
-
-**11 de noviembre, después: las Fases 1 y 3 en un navegador.** Con el mismo Chrome con ventana adentro de cage y la
-extensión, manejado por el pipe de depuración, abrí la página local y encolé desde su formulario @nasa y @esa, del 15 al
-30 de septiembre de 2025. A mitad de la primera puse otra pestaña adelante: la captura pasó a «en pausa» y, al volver,
-siguió sola y terminó con el rango entero (35 tweets, el más viejo del 15). La de @esa arrancó sola después y salieron
-los dos CSV (12 tweets en el de @esa: dos respuestas a conversaciones ajenas quedaron afuera), en 11 búsquedas y sin un
-error en la consola de la página. Lo único que apareció: al cambiar el idioma con el selector, el aviso del formulario
-(«En la cola: …») quedaba en el idioma anterior; ahora se rehace, y un error que ya armó el servicio se borra.
-
-**11 de noviembre, a la tarde: el instalador para Linux (punto 14).** Arranqué la Fase 6 por lo que se puede probar en
-esta máquina. El paquete trae su propio Python: el CPython portable de python-build-standalone que baja uv, sin
-tkinter, idle ni los tests de la biblioteca, con las dependencias exactas de `uv.lock` y xport instalados adentro, más
-la extensión armada, el ícono y dos scripts. Lo arma `deploy/bundle/build.py` en el sistema para el que es, porque
-pydantic-core y uvloop vienen compiladas; el de Linux pesa 47 MB comprimido y 158 MB instalado. Lo que corre el acceso
-directo es `xport` (`launcher.py`): si no hay un xport contestando en el 8000 o en el 8080, arranca el servicio separado
-de sí mismo, espera a que `/healthz` diga xport y abre la página; si algo sale mal, además de escribirlo lo muestra en
-una notificación, porque un acceso directo no tiene terminal. `xport stop` lo cierra con el número de proceso que el
-servicio dice en `/healthz`, y `xport check` dice si están Chrome, cage y la extensión, con el comando que instala
-cage en la distribución de cada uno. El instalador (`installer.py`) lo corre el Python del paquete, así sus mensajes
-salen en los dos idiomas y lo prueban los tests: cierra el xport que esté corriendo, copia la carpeta a
-`~/.local/lib/xport` (reemplaza la anterior entera), arma el `.desktop` y el comando `xport` en `~/.local/bin`, muestra
-lo que falta y abre la página. El primer arranque es esa página: mientras el perfil de xport no tiene sesión de X,
-ofrece «Iniciar sesión en X», que abre la ventana sin esperar a una captura. Lo probé acá: el paquete se arma, su
-servicio arranca con el Python propio, contesta y se cierra; se instala en un HOME de prueba; el `.desktop` pasa
-`desktop-file-validate`; el servicio instalado contesta y su página, renderizada en Chrome, muestra el botón; el botón
-abre el Chrome del inicio de sesión, `xport stop` lo cierra junto con el servicio, y al desinstalar los datos quedan.
-Para Windows y macOS el mismo script arma un `.zip` con `install.cmd` y un `xport.app`, y CI los arma en los dos
-sistemas con la prueba de humo; no los probé en esos sistemas, y ahí todavía no hay navegador sin ventana.
-
-## Dónde está hoy
-
-Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada en
-el código. Esa vez anduvo de punta a punta: el host levantó el servicio, los lotes entraron y el tope contó cada post
-visto. El 10 de noviembre, sin ventana y con la cola, probé los cortes (el servicio caído a mitad de una captura, el
-popup sin servicio y el tope lleno) y anduvieron. De la Fase 1 (7 de noviembre), el corte por cambio de formato y el CSV
-abierto en un Excel en castellano tienen tests, pero no una prueba a mano; la pausa con la pestaña oculta se probó el 11
-de noviembre en Chrome. De la Fase 3 (10 de noviembre), las notificaciones tienen tests pero no se probaron a mano; la
-cola y la página local pasaron por Chrome: el 11, dos cuentas encoladas desde la página salieron en dos CSV sin tocar
-nada. La Fase 4 (10 de noviembre), la espera a X ante el rate limit y la búsqueda al segundo, quedó probada contra
-x.com: un día de @AmazonHelp con 2.830 tweets salió entero, pasando tres veces por el límite de búsquedas de X. Desde el
-10 de noviembre a la noche, en Linux, el servicio captura con su propio Chrome adentro de cage, sin ninguna ventana a la
-vista (la Fase 5), y todo está en castellano y en inglés. Desde el 11, una captura que no trae ningún tweet dice por
-qué, según cómo ve X a la cuenta (punto 10). Desde el 11 a la tarde hay un instalador para Linux, probado en esta
-máquina: trae su propio Python, deja xport en el menú de aplicaciones y su página guía el primer inicio de sesión en X
-(punto 14). Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen
-Alpine y la extensión se construyen en CI.
-
-El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
-cambio de x.com: falla cerrado con un error claro. La API oficial está implementada para quien tenga una clave paga,
-pero nunca se probó contra la API real.
+El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero bloqueado por x.com:
+falla cerrado con un error claro. La API oficial está implementada para quien tenga una clave paga, pero nunca se probó
+contra la API real.
 
 ## Hecho
 
@@ -487,283 +164,124 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 
 | Qué | Dónde | Probado |
 |---|---|---|
-| Tope de 900.000 accesos: ventana deslizante, cuenta accesos sin deduplicar, reserva antes de pedir, registro aparte y atómico entre procesos | `compliance/` | tests (bloqueo, espera, `BEGIN IMMEDIATE`); real: contó cada post visto (6/11) |
+| Tope de 900.000 accesos: ventana deslizante, cuenta accesos sin deduplicar, reserva antes de pedir, registro aparte y atómico entre procesos | `compliance/` | tests (bloqueo, espera, `BEGIN IMMEDIATE`); real: contó cada post visto |
 | Modelo `Tweet` estricto (UTC, ids y URLs limpios, citado completo o nada) | `domain/models.py` | tests |
-| Mapper: retweets fuera, quotes en sus tres lugares, texto completo de los largos, links sin destino o propios fuera, link del citado en x.com | `mappers/twscrape_mapper.py` | tests; real (6/11) |
+| Mapper: retweets fuera, quotes en sus tres lugares, texto completo de los largos, links sin destino o propios fuera, link del citado en x.com | `mappers/twscrape_mapper.py` | tests; real |
 | Respuestas: hilos propios sí, conversaciones ajenas no, aplicado al exportar y contado en `excluded_replies` | `storage/`, `POST /export` | tests; real |
 | Almacenamiento: dedupe por id con la última versión, handles en minúsculas, checkpoint por sub-ventana | `storage/sqlite_store.py` | tests |
 | CSV en streaming, atómico, `<account>_<since>_<until>.csv` | `storage/csv_exporter.py` | tests; real |
-| Captura in-page: parche de `fetch` y XHR, puente, relay en lotes de 20 páginas | `extension/entrypoints/` | real (junio y 6/11) |
-| Crawl adaptativo: scroll, «Reintentar», recarga con backoff, achique del rango al segundo del tweet más viejo, reanudación desde la base | `autoscroll.content.ts`, `POST /progress` | real; funciones puras con vitest |
-| Cortes del crawl: sin servicio, tope lleno, 429, `over_cap`, rechazo, veinte páginas sin registrar | `lib/ingest.ts`, `background.ts`, popup | vitest de `decideIngest`; real sin ventana (10/11): el servicio caído, el popup sin servicio y el tope lleno |
-| Búsqueda al segundo y en UTC (`since_time:`/`until_time:`): la cota baja al segundo del tweet más viejo y el crawl termina; ni días saturados ni primeras horas perdidas | `lib/autoscroll.ts` (`nextBound`), `lib/queue.ts` (`startPlan`), `POST /progress` | vitest y tests; real (10/11): un día de 2.830 tweets salió entero, las 24 horas |
-| Pausa del crawl con la pestaña oculta, con aviso en el popup | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest de `decideStep`; real (11/11): con otra pestaña adelante pasó a «en pausa» y, al volver, terminó entera |
-| Espera a X: con un 429 o sin cupo, la captura espera al reset fuera de la búsqueda y sigue sola; con pocas búsquedas, reparte las que quedan | `lib/rate.ts`, `capture-main.content.ts`, `autoscroll.content.ts`, `background.ts`, estado `waiting` de la cola | vitest de `decideRate` y `waitStep`; tests de la cola; real (10/11): tres esperas al reset, cada una sola y con la pestaña en la página local |
-| Reinicio del navegador a mitad de una captura: retoma desde lo guardado, no desde arriba, y crawlea una sola pestaña | `background.ts` (`withFrontier`, `claim`), `lib/queue.ts` (`resumeBound`, `claimAllowed`) | vitest; real (10/11): cada tramo de la prueba reinició el navegador |
+| Captura in-page: parche de `fetch` y XHR, puente, relay en lotes de 20 páginas | `extension/entrypoints/` | real |
+| Crawl: scroll, «Reintentar», recarga con backoff, cota al segundo del tweet más viejo, reanudación desde la base | `autoscroll.content.ts`, `lib/autoscroll.ts`, `lib/queue.ts`, `POST /progress` | vitest y tests; real: un día de 2.830 tweets salió entero |
+| Cortes del crawl: sin servicio, tope lleno, 429, `over_cap`, rechazo, veinte páginas sin registrar | `lib/ingest.ts`, `background.ts`, popup | vitest de `decideIngest`; real: el servicio caído, el popup sin servicio y el tope lleno |
+| Pausa del crawl con la pestaña oculta, con aviso | `lib/autoscroll.ts` (`decideStep`), `autoscroll.content.ts` | vitest; real en Chrome |
+| Espera a X: con un 429 o sin cupo, espera al reset fuera de la búsqueda y sigue sola; con pocas búsquedas, reparte las que quedan | `lib/rate.ts`, `capture-main.content.ts`, `background.ts`, estado `waiting` de la cola | vitest de `decideRate` y `waitStep`; tests; real: tres esperas seguidas |
+| Reinicio del navegador a mitad de una captura: retoma desde lo guardado y crawlea una sola pestaña | `background.ts` (`withFrontier`, `claim`), `lib/queue.ts` | vitest; real |
 | Cambio de forma de x.com: `rejected` y `format_changed` en `/ingest`, ejemplo en el log, corte del crawl | `service/ingest.py`, `lib/ingest.ts` | tests con una página de forma desconocida; vitest |
-| CSV para Excel en castellano desde `/export` y el popup | `service/schemas.py`, popup | tests (BOM y `;`); **sin abrirlo en Excel** |
-| Un solo registro del tope: carpeta de datos por usuario, `.env` del repo, mudanza de `data/`, no arranca si ya corre otro xport | `config.py`, `datadir.py`, `service/app.py` | tests (la CLI desde dos carpetas, la mudanza, la suma de dos registros, el segundo servicio) |
-| Cola de capturas: una por cuenta, de a una, persistente; la extensión la toma con `alarms`; el popup y `tweet-extractor capture` encolan | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests (dos cuentas en dos CSV, estados, reinicio); vitest; real (10 y 11/11): las capturas de la prueba de la Fase 4, cuatro cuentas seguidas y dos encoladas desde la página, que salieron en dos CSV sin tocar nada |
-| Página local en `/`, con chequeo de `Origin` | `service/page/`, `service/app.py` | tests; real (11/11): abierta en Chrome, encoló dos cuentas desde el formulario y cambió de idioma, sin errores en la consola |
-| Export y notificación al terminar; aviso si el rango no tiene tweets | `service/captures.py`, `service/notify.py` | tests con un notificador falso; **notificaciones sin probar a mano** |
-| Por qué no hubo tweets: la cuenta no existe, está suspendida, es protegida, bloqueó a la de xport, X no la muestra, o existe y no escribió en esas fechas | `mappers/account_mapper.py`, `lib/account.ts`, `background.ts`, `service/captures.py` | tests con respuestas reales recortadas; vitest; real (11/11): cuatro casos seguidos, sin un acceso en el tope |
-| El navegador propio del servicio: Chrome con un perfil de xport adentro de cage, la extensión cargada por el pipe de depuración, la cola solo para él, ventana chica para iniciar sesión en X cuando hace falta, cerrado con la cola vacía | `service/browser.py`, `service/captures.py`, `lib/api.ts`, `background.ts` | tests con un Chrome falso; real (10/11): carga la extensión, la marca, la pantalla virtual, el rebote al inicio de sesión y la ventana |
-| Un crawl de antes de la cola ya no la frena | `lib/queue.ts` (`decideQueue`) | vitest; real (10/11): era lo que trababa mi captura |
-| Resumen diario del tope, aparte de la ventana | `compliance/gate.py` | tests (reserva y reconcile, poda, registro viejo, mudanza) |
+| CSV para Excel en castellano desde `/export`, la página y el popup | `service/schemas.py` | tests (BOM y `;`); **sin abrirlo en Excel** |
+| Un solo registro del tope: carpeta de datos por usuario, mudanza de `data/`, no arranca si ya corre otro xport | `config.py`, `datadir.py`, `service/app.py` | tests |
+| Cola de capturas: una por cuenta, de a una, persistente; la página, el popup y `tweet-extractor capture` encolan | `storage/queue.py`, `service/captures.py`, `lib/queue.ts`, `background.ts` | tests; vitest; real: varias cuentas seguidas, cada una en su CSV |
+| Página local en `/`, con chequeo de `Origin` | `service/page/`, `service/app.py` | tests; real en Chrome, en los dos idiomas |
+| Export y notificación al terminar | `service/captures.py`, `service/notify.py` | tests con un notificador falso; **notificaciones sin probar a mano** |
+| Por qué no hubo tweets: la cuenta no existe, está suspendida, es protegida, bloqueó a la de xport, X no la muestra, o existe y no escribió en esas fechas | `mappers/account_mapper.py`, `lib/account.ts`, `background.ts`, `service/captures.py` | tests con respuestas reales recortadas; vitest; real: cuatro casos |
+| El navegador propio del servicio: Chrome con el perfil de xport adentro de cage, la extensión por el pipe, la cola solo para él, la ventana para iniciar sesión, cerrado con la cola vacía | `service/browser.py`, `service/captures.py`, `lib/api.ts`, `background.ts` | tests con un Chrome falso; real en Linux |
+| Resumen diario del tope, aparte de la ventana | `compliance/gate.py` | tests |
 | Borrar lo capturado de una cuenta sin tocar el tope | `POST /reset`, popup | tests; real |
-| Arranque automático por native messaging: Firefox, Chrome, Chrome Beta y Chromium, id fijo en Chrome | `deploy/native-host/` | real en Chrome Beta (6/11); Windows con WSL sin probar |
+| Arranque automático por native messaging: Firefox, Chrome, Chrome Beta y Chromium | `deploy/native-host/` | real en Chrome Beta; Windows con WSL sin probar |
 | El servicio solo atiende pedidos a `localhost` o `127.0.0.1` | `service/app.py` | tests |
-| twscrape del lado del servidor, con sub-ventanas y corte tras tres páginas vacías | `providers/twscrape_provider.py`, `providers/_twscrape_gql.py` | tests sin red; **bloqueado por x.com** desde el 14/6 |
+| twscrape del lado del servidor, con sub-ventanas y corte tras tres páginas vacías | `providers/twscrape_provider.py`, `providers/_twscrape_gql.py` | tests sin red; **bloqueado por x.com** |
 | API oficial v2 paga, búsqueda de archivo completo | `providers/official_api.py`, `mappers/api_v2_mapper.py` | respuestas fabricadas; **nunca contra la API real** |
 | CLI y servicio sobre el mismo orquestador; jobs en memoria | `cli.py`, `orchestrator.py`, `service/` | tests |
 | Imagen Alpine con nginx, build de la extensión en Podman, CI | `deploy/`, `.github/workflows/ci.yml` | CI |
-| README en castellano e inglés, página de GitHub Pages, logo e íconos generados | `README.md`, `README.en.md`, `docs/` | a ojo |
-| Castellano e inglés en todo: servicio, CLI, página local, extensión, sitio y documentos, con el idioma del equipo y un selector | `locales/`, `i18n.py`, `extension/locales/`, `lib/i18n.ts`, `docs/en/` | tests (catálogos completos y sin textos a mano, cada documento con su par); vitest |
-| El lanzador `xport`: arranca el servicio si no corre (o usa el que corre), abre la página, lo cierra y dice qué falta para capturar sin ventana | `launcher.py`, `/healthz` | tests, uno con el servicio de verdad; real en Linux (11/11) |
-| El paquete con su propio Python y el instalador: copia, acceso directo, comando, desinstalación que deja los datos | `deploy/bundle/build.py`, `installer.py` | tests; real en Linux (11/11): armado, prueba de humo, instalado y desinstalado en un HOME de prueba; Windows y macOS solo en CI, **sin probar en esos sistemas** |
-| Primer arranque: la página ofrece iniciar sesión en X antes de la primera captura | `service/browser.py` (`login_now`), `POST /browser/login`, `service/page/` | tests con un Chrome falso; real (11/11): el botón en la página y el Chrome del inicio de sesión |
+| Castellano e inglés en todo: servicio, CLI, página local, extensión, sitio y documentos | `locales/`, `i18n.py`, `extension/locales/`, `lib/i18n.ts`, `docs/en/` | tests (catálogos completos, cada documento con su par); vitest |
+| El lanzador `xport`: arranca el servicio si no corre (o usa el que corre), abre la página, lo cierra y dice qué falta | `launcher.py`, `/healthz` | tests; real en Linux |
+| El paquete con su propio Python y el instalador: copia, acceso directo, comando, desinstalación que deja los datos | `deploy/bundle/build.py`, `installer.py` | tests; real en Linux; Windows y macOS solo en CI, **sin probar en esos sistemas** |
+| Primer arranque: la página ofrece iniciar sesión en X antes de la primera captura | `service/browser.py` (`login_now`), `POST /browser/login`, `service/page/` | tests con un Chrome falso; real en Linux |
 
-## Capturar sin el navegador adelante
+## Los puntos del plan
 
-Hoy la captura necesita la pestaña de la búsqueda a la vista. El crawl (`autoscroll.content.ts`) scrollea con
-`window.scrollTo`, espera 1,2 s con `setTimeout` y mira si la página creció; la que pide más tweets es la propia x.com al
-ver el scroll. Con la pestaña oculta (otra pestaña adelante o la ventana minimizada) el navegador deja de dibujar la
-página, y los eventos de scroll y los observadores que una página usa para cargar más dependen de ese dibujo. Además,
-Chrome pasa los timers de una pestaña oculta a uno por segundo y, a los cinco minutos, a uno por minuto. Lo esperable es
-que x.com deje de cargar.
+Los números se mantienen porque el código los cita. Cada punto dice qué es y, si falta algo, qué.
 
-Si pasa eso, el crawl no se queda quieto: se equivoca. Cuatro scrolls sin crecer (unos 5 s) le parecen la pared de los
-mil resultados, así que achica el rango y recarga. Cada recarga trae una sola página, y en un día con más de una página
-`nextUntil` no puede avanzar incluyéndolo, lo excluye y el resto de ese día se pierde sin aviso. Como «Capturar» abre la
-búsqueda en una pestaña nueva de la ventana en uso, alcanza con volver a la pestaña de antes para que pase.
+### Errores corregidos
 
-### Decisión del 7 de noviembre: un Chrome invisible que maneja el servicio
+1. **Pausar el crawl con la pestaña oculta.** Hecho y probado en Chrome.
+2. **Que un cambio de forma de x.com se note.** Hecho. Si algún día cambia el sobre de la respuesta y no el tweet,
+   `/ingest` ve cero tweets y no lo distingue de una página vacía: eso no lo cubre.
+3. **Excel en castellano.** Hecho. Falta abrir un CSV exportado con la casilla en un Excel configurado en castellano.
+4. **Un solo registro del tope.** Hecho. Un xport anterior a este cambio no dice `service` en `/healthz`, así que un
+   servicio viejo que siga corriendo no se detecta: después de actualizar hay que bajarlo.
 
-Había dos caminos: abrir la captura en una ventana propia sin foco, o un navegador aparte que corre sin ventana. La
-ventana es lo más fácil de programar, pero no cumple lo que busco. Chrome en Windows y en macOS marca como oculta una
-ventana que otra tapa entera, así que con cualquier programa maximizado encima la captura se frena; con el arreglo del
-punto 1 se pone en pausa y avisa, pero no avanza. Para alguien que no sabe nada de esto, «dejá esa ventana a la vista»
-es una regla técnica que tiene que entender y recordar. El navegador invisible no depende de lo que la persona haga con
-sus ventanas y es igual en los tres sistemas. Lo que manda es el paso siguiente: un instalador cómodo para Windows,
-macOS y Linux, y que usarla no pida saber nada técnico.
+### Lo probado en un navegador
 
-Cómo queda:
+5. **Los cortes en un navegador.** Andan los tres: el servicio caído a mitad de una captura (el crawl corta al juntar
+   20 páginas sin registrar y la cola retoma al volver el servicio), el popup sin servicio y el tope lleno. Un borde:
+   lo que la extensión tiene en memoria sin mandar se pierde si el navegador se cierra en ese segundo y medio, y esos
+   accesos no llegan al tope. Son a lo sumo unas páginas.
+6. **El navegador sin ventana y sus supuestos.** La búsqueda carga y el scroll trae más en un Chrome manejado por el
+   servicio; X rechaza `HeadlessChrome`, así que corre adentro de cage. `x-rate-limit-*` llega en `SearchTimeline` y la
+   página lo puede leer. `since_time:` y `until_time:` andan al segundo en «Más reciente». Edge, Windows y macOS no se
+   probaron.
 
-- **El servicio maneja el navegador, y no al revés.** Hoy el navegador de todos los días levanta el servicio por native
-  messaging. Pasa a ser al revés: el servicio arranca y para un Chrome (o Edge, que viene en todo Windows) con un perfil
-  propio de xport, sin ventana mientras captura. Para capturar ya no hace falta el native host, ni los manifests por
-  navegador que el instalador tendría que escribir.
-- **La extensión vive solo en ese perfil.** Captura y crawlea como hoy, con `/ingest`, el tope y los mappers sin cambios
-  de fondo, pero toma el trabajo de la cola del servicio en vez del popup.
-- **La interfaz pasa a una página local** que sirve el mismo servicio en `http://localhost:8000/` y se abre en el
-  navegador de siempre: una o varias cuentas, las fechas, la cola con su avance, el tope y los CSV para bajar. El popup
-  sigue mientras la página no esté y después se va. Como cualquier sitio puede mandarle pedidos a `localhost`, los que
-  cambian algo exigen que el `Origin` sea el de la propia página, además del chequeo de `Host` que ya está.
-- **Cuando hace falta una persona, el perfil se abre con ventana.** La primera vez, para iniciar sesión en X (conviene
-  una cuenta aparte), y cada vez que X pida una verificación o cierre la sesión: el servicio lo detecta, para el
-  navegador invisible, abre ese mismo perfil en una ventana chica y la página explica qué hacer. Después vuelve a
-  ocultarse.
-- **Los datos van a una carpeta fija por usuario:** `~/.local/share/xport` en Linux, `%LOCALAPPDATA%\xport` en Windows y
-  `~/Library/Application Support/xport` en macOS, con una variable para cambiarla. Hoy las rutas son relativas a la
-  carpeta desde donde se arranca (`data/…`), lo que además parte el registro del tope (punto 4).
-- **No choca con las reglas.** No es Selenium ni Playwright ni hay control remoto del navegador: es el Chrome de la
-  persona con la extensión, y nada entra en la imagen del servicio (regla 5). Todo lo que se ve pasa por `/ingest` y el
-  tope (regla 1).
+### La cola y la página local
 
-Antes de construir encima hay que probarlo (punto 6), y si falla ya está decidido qué hacer:
-
-- Que X ande normal con Chrome en `--headless`: que la búsqueda cargue, que el scroll traiga más y que las capturas
-  entren. El modo headless se presenta como `HeadlessChrome` y X podría tratarlo distinto. No lo disfrazo de otro
-  navegador: si X lo rechaza, en Linux el mismo Chrome corre con ventana dentro de una pantalla virtual (Xvfb), y en
-  Windows y macOS queda la ventana propia sin foco, con la pausa que avisa. La arquitectura (el servicio que maneja el
-  perfil, la cola y la página local) es la misma en los tres casos; cambia solo cómo se lanza el navegador.
-- Que una extensión instalada en el perfil cargue en `--headless`, en Chrome y en Edge.
-
-Lo que esto le deja resuelto al instalador, que es el paso siguiente y no entra en esta implementación:
-
-- Chrome con marca no acepta `--load-extension` desde la versión 137, y cargar una extensión descomprimida pide el modo
-  de desarrollador, que no sirve para alguien sin conocimientos técnicos. La extensión se publica sin listar en la Chrome
-  Web Store, que sirve para Chrome y para Edge, y en AMO para Firefox. El instalador la deja instalada en el perfil de
-  xport o abre su página para un solo clic. Si la Web Store la rechaza, la alternativa es que el instalador baje Chrome
-  for Testing, que sí acepta `--load-extension`.
-- El servicio se empaqueta para cada sistema sin pedir uv ni Python, con un acceso directo «xport» que lo arranca y abre
-  la página.
-- Hace falta Chrome o Edge; en Windows, Edge siempre está. Firefox como navegador de captura queda para después: se puede,
-  con la extensión firmada y un perfil propio, pero no va primero.
-
-## Pendiente
-
-Todo lo de abajo está decidido desde el 7 de noviembre: los cuatro errores de la revisión se arreglan y entran todas las
-mejoras. Va por fases, en este orden, y cada fase entra en una o dos sesiones. Cada punto dice por qué, cómo, cuándo está
-listo y cuánto lleva (chico: una tarde; mediano: un par de días).
-
-### Fase 1: los cuatro errores (hecha el 7 de noviembre)
-
-Está en el código y con tests (ver «Cómo lo fui construyendo»). Los números siguen, porque el resto del plan los cita.
-Falta lo que pide un navegador o un Excel de verdad:
-
-1. **Pausar el crawl con la pestaña oculta.** Probado el 11 de noviembre en Chrome: con otra pestaña adelante la captura
-   pasó a «en pausa», y al volver siguió sola y terminó con el rango entero. El aviso lo mostró la página; el del popup
-   no lo miré.
-2. **Que un cambio de forma de x.com se note.** Hecho; el test usa una página de forma desconocida. Si algún día cambia
-   el sobre de la respuesta y no el tweet, `/ingest` ve cero tweets y no lo distingue de una página vacía: eso no lo
-   cubre.
-3. **Excel en castellano.** Falta abrir un CSV exportado con la casilla en un Excel configurado en castellano.
-4. **Un solo registro del tope.** Hecho. Un xport de antes de este cambio no dice `service` en `/healthz`, así que un
-   servicio viejo que siga corriendo no se detecta: después de actualizar hay que bajarlo (con Chrome, el native host
-   lo deja vivo hasta reiniciar).
-
-### Fase 2: lo que falta probar (hecha el 10 de noviembre)
-
-Probada en Linux con Chrome Beta 158, sin ventana, una cuenta de X aparte y el servicio de la Fase 3 (ver «Cómo lo
-fui construyendo»). Los números siguen, porque el resto del plan los cita.
-
-5. **Los cortes en un navegador.** Andan los tres:
-   - Con el servicio caído a mitad de una captura, el crawl siguió 18 búsquedas más y cortó solo al juntar 20 páginas
-     sin registrar. Al volver el servicio, la cola retomó la captura desde lo guardado.
-   - El popup sin servicio no arranca y lo explica.
-   - Con el registro precargado a 10 accesos del tope, la primera página lo cruzó (quedó en 900.016, lo previsto para
-     lo que ya pasó en el navegador), el crawl se cortó con el aviso del tope y la cola no arrancó ninguna otra.
-
-   Un borde: lo que la extensión tiene en memoria sin mandar se pierde si el navegador se cierra en ese segundo y medio,
-   y esos accesos no llegan al tope. Son a lo sumo unas páginas; no lo arreglé.
-6. **El navegador invisible y los dos supuestos.**
-   - **Sin ventana anda.** La búsqueda carga, el scroll trae más y las capturas entran: septiembre de 2025 de @nasa, 54
-     tweets, en 11 búsquedas. Con ventana dentro de una pantalla virtual (`cage` sin pantalla real, el plan B de Linux)
-     también anda. Queda elegido headless. Edge no estaba instalado; Windows y macOS siguen sin probar.
-   - **La extensión no se instala con `--load-extension`:** Chrome 158 lo ignora, como decía la decisión del 7 de
-     noviembre. `Extensions.loadUnpacked` por `--remote-debugging-pipe` (con `--enable-unsafe-extension-debugging`) la
-     carga para esa ejecución, sin guardarla en el perfil. Es una alternativa a publicar en la Web Store para el
-     navegador que maneja el servicio, pero usa el canal de depuración: queda para decidir en el punto 13.
-   - **`x-rate-limit-*` llega** en `SearchTimeline`, que es del mismo origen (x.com), así que la página lo puede leer:
-     **50 búsquedas cada 15 minutos** por cuenta de X, y al agotarse, 429 con `remaining` en 0 (punto 11).
-   - **`since_time:` y `until_time:` andan** en «Más reciente», al segundo y en UTC (punto 12).
-   - **`since:` y `until:` no son lo que xport asumía.** X los toma como días en la hora de quien busca (UTC−3 en la
-     prueba) y deja adentro el día de `until:`. Medido con @Reuters: `since:2026-11-06` no trae nada antes de las 03:00
-     UTC del 6, y `until:2026-11-07` llega hasta las 02:59 UTC del 8. Tres consecuencias: las primeras horas (UTC) del
-     día de inicio no se piden nunca y se pierden sin aviso; se pide un día de más arriba, que el export descarta pero
-     gasta accesos; y el crawl podía quedar en bucle, ya arreglado (ver «Cómo lo fui construyendo»). Lo primero se
-     arregla pasando la búsqueda a `since_time:`/`until_time:` (punto 12).
-   - **Queda entero el rango:** el mes de @nasa salió igual las dos veces que se capturó (54 tweets) y llegó al primer
-     tweet del rango. No lo comparé tweet por tweet contra una captura con ventana.
-
-### Fase 3: la cola y la página local (hecha el 10 de noviembre)
-
-Está en el código y con tests (ver «Cómo lo fui construyendo»). Los números siguen, porque el resto del plan los cita.
-Falta pasarla por un navegador y lo que dice cada punto:
-
-7. **Cola de capturas.** Hecha: `POST /captures`, `GET /captures`, `POST /captures/next` y `POST /captures/{id}/state`,
-   en `queue.db`, y `tweet-extractor capture`; el «Capturar ▶» del popup también encola. Probado el 11 de noviembre: dos
-   cuentas encoladas desde la página salieron en dos CSV sin tocar nada en el medio. Si la pestaña de la cola se cierra,
-   el background la vuelve a abrir; si la persona la usa para otra cosa, la captura queda en curso sin avanzar hasta que
-   la cancele (lo resuelve el navegador invisible, punto 13). El estado «esperando a X» llegó con el punto 11.
+7. **Cola de capturas.** Hecha: `POST /captures`, `GET /captures`, `POST /captures/next` y
+   `POST /captures/{id}/state`, en `queue.db`, y `tweet-extractor capture`. Con la extensión del navegador de siempre,
+   si la persona usa la pestaña de la cola para otra cosa, la captura queda en curso sin avanzar hasta que la cancele.
 8. **La página local.** Hecha (`service/page/`, sin build), con el chequeo de `Origin`, las fechas inclusivas con
-   atajos, el avance por captura y el tope con su resumen diario. Abierta el 11 de noviembre en Chrome, en los dos
-   idiomas y sin errores en la consola. El contador «Capturado» del popup sigue como estaba, hasta que el popup se vaya.
-9. **Avisar cuando termina y exportar solo.** Hecho en el servicio (`service/notify.py`): en Linux con `notify-send`,
-   donde el clic abre el CSV; en Windows con un toast de PowerShell, y en macOS con `osascript`, sin clic. Ninguna se
-   probó a mano, y las de Windows y macOS ni siquiera corrieron.
-10. **Cuenta inexistente, suspendida o protegida.** Hecho el 11 de noviembre y probado contra x.com (ver «Cómo lo fui
-    construyendo»). Una captura que termina sin un solo tweet en el rango lleva su pestaña a `x.com/<cuenta>/following`,
-    que pide `UserByScreenName` sin cargar posts; `mappers/account_mapper.py` lo interpreta y el aviso dice si la cuenta
-    no existe, está suspendida, es protegida, bloqueó a la cuenta de X de xport, X no la muestra por otro motivo, o
-    existe y es pública pero la búsqueda no trajo nada. Los tests usan respuestas reales recortadas
-    (`tests/mappers/fixtures/`). La protegida que la cuenta de xport sigue y el bloqueo salen de esas mismas respuestas
-    tocadas a mano: no los pude medir.
+   atajos, el avance por captura y el tope con su resumen diario.
+9. **Avisar cuando termina y exportar solo.** Hecho (`service/notify.py`): en Linux con `notify-send`, donde el clic
+   abre el CSV; en Windows con un toast de PowerShell, y en macOS con `osascript`, sin clic. Falta probarlas a mano.
+10. **Cuenta inexistente, suspendida o protegida.** Hecho y probado. Una captura que termina sin un solo tweet en el
+    rango lleva su pestaña a `x.com/<cuenta>/following`, que pide `UserByScreenName` sin cargar posts;
+    `mappers/account_mapper.py` lo interpreta. La protegida que la cuenta de xport sigue y el bloqueo salen de
+    respuestas reales tocadas a mano: no se pudieron medir.
 
-### Fase 4: el crawl (hecha el 10 de noviembre)
+### El crawl
 
-Está en el código, con tests, y probada contra x.com (ver «Cómo lo fui construyendo»). Los números siguen, porque el
-resto del plan los cita.
+11. **Esperar a X en vez de insistir.** Hecho y probado. El parche de `fetch` y XHR pasa aparte el status y los
+    `x-rate-limit-*` de cada respuesta de `SearchTimeline` (HTTP, no GraphQL: la regla 4 se mantiene) y `decideRate`
+    (`lib/rate.ts`) decide. Espera al reset más 15 s, y como mínimo un minuto después de un 429, por si el reloj local
+    está adelantado. Con menos de 10 búsquedas en el cupo, reparte las que quedan hasta el reset.
+12. **La búsqueda al segundo.** Hecho y probado: `since_time:`/`until_time:` en segundos UTC, la cota al segundo del
+    tweet más viejo más uno, y `/progress` devuelve la hora del más viejo para retomar desde ahí.
 
-11. **Esperar a X en vez de insistir.** Hecho: el parche de `fetch` y XHR pasa aparte el status y los `x-rate-limit-*`
-    de cada respuesta de `SearchTimeline` (HTTP, no GraphQL: la regla 4 se mantiene), y `decideRate` (`lib/rate.ts`)
-    decide. Ante un 429, o con el cupo en cero, el crawl guarda hasta dónde llegó y hasta cuándo espera: el reset más
-    15 s, y como mínimo un minuto después del 429, por si el reloj local está adelantado. El background saca la pestaña
-    de la búsqueda a la página local, para que x.com no siga reintentando, y la vuelve a la búsqueda cuando pasa la hora
-    (lo mira en la vuelta de la cola, cada medio minuto). La captura queda «esperando a X hasta las 18:40» (`waiting`,
-    con `resume_at`) en la cola, la página y el popup, y no se notifica: sigue sola. Con menos de 10 búsquedas en el
-    cupo, el crawl reparte las que quedan hasta el reset, con una espera de hasta dos minutos por respuesta. Probado: la
-    captura de un día de @AmazonHelp agotó el cupo tres veces, esperó cada vez al reset y siguió sola. Con el ritmo
-    repartido, X casi no llega a contestar 429: el crawl ve el cupo en cero antes, y espera igual.
-12. **Partir los días saturados por hora.** Hecho, y al segundo: la búsqueda pasa a `from:<cuenta> since_time:<s>
-    until_time:<s>`, en segundos UTC, y cuando se asienta antes de `since` la cota baja al segundo del tweet más viejo
-    cargado más uno: lo re-incluye, así no se pierde otro del mismo segundo, sea `until_time:` exclusivo o no. Si una
-    búsqueda no trae nada más viejo que ese tweet, el rango terminó (con un «Reintentar» a la vista, en cambio, recarga).
-    `/progress` devuelve la hora del más viejo y ya no `oldest_count`, y la reanudación arranca ahí. Se fueron el umbral
-    de 800 y el salteo de días, y con ellos las primeras horas (UTC) del día de inicio que se perdían. Probado: el 9 de
-    noviembre de @AmazonHelp salió entero, 2.830 tweets con las 24 horas cubiertas, y la captura terminó sola cuando la
-    búsqueda hasta las 00:00:32 no trajo nada más viejo.
+### El navegador de xport
 
-### Fase 5: el navegador invisible (hecha el 10 de noviembre, en Linux)
+13. **El servicio maneja el perfil de xport.** Hecho en Linux (ver «Cómo se captura»). Cada minuto mira la sesión; si
+    una pestaña queda en una página de error dos veces seguidas, reinicia el navegador, y a la tercera falla le
+    devuelve la cola a la extensión del navegador de siempre. Falta: Windows y macOS, y sacar el native host y el popup
+    cuando el instalador cubra los tres sistemas.
 
-13. **El servicio maneja el perfil de xport.** Hecho así: el servicio busca Chrome, Chromium o Edge y cage; con capturas
-    en la cola, arranca el navegador adentro de cage (X rechaza `--headless` con un 403), le carga la extensión con
-    `Extensions.loadUnpacked` por el pipe y le deja la marca `xport:runner` con `Extensions.setStorageItems` desde su
-    service worker. Cada minuto mira la sesión: si falta la cookie o una pestaña quedó en el inicio de sesión de X,
-    borra las cookies y abre el perfil en una ventana común de Chrome, sin el pipe ni ninguna opción especial, hasta que
-    la cookie de sesión aparece en la base de cookies del perfil (una ventana chica en modo aplicación y con el pipe no
-    dejaba terminar el inicio de sesión con una cuenta real); si una pestaña queda
-    en una página de error dos veces seguidas, lo reinicia, y a la tercera falla le devuelve la cola a la extensión del
-    navegador de siempre. Sin cage (Windows, macOS, o Linux sin instalarlo) no se usa, y la captura sigue como antes.
-    Falta: Windows y macOS (la ventana propia sin foco del plan B), y sacar el native host y el popup cuando el
-    instalador esté. Lo que decía el plan: Cómo: arranca y para Chrome o Edge con `--user-data-dir=<datos>/browser`,
-    sin ventana mientras haya capturas en la cola (el punto 6 eligió headless; la extensión se carga por el pipe de
-    depuración o se instala desde la Web Store, a decidir). Lo abre en una ventana chica y
-    sin foco (`windows.create({ focused: false })`) para iniciar sesión, cuando X pide una verificación o cierra la
-    sesión (lo nota porque la búsqueda redirige al login o porque no entran páginas), y como plan B donde el modo sin
-    ventana no ande. El native host y el popup quedan mientras dure la transición y después se sacan. Listo cuando: una
-    captura pedida desde la página termina sin ninguna ventana a la vista, y si X cierra la sesión aparece la ventana
-    para iniciarla. Cuando esté, el `CLAUDE.md` del repo y el README pasan a contar esta arquitectura. Mediano a
-    grande.
+### El instalador
 
-### Fase 6: el instalador (después de esta implementación)
-
-14. **Instaladores para Windows, macOS y Linux**, con lo que deja resuelto la decisión de arriba: el servicio empaquetado
-    sin uv ni Python, un acceso directo «xport» y el perfil de xport armado en el primer arranque. **Linux, hecho el 11
-    de noviembre** (ver «Cómo lo fui construyendo»): `deploy/bundle/build.py`, `launcher.py` e `installer.py`. Falta:
-    probar el paquete de Windows y el de macOS en esos sistemas (CI los arma y les hace la prueba de humo, nada más);
-    publicar los paquetes en un release de GitHub (hoy CI no los guarda); firmar el de Windows y el `xport.app`, porque
+14. **Instaladores para Windows, macOS y Linux:** el servicio empaquetado sin uv ni Python, un acceso directo «xport» y
+    el primer inicio de sesión guiado desde la página. Hecho en Linux: `deploy/bundle/build.py`, `launcher.py` e
+    `installer.py`. Falta: probar el paquete de Windows y el de macOS en esos sistemas (CI los arma y les hace la
+    prueba de humo, nada más); publicar los paquetes en cada release; firmar el de Windows y el `xport.app`, porque
     SmartScreen y Gatekeeper avisan con uno sin firma; y, en esos dos sistemas, el navegador sin ventana del punto 13.
     Hasta entonces, ahí la captura la hace la extensión del navegador de siempre.
 15. **Publicar la extensión sin listar** en la Chrome Web Store (sirve para Chrome y Edge) y firmarla sin listar en AMO
-    (`web-ext sign --channel=unlisted`), así ni Chrome pide el modo de desarrollador ni Firefox la borra al cerrarse. Las
-    cuentas de las dos tiendas las saco yo.
+    (`web-ext sign --channel=unlisted`), así ni Chrome pide el modo de desarrollador ni Firefox la borra al cerrarse.
 
 ### Lo que depende de otros
 
-16. **Probar la API oficial contra la API real**, con una clave paga (no tengo una): que `tweet.fields` siga andando,
-    que los posts largos traigan `note_tweet` y que el rate limit sea el documentado.
+16. **Probar la API oficial contra la API real**, con una clave paga: que `tweet.fields` siga andando, que los posts
+    largos traigan `note_tweet` y que el rate limit sea el documentado.
 17. **Si twscrape se destraba**, comprobar contra datos reales que el filtro de fechas de la búsqueda acota de verdad,
     que el cursor pagina y termina, que la forma de las respuestas coincide con las de los tests y que los accesos por
     página no pasan la reserva. Si la forma real sorprende, revisar que el recorrido del sobre no tome como tweet de
-    primer nivel uno anidado dentro de una cita. Cada tanto, ver si salió una versión que vuelva a calcular el
-    `x-client-transaction-id`.
+    primer nivel uno anidado dentro de una cita.
 
-### Preguntas que estaban abiertas, ya decididas
+### Preguntas decididas
 
 - **Historia del registro:** un resumen por día, aparte de la ventana (punto 8).
-- **Días saturados:** ya no hay: la búsqueda va al segundo y se achica al tweet más viejo cargado (punto 12).
+- **Días saturados:** no hay: la búsqueda va al segundo y se achica al tweet más viejo cargado (punto 12).
 - **Estado de los trabajos del servicio:** `/jobs` no se persiste mientras ningún proveedor del servidor ande; la cola
   sí (punto 7).
 - **Qué cuenta como «link a un documento»:** todas las URLs externas. Filtrar después en la planilla es fácil, y filtrar
   antes pierde datos.
 - **Cuenta borrada o protegida:** se informa y la cola sigue (punto 10).
 - **Cuántas cuentas en paralelo:** una, en fila (punto 7).
-- **Un navegador de Windows con el servicio en WSL:** queda como está y sin probar. Con un instalador para Windows deja
-  de tener sentido.
+- **Un navegador de Windows con el servicio en WSL:** queda como está y sin probar; con el instalador de Windows deja de
+  tener sentido.
 
-## Cómo retomarlo en otra máquina
-
-```bash
-git clone https://github.com/bafif/xport.git
-cd xport
-uv sync                  # crea .venv desde uv.lock
-cp .env.example .env     # solo para twscrape o la API oficial
-uv run pytest -q
-```
-
-Lo capturado no viaja con el repo: está en la carpeta de datos (`~/.local/share/xport` en Linux). No viajan por git y se regeneran: el `.env` (con las cookies de una cuenta
-aparte), el `.venv`
-(`uv sync`) y `extension/node_modules`, `extension/dist` y `extension/.wxt` (el build con Podman o
-`npm ci && npm run build` dentro de `extension/`).
+Para preparar el entorno de desarrollo, ver [Cómo está hecho](ARCHITECTURE.md#desarrollar).

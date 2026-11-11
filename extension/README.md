@@ -1,73 +1,61 @@
 # xport: la extensión
 
-[English](README.en.md)
+[English](README.en.md) · [Volver al README](../README.md)
 
-Extensión Chrome (MV3) + Firefox, código compartido vía [WXT](https://wxt.dev).
-Es el camino principal para capturar tweets:
+Extensión para Chrome (MV3) y Firefox (MV2), con un solo código gracias a [WXT](https://wxt.dev). Es la que captura:
 
-- **Captura in-page:** los content scripts capturan las
-  respuestas GraphQL que x.com ya descarga en la búsqueda y el background las
-  manda a `POST /ingest` del servicio local. La extensión **no parsea GraphQL**:
-  el backend mapea, guarda y registra los accesos en el Compliance Gate.
-- **Crawl adaptativo:** «Capturar» abre la búsqueda de la cuenta y el rango,
-  scrollea sola y, si x.com corta antes de llegar a la fecha inicial, achica el
-  rango y vuelve a buscar. Si X frena la búsqueda, la próxima captura retoma
-  desde lo ya guardado (`POST /progress`).
-- **Popup de un solo flujo:** cuenta + desde + hasta → Capturar / Detener /
-  Exportar CSV, más el estado del gate.
-- **Auto-arranque (opcional):** con el host nativo de
-  `deploy/native-host/`, el navegador levanta y baja el servicio solo.
+- **Toma el trabajo de la cola** del servicio (`POST /captures/next`) y abre la búsqueda de X de cada captura. Corre
+  en el Chrome de xport, adentro de una pantalla invisible, o en el navegador de la persona cuando ese Chrome no está.
+- **Captura lo que x.com ya descarga:** los content scripts copian las respuestas GraphQL de la búsqueda y el
+  background las manda a `POST /ingest`. La extensión **no interpreta GraphQL**: el servicio las mapea, las guarda y
+  registra los accesos en el tope.
+- **Recorre la búsqueda sola:** scrollea, reintenta las cargas en blanco, sigue desde el segundo del tweet más viejo
+  cuando X frena la búsqueda, espera cuando se acaba el cupo de búsquedas y retoma desde lo guardado
+  (`POST /progress`).
+- **Corta cuando el tope no puede contar:** sin servicio, con el tope lleno o si el servicio rechaza un lote.
+- **El popup** encola una cuenta, exporta el CSV y muestra el estado del tope, en castellano o en inglés.
 
-## Requisitos
+## Dónde está cada cosa
 
-- Node (ver `.node-version` → 22). En desarrollo la manejo con `fnm`; en un contenedor
-  no hace falta, porque la imagen de Node está fijada.
-- El servicio de xport corriendo (ver raíz del repo): `uv run fastapi dev
-  src/tweet_extractor/service/app.py`, o `podman compose -f deploy/compose.yaml up`.
+| Archivo | Qué hace |
+|---|---|
+| `entrypoints/background.ts` | la cola, las pestañas de captura, el envío al servicio |
+| `entrypoints/capture-main.content.ts`, `capture-bridge.content.ts` | el parche de `fetch` y XHR en x.com y el puente al background |
+| `entrypoints/autoscroll.content.ts` | el recorrido de la búsqueda |
+| `entrypoints/popup/` | el popup |
+| `lib/` | la lógica pura, con sus tests: cola, tope, límites de X, cuenta sin tweets, idioma |
+| `locales/` | los textos en castellano y en inglés |
 
 ## Comandos
 
-Sin Node en la máquina, desde la raíz del repo (Podman):
+Sin Node en la máquina, desde la raíz del repo y con Podman:
 
 ```bash
-bash deploy/extension-build.sh
+bash deploy/extension-build.sh   # chequeo de tipos, tests y las dos versiones en dist/
 ```
 
-Con Node local:
+Con Node 22 (la versión está en `.node-version`), desde `extension/`:
 
 ```bash
-fnm use            # fija Node a la versión de .node-version
-npm ci             # instala deps desde package-lock.json (corre `wxt prepare`)
-npm run dev        # WXT dev (Chrome) con HMR
-npm run dev:firefox
-npm run compile    # tsc --noEmit (typecheck)
-npm run build      # → dist/chrome-mv3 y dist/firefox-mv2
-npm run zip        # empaqueta para subir a las stores
+npm ci                 # dependencias desde package-lock.json
+npm run dev            # Chrome con recarga en caliente
+npm run dev:firefox    # lo mismo en Firefox
+npm run compile        # chequeo de tipos
+npm test               # tests (vitest)
+npm run build          # dist/chrome-mv3 y dist/firefox-mv2
+npm run build:chrome   # solo Chrome, lo que usa el instalador
+npm run zip            # los zip para publicar
 ```
 
-## Cargar sin firmar (dev)
+Para cargarla a mano en el navegador, ver [Instalar](../docs/INSTALL.md#la-extensión-en-tu-navegador).
 
-- **Chrome**: `chrome://extensions` → modo desarrollador → "Cargar descomprimida"
-  → `dist/chrome-mv3`.
-- **Firefox**: `about:debugging` → "Este Firefox" → "Cargar complemento temporal"
-  → `dist/firefox-mv2/manifest.json`.
+## Por qué no necesita CORS
 
-## Por qué no necesita CORS del servidor
+El popup es una página de la extensión. Con `host_permissions` sobre el servicio (`http://localhost/*`,
+`http://127.0.0.1/*`), sus `fetch` no quedan sujetos a CORS. `CORS_ALLOW_ORIGINS` solo haría falta si una página web
+llamara a la API.
 
-El popup es una *extension page*. Con `host_permissions` sobre el host del
-servicio (`http://localhost/*`, `http://127.0.0.1/*`), sus `fetch` cross-origin
-no quedan sujetos a CORS. El `CORS_ALLOW_ORIGINS` del FastAPI solo hace falta si
-en el futuro un *content script* o una página web llaman a la API.
+## Íconos
 
-## Iconos
-
-WXT autodescubre `public/icon/{size}.png` y los cablea solo en los manifests de
-Chrome y Firefox (incluido `action.default_icon`, el de la barra de direcciones).
-Para regenerarlos: guardá el maestro 1024×1024 en `scripts/icon-master.png` y corré
-`./scripts/make-icons.sh` (detecta ImageMagick / `sips` / Pillow). Detalle en
-`scripts/README.md`.
-
-## Pendiente
-
-- Una verificación end-to-end documentada del flujo completo en un navegador real.
-- El puente de native messaging desde un navegador en Windows hacia WSL.
+WXT toma `public/icon/{tamaño}.png` y los pone en los manifiestos de Chrome y Firefox. Salen de
+`scripts/icon-master.png` con `./scripts/make-icons.sh`; detalle en [scripts/README.md](scripts/README.md).

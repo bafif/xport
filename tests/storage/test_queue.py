@@ -117,7 +117,7 @@ async def test_esperando_a_x_sigue_siendo_la_que_va(tmp_path: Path) -> None:
 
 
 async def test_una_cola_vieja_recibe_la_columna_nueva(tmp_path: Path) -> None:
-    # Una queue.db de la Fase 3, sin `resume_at`: al abrirse se le suma, sin perder nada.
+    # Una queue.db de una versión anterior, sin `resume_at`: al abrirse se le suma, sin perder nada.
     path = tmp_path / "queue.db"
     async with aiosqlite.connect(path) as db:
         await db.execute(

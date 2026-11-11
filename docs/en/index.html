@@ -55,40 +55,43 @@
 
   <main>
     <p class="consulta">from:account 2026-01-01 → 2026-06-30 <span>↗ account_2026-01-01_2026-06-30.csv</span></p>
-    <h1>The tweets of an X account, between two dates, in a CSV.</h1>
-    <p>A Chrome or Firefox extension scrolls X's search for you, and a service running on your computer writes one CSV
-      per account: the date, the full text, the links and the quoted tweet. Quote tweets are in; retweets are not.</p>
-    <p class="promesa"><strong>It cannot cross the limit in X's terms.</strong> It counts every post the browser sees,
-      including quoted tweets and the retweets it later drops, and stops at 900,000 within any 24-hour window. If the
-      service cannot count what is being captured, the capture does not start, or it stops.</p>
+    <h1>The tweets of any X account, between two dates, in a CSV.</h1>
+    <p>Type one or more accounts and a date range. xport goes through X's search for you and leaves you one CSV per
+      account: the date, the full text, the links and the quoted tweet. It uses a regular X session, with no API key and
+      nothing to pay.</p>
+    <p class="promesa"><strong>It cannot cross the cap in X's terms.</strong> It counts every post it sees, including
+      quoted tweets and the retweets it later drops, and stops at 900,000 within any 24-hour window. If it cannot count
+      what is being captured, the capture does not start or stops.</p>
     <div class="acciones">
-      <a class="boton principal repo" data-ruta="/blob/main/README.en.md#install" href="https://github.com/">How to install it</a>
-      <a class="boton repo" data-ruta="/blob/main/docs/PLAN.en.md" href="https://github.com/">Decisions and status</a>
+      <a class="boton principal" href="#install">Install</a>
+      <a class="boton repo" data-ruta="/blob/main/docs/USAGE.en.md" href="https://github.com/">How to use it</a>
     </div>
 
     <figure class="figura">
       <img src="../img/flujo.en.svg" width="900" height="340"
-        alt="The extension copies what x.com already downloaded and hands it to the local service, which stores it without repeats and writes one CSV per account. The 24-hour cap counts every post seen; if it cannot count it, the capture stops.">
+        alt="The extension copies what x.com already downloaded and hands it to the local service, which stores it without duplicates and builds one CSV per account. The 24-hour cap counts every post seen; if it cannot count it, the capture stops.">
     </figure>
 
-    <h2>From the popup</h2>
-    <div class="popup">
-      <div class="marco esquina"><img src="../img/popup.png" width="360" height="616" loading="lazy"
-        alt="The xport popup, in Spanish in this screenshot, with an example account, the date range, the cap usage and the link to the exported CSV."></div>
+    <h2>Many accounts, hands off</h2>
+    <div class="uso">
+      <div class="marco esquina"><img src="../img/pagina.en.png" width="776" height="1434" loading="lazy"
+        alt="xport's page: the form with the accounts and the dates, a capture running at 54% of the range, two queued, one done with its CSV to download, and the cap's usage."></div>
       <ol>
-        <li><strong>Fill in</strong> the account without @ and the «From» and «To» dates. The popup speaks English or
-          Spanish, whichever your browser uses, and has a selector at the top.</li>
-        <li><strong>«Capture ▶»</strong> opens the search in a tab and scrolls it by itself. X cuts each search at about
-          a thousand results; the extension carries on from the last tweet it saw until the range is covered.</li>
-        <li><strong>«Export CSV»</strong> writes the file and says how many replies to other accounts it left out.</li>
-        <li><strong>If X throttles the search,</strong> the capture waits until the time X gives and carries on by
-          itself from where it was.</li>
+        <li><strong>Open xport</strong> from the applications menu and its page shows up in your browser. The first
+          time, «Log in to X» opens a window to sign in to X.</li>
+        <li><strong>Type the accounts and the dates</strong> and press «Capture». They go into a queue and come out one
+          at a time.</li>
+        <li><strong>Get on with your day.</strong> On Linux, xport captures with its own Chrome on an invisible screen.
+          If X throttles the search, it waits and carries on from where it was.</li>
+        <li><strong>It tells you when it is done.</strong> Each account ends with a notification and its CSV to
+          download. If one brought no tweets, it says why: it doesn't exist, it's suspended, it's protected or it posted
+          nothing in those dates.</li>
       </ol>
     </div>
 
     <h2>The CSV</h2>
-    <p>One per account and date range, in UTF-8 and comma separated. Links go in one cell, separated by spaces; if the
-      tweet quotes another, the quoted tweet's id and link are included.</p>
+    <p>One per account and date range, in UTF-8 and comma separated, with a checkbox for an Excel set to Spanish. Links
+      go in one cell, separated by spaces; if the tweet quotes another, the quoted tweet's id and link are included.</p>
     <div class="csv esquina">
       <p>account_2026-01-01_2026-06-30.csv</p>
       <pre><b>account,created_at,content,links,quoted_tweet_id,quoted_tweet_url</b>
@@ -103,20 +106,46 @@ account,2026-03-12T09:40:57+00:00,"This, yes.",,1899412345678901234,https://x.co
     </figure>
     <p>The cap is 900,000 and not a million, to leave a margin. The window is rolling: a per-day counter would let almost
       two million through between 11 pm and 1 am. The cap's ledger lives in a separate database, so it survives deleting
-      the tweets, and no configuration variable changes it.</p>
+      the tweets, and no setting changes it.</p>
+
+    <h2 id="install">Install</h2>
+    <p>Download the installer for your system from the <a class="repo" data-ruta="/releases/latest"
+      href="https://github.com/">latest release</a>. It brings its own Python: all you need is Google Chrome (or
+      Chromium or Edge).</p>
+    <div class="sistemas">
+      <div class="sistema">
+        <h3>Linux</h3>
+        <pre>tar -xzf xport-*-linux-x86_64.tar.gz
+./xport/install.sh</pre>
+        <p>It ends up in the applications menu and as the <code>xport</code> command. It needs
+          <a href="https://github.com/cage-kiosk/cage">cage</a>, the invisible screen for its Chrome: the installer tells
+          you if it is missing.</p>
+      </div>
+      <div class="sistema">
+        <h3>Windows</h3>
+        <p>Unzip the <code>.zip</code> and double-click <code>xport\install.cmd</code>. It ends up in the Start menu and
+          on the desktop.</p>
+      </div>
+      <div class="sistema">
+        <h3>macOS</h3>
+        <p>Open the <code>.tar.gz</code> and drag <code>xport.app</code> to Applications.</p>
+      </div>
+    </div>
+    <p class="secundario">On Windows and macOS the capture is done by xport's extension in your Chrome, which you load
+      once. Every step, building the installer from the source and uninstalling, in
+      <a class="repo" data-ruta="/blob/main/docs/INSTALL.en.md" href="https://github.com/">Install</a>.</p>
 
     <h2>It is private</h2>
-    <p>It uses the X session you already have open: your cookies never leave the browser. The service only listens on
-      your computer, only answers requests addressed to it, and what it captures stays in a folder of yours. It is not
-      sent anywhere else.</p>
+    <p>What you capture stays on your computer. The service only listens on it, only answers requests addressed to it and
+      sends nothing anywhere else. The X session stays in xport's profile and the cookies never leave it.</p>
 
     <h2>Status</h2>
     <ul class="estado">
-      <li>In-browser capture works against x.com, with resume and export.</li>
-      <li>The capture cut-offs added in November 2026 were tried against x.com on November 10, in headless Chrome.</li>
-      <li>With the official X API, which is paid, it is implemented but has not been tried against the real API.</li>
-      <li>Downloading without a browser with a regular account has been blocked since June 2026, when x.com changed how
-        it signs requests.</li>
+      <li>Linux: tried end to end against x.com, with the installer and the windowless capture.</li>
+      <li>Windows and macOS: the installer builds and starts in continuous integration, but it has not been tried on
+        those systems yet.</li>
+      <li>With X's official API, which is paid, it is implemented but has not been tried against the real API.</li>
+      <li>Downloading without a browser with a regular account does not work: x.com changed how it signs requests.</li>
     </ul>
   </main>
 
