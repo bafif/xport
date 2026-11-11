@@ -221,7 +221,36 @@ def test_find_browser_explicit_and_from_path(
     )
     assert find_browser(None) == Path("/usr/bin/chromium")
     monkeypatch.setattr(mod.shutil, "which", lambda n: None)
-    assert find_browser(None) is None
+    assert find_browser(None, platform="linux") is None
+
+
+def test_find_browser_where_macos_and_windows_install_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """macOS y Windows no ponen el navegador en el PATH: se busca en sus carpetas."""
+    monkeypatch.setattr(mod.shutil, "which", lambda n: None)
+    home = tmp_path / "home"
+    assert find_browser(None, platform="darwin", env={"HOME": str(home)}) is None
+    edge = home / "Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+    edge.parent.mkdir(parents=True)
+    edge.write_text("")
+    assert find_browser(None, platform="darwin", env={"HOME": str(home)}) == edge
+    assert Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") in (
+        mod.installed_browsers("darwin", {})
+    )
+
+    programs, local = tmp_path / "Program Files", tmp_path / "Local"
+    env = {"PROGRAMFILES": str(programs), "LOCALAPPDATA": str(local)}
+    assert find_browser(None, platform="win32", env=env) is None
+    mine = local / "Google/Chrome/Application/chrome.exe"  # instalado solo para la persona
+    mine.parent.mkdir(parents=True)
+    mine.write_text("")
+    assert find_browser(None, platform="win32", env=env) == mine
+    shared = programs / "Google/Chrome/Application/chrome.exe"  # para todos: va primero
+    shared.parent.mkdir(parents=True)
+    shared.write_text("")
+    assert find_browser(None, platform="win32", env=env) == shared
+    assert mod.installed_browsers("linux", env) == []
 
 
 async def test_starts_headless_loads_the_extension_and_marks_it(tmp_path: Path) -> None:

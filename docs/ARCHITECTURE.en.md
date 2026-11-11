@@ -117,7 +117,8 @@ there is no room and that it waits until the oldest access leaves the window. Th
 is cut.
 
 Continuous integration (`.github/workflows/ci.yml`) runs all of that, builds the service image and both versions of
-the extension, and builds the installable package on Linux, Windows and macOS, with a smoke test on each.
+the extension, and builds the installable package on Linux, Windows and macOS, with a smoke test on each. When a release is
+published, `.github/workflows/release.yml` builds the installers and the extension zips and attaches them to it.
 
 ## Languages
 
