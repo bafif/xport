@@ -113,7 +113,8 @@ hay lugar y que espere hasta que el acceso más viejo salga de la ventana. Las d
 captura.
 
 La integración continua (`.github/workflows/ci.yml`) corre todo eso, arma la imagen del servicio y las dos versiones de
-la extensión, y arma el paquete instalable en Linux, Windows y macOS, con una prueba de humo en cada uno.
+la extensión, y arma el paquete instalable en Linux, Windows y macOS, con una prueba de humo en cada uno. Al publicar un release,
+`.github/workflows/release.yml` arma los instaladores y los zip de la extensión y los adjunta al release.
 
 ## Idiomas
 

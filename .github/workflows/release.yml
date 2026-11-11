@@ -1,0 +1,62 @@
+# When a release is published, builds the installer on Linux, Windows and macOS (each
+# on its own system, with its own Python) and the Chrome and Firefox extension zips,
+# and attaches them to the release. Run by hand, it builds the chosen branch and
+# attaches the files to the tag given. GitHub-hosted runners only.
+name: release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the files to
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: extension (Chrome MV3)
+        shell: bash
+        working-directory: extension
+        run: npm ci && npm run build:chrome
+      - uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
+      - name: installer + smoke test
+        shell: bash
+        run: uv run python deploy/bundle/build.py --smoke
+      - name: attach to the release
+        shell: bash
+        run: gh release upload "$TAG" dist/bundle/xport-* --clobber --repo "$GITHUB_REPOSITORY"
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Chrome and Firefox zips
+        working-directory: extension
+        run: |
+          npm ci && npm run zip
+          v=$(node -p "require('./package.json').version")
+          cp "dist/xport-extension-$v-chrome.zip" "../xport-$v-chrome.zip"
+          cp "dist/xport-extension-$v-firefox.zip" "../xport-$v-firefox.zip"
+      - name: attach to the release
+        run: gh release upload "$TAG" xport-*-chrome.zip xport-*-firefox.zip --clobber --repo "$GITHUB_REPOSITORY"

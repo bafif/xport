@@ -252,9 +252,10 @@ The numbers stay because the code cites them. Each item says what it is and, if 
 ### The installer
 
 14. **Installers for Windows, macOS and Linux:** the service packaged without uv or Python, an «xport» shortcut and the
-    first login guided from the page. Done on Linux: `deploy/bundle/build.py`, `launcher.py` and `installer.py`. Left:
+    first login guided from the page. Done on Linux: `deploy/bundle/build.py`, `launcher.py` and `installer.py`. When a release is published,
+    `.github/workflows/release.yml` builds each system's package and the extension zips and attaches them. Left:
     trying the Windows and macOS packages on those systems (CI builds them and smoke-tests them, nothing more);
-    publishing the packages in each release; signing the Windows one and `xport.app`, because SmartScreen and
+    signing the Windows one and `xport.app`, because SmartScreen and
     Gatekeeper warn about unsigned ones; and, on those two systems, the windowless browser of item 13. Until then,
     capture there is done by the extension of the everyday browser.
 15. **Publishing the extension unlisted** in the Chrome Web Store (it works for Chrome and Edge) and signing it unlisted

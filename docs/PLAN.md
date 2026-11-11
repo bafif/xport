@@ -255,8 +255,9 @@ Los números se mantienen porque el código los cita. Cada punto dice qué es y,
 
 14. **Instaladores para Windows, macOS y Linux:** el servicio empaquetado sin uv ni Python, un acceso directo «xport» y
     el primer inicio de sesión guiado desde la página. Hecho en Linux: `deploy/bundle/build.py`, `launcher.py` e
-    `installer.py`. Falta: probar el paquete de Windows y el de macOS en esos sistemas (CI los arma y les hace la
-    prueba de humo, nada más); publicar los paquetes en cada release; firmar el de Windows y el `xport.app`, porque
+    `installer.py`. Al publicar un release, `.github/workflows/release.yml` arma el paquete de cada sistema y los zip
+    de la extensión y los adjunta. Falta: probar el paquete de Windows y el de macOS en esos sistemas (CI los arma y
+    les hace la prueba de humo, nada más); firmar el de Windows y el `xport.app`, porque
     SmartScreen y Gatekeeper avisan con uno sin firma; y, en esos dos sistemas, el navegador sin ventana del punto 13.
     Hasta entonces, ahí la captura la hace la extensión del navegador de siempre.
 15. **Publicar la extensión sin listar** en la Chrome Web Store (sirve para Chrome y Edge) y firmarla sin listar en AMO
