@@ -72,7 +72,7 @@
   "config.data_dir_absolute": "XPORT_DATA_DIR tiene que ser una ruta absoluta: {path}",
   "gate.over_cap": "pedido de {n} excede el hard_cap {cap}",
   "provider.unknown_backend": "provider_backend desconocido: {name}",
-  "provider.no_cookies": "Faltan cookies X_AUTH_TOKEN/X_CT0 en el entorno (.env). Cargá una cuenta de X aparte.",
+  "provider.no_cookies": "Faltan cookies X_AUTH_TOKEN/X_CT0 en el entorno (.env). Cargá las de una cuenta de X aparte de la tuya.",
   "provider.twscrape_failed": "twscrape no pudo completar el request de búsqueda (cuenta inválida/suspendida o rate-limit agotado)",
   "provider.no_bearer": "Falta X_API_BEARER_TOKEN en el entorno (.env): el backend oficial necesita el Bearer token de una app de X con acceso a la búsqueda de archivo completo.",
   "provider.api_unreachable": "no se pudo contactar a la API de X: {error}",

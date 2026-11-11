@@ -152,7 +152,7 @@ class Settings(BaseSettings):
     # factory lo lee). Un valor inválido falla la validación de pydantic.
     provider_backend: ProviderBackend = "twscrape"
 
-    # twscrape (sin API paga): cookies de una cuenta aparte (.env).
+    # twscrape: cookies de una cuenta de X aparte de la tuya (.env).
     x_auth_token: str | None = None
     x_ct0: str | None = None
     # X API v2 oficial (backend `official`, paga; sin probar contra la API real): Bearer token.

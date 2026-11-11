@@ -72,7 +72,7 @@
   "config.data_dir_absolute": "XPORT_DATA_DIR has to be an absolute path: {path}",
   "gate.over_cap": "a request for {n} exceeds the hard_cap of {cap}",
   "provider.unknown_backend": "unknown provider_backend: {name}",
-  "provider.no_cookies": "The X_AUTH_TOKEN/X_CT0 cookies are missing from the environment (.env). Load a separate X account.",
+  "provider.no_cookies": "The X_AUTH_TOKEN/X_CT0 cookies are missing from the environment (.env). Load those of an X account other than your own.",
   "provider.twscrape_failed": "twscrape couldn't complete the search request (invalid or suspended account, or rate limit used up)",
   "provider.no_bearer": "X_API_BEARER_TOKEN is missing from the environment (.env): the official backend needs the Bearer token of an X app with access to full-archive search.",
   "provider.api_unreachable": "couldn't reach the X API: {error}",
