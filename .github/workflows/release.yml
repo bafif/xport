@@ -1,4 +1,4 @@
-# When a release is published, builds the installer on Linux, Windows and macOS (each
+# When a release is published, builds the installer on Linux (glibc and musl), Windows and macOS (each
 # on its own system, with its own Python) and the Chrome and Firefox extension zips,
 # and attaches them to the release. Run by hand, it builds the chosen branch and
 # attaches the files to the tag given. GitHub-hosted runners only.
@@ -42,6 +42,22 @@ jobs:
         run: uv run python deploy/bundle/build.py --smoke
       - name: attach to the release
         shell: bash
+        run: gh release upload "$TAG" dist/bundle/xport-* --clobber --repo "$GITHUB_REPOSITORY"
+
+  # The package for Alpine and the other Linux with musl (xport-<version>-linux-x86_64-musl), built and tested
+  # inside Alpine, like the bundle-musl job of ci.yml.
+  installer-musl:
+    runs-on: ubuntu-latest
+    container: ghcr.io/astral-sh/uv:0.11.19-alpine
+    steps:
+      - run: apk add --no-cache bash git nodejs npm github-cli
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: extension (Chrome MV3)
+        working-directory: extension
+        run: npm ci && npm run build:chrome
+      - name: installer + smoke test
+        run: uv run python deploy/bundle/build.py --smoke
+      - name: attach to the release
         run: gh release upload "$TAG" dist/bundle/xport-* --clobber --repo "$GITHUB_REPOSITORY"
 
   extension:
