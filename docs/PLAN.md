@@ -439,6 +439,26 @@ los dos CSV (12 tweets en el de @esa: dos respuestas a conversaciones ajenas que
 error en la consola de la página. Lo único que apareció: al cambiar el idioma con el selector, el aviso del formulario
 («En la cola: …») quedaba en el idioma anterior; ahora se rehace, y un error que ya armó el servicio se borra.
 
+**11 de noviembre, a la tarde: el instalador para Linux (punto 14).** Arranqué la Fase 6 por lo que se puede probar en
+esta máquina. El paquete trae su propio Python: el CPython portable de python-build-standalone que baja uv, sin
+tkinter, idle ni los tests de la biblioteca, con las dependencias exactas de `uv.lock` y xport instalados adentro, más
+la extensión armada, el ícono y dos scripts. Lo arma `deploy/bundle/build.py` en el sistema para el que es, porque
+pydantic-core y uvloop vienen compiladas; el de Linux pesa 47 MB comprimido y 158 MB instalado. Lo que corre el acceso
+directo es `xport` (`launcher.py`): si no hay un xport contestando en el 8000 o en el 8080, arranca el servicio separado
+de sí mismo, espera a que `/healthz` diga xport y abre la página; si algo sale mal, además de escribirlo lo muestra en
+una notificación, porque un acceso directo no tiene terminal. `xport stop` lo cierra con el pid que el servicio deja en
+la carpeta de datos al arrancar, y `xport check` dice si están Chrome, cage y la extensión, con el comando que instala
+cage en la distribución de cada uno. El instalador (`installer.py`) lo corre el Python del paquete, así sus mensajes
+salen en los dos idiomas y lo prueban los tests: cierra el xport que esté corriendo, copia la carpeta a
+`~/.local/lib/xport` (reemplaza la anterior entera), arma el `.desktop` y el comando `xport` en `~/.local/bin`, muestra
+lo que falta y abre la página. El primer arranque es esa página: mientras el perfil de xport no tiene sesión de X,
+ofrece «Iniciar sesión en X», que abre la ventana sin esperar a una captura. Lo probé acá: el paquete se arma, su
+servicio arranca con el Python propio, contesta y se cierra; se instala en un HOME de prueba; el `.desktop` pasa
+`desktop-file-validate`; el servicio instalado contesta y su página, renderizada en Chrome, muestra el botón; el botón
+abre el Chrome del inicio de sesión, `xport stop` lo cierra junto con el servicio, y al desinstalar los datos quedan.
+Para Windows y macOS el mismo script arma un `.zip` con `install.cmd` y un `xport.app`, y CI los arma en los dos
+sistemas con la prueba de humo; no los probé en esos sistemas, y ahí todavía no hay navegador sin ventana.
+
 ## Dónde está hoy
 
 Funciona, y la usé contra x.com real: en junio y el 6 de noviembre en Chrome Beta, ya con los cortes de esa madrugada en
@@ -452,7 +472,9 @@ nada. La Fase 4 (10 de noviembre), la espera a X ante el rate limit y la búsque
 x.com: un día de @AmazonHelp con 2.830 tweets salió entero, pasando tres veces por el límite de búsquedas de X. Desde el
 10 de noviembre a la noche, en Linux, el servicio captura con su propio Chrome adentro de cage, sin ninguna ventana a la
 vista (la Fase 5), y todo está en castellano y en inglés. Desde el 11, una captura que no trae ningún tweet dice por
-qué, según cómo ve X a la cuenta (punto 10). Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen
+qué, según cómo ve X a la cuenta (punto 10). Desde el 11 a la tarde hay un instalador para Linux, probado en esta
+máquina: trae su propio Python, deja xport en el menú de aplicaciones y su página guía el primer inicio de sesión en X
+(punto 14). Los tests corren sin red, mypy en modo estricto y ruff pasan, y la imagen
 Alpine y la extensión se construyen en CI.
 
 El scraping del lado del servidor con twscrape está implementado y probado sin conexión, pero sigue bloqueado por el
@@ -497,6 +519,9 @@ Lo que está en el código, dónde y hasta dónde está probado. «Real» quiere
 | Imagen Alpine con nginx, build de la extensión en Podman, CI | `deploy/`, `.github/workflows/ci.yml` | CI |
 | README en castellano e inglés, página de GitHub Pages, logo e íconos generados | `README.md`, `README.en.md`, `docs/` | a ojo |
 | Castellano e inglés en todo: servicio, CLI, página local, extensión, sitio y documentos, con el idioma del equipo y un selector | `locales/`, `i18n.py`, `extension/locales/`, `lib/i18n.ts`, `docs/en/` | tests (catálogos completos y sin textos a mano, cada documento con su par); vitest |
+| El lanzador `xport`: arranca el servicio si no corre (o usa el que corre), abre la página, lo cierra y dice qué falta para capturar sin ventana | `launcher.py`, `service/pidfile.py` | tests, uno con el servicio de verdad; real en Linux (11/11) |
+| El paquete con su propio Python y el instalador: copia, acceso directo, comando, desinstalación que deja los datos | `deploy/bundle/build.py`, `installer.py` | tests; real en Linux (11/11): armado, prueba de humo, instalado y desinstalado en un HOME de prueba; Windows y macOS solo en CI, **sin probar en esos sistemas** |
+| Primer arranque: la página ofrece iniciar sesión en X antes de la primera captura | `service/browser.py` (`login_now`), `POST /browser/login`, `service/page/` | tests con un Chrome falso; real (11/11): el botón en la página y el Chrome del inicio de sesión |
 
 ## Capturar sin el navegador adelante
 
@@ -695,7 +720,12 @@ resto del plan los cita.
 ### Fase 6: el instalador (después de esta implementación)
 
 14. **Instaladores para Windows, macOS y Linux**, con lo que deja resuelto la decisión de arriba: el servicio empaquetado
-    sin uv ni Python, un acceso directo «xport» y el perfil de xport armado en el primer arranque.
+    sin uv ni Python, un acceso directo «xport» y el perfil de xport armado en el primer arranque. **Linux, hecho el 11
+    de noviembre** (ver «Cómo lo fui construyendo»): `deploy/bundle/build.py`, `launcher.py` e `installer.py`. Falta:
+    probar el paquete de Windows y el de macOS en esos sistemas (CI los arma y les hace la prueba de humo, nada más);
+    publicar los paquetes en un release de GitHub (hoy CI no los guarda); firmar el de Windows y el `xport.app`, porque
+    SmartScreen y Gatekeeper avisan con uno sin firma; y, en esos dos sistemas, el navegador sin ventana del punto 13.
+    Hasta entonces, ahí la captura la hace la extensión del navegador de siempre.
 15. **Publicar la extensión sin listar** en la Chrome Web Store (sirve para Chrome y Edge) y firmarla sin listar en AMO
     (`web-ext sign --channel=unlisted`), así ni Chrome pide el modo de desarrollador ni Firefox la borra al cerrarse. Las
     cuentas de las dos tiendas las saco yo.

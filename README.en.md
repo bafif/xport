@@ -19,7 +19,8 @@ capture stops.](docs/img/flujo.en.svg)
 ## Status
 
 In-browser capture works against x.com: it opens the account's search, scrolls it by itself, carries on when X cuts it
-short and picks up where it left off. The CSV has these columns:
+short and picks up where it left off. Since November 11 there is an installer for Linux that brings its own Python
+and puts xport in the applications menu (see [Install](#install)). The CSV has these columns:
 
 | Column | Contents |
 |---|---|
@@ -43,17 +44,19 @@ Chrome now runs inside cage.
 
 ## Everyday use: the page
 
-With the service running, `http://localhost:8000/` is xport's page, in English or Spanish like the rest of xport. It
-opens in your usual browser and handles several accounts at once:
+With the service running, `http://localhost:8000/` is xport's page, in English or Spanish like the rest of xport;
+with the installer, the «xport» shortcut opens it. It opens in your usual browser and handles several accounts at
+once:
 
 1. **Accounts and dates:** one or more accounts, separated by commas or spaces. «From» and «To» are both
    included («from 2025-01-01 to 2025-12-31, inclusive»), and an empty «To» means today. There are shortcuts: last month,
    last year and a whole year. If the CSV is going to an Excel set to Spanish, tick «For Excel set to Spanish».
 2. **Capture:** each account goes into the queue and they are captured one at a time (X throttles search per account,
    and in parallel it does not pay off). The service opens its own Chrome with the extension inside a virtual screen
-   nobody sees, so you do not have to keep anything in view or touch the browser. The first time, and whenever X ends
-   the session, a regular Chrome window shows up to log in to X; a separate account is better than your own. As soon as you log
-   in, the window closes by itself and the capture goes on. If you close it without logging in, or if the service
+   nobody sees, so you do not have to keep anything in view or touch the browser. The first time, the page offers «Log
+   in to X», which opens a regular Chrome window with xport's profile; a separate account is better than your own. If X
+   ends the session later, that window shows up by itself. As soon as you log in, the window closes by itself and the
+   capture goes on. If you close it without logging in, or if the service
    cannot use its Chrome (see [Install](#install)), the extension in your browser takes the queue as before: it opens
    the search in a tab and **that tab has to stay in view** while it captures.
 3. **Follow it:** each capture shows its state (queued, running, paused, done or stopped), how far back it got, how
@@ -112,6 +115,33 @@ the capture so you are not left with an empty CSV: you need a new version of xpo
 
 ## Install
 
+### With the installer (Linux)
+
+The package brings its own Python: you do not need to install Python, uv or Node. You do need Chrome, Chromium or Edge
+and [cage](https://github.com/cage-kiosk/cage), the invisible screen xport's Chrome runs in (`sudo pacman -S cage` on
+Arch, `sudo apt install cage` on Debian and Ubuntu), because X answers 403 to Chrome in `--headless` mode.
+
+1. **Build the package** (it is not published yet): in the repository folder, `bash deploy/extension-build.sh` and then
+   `uv run python deploy/bundle/build.py`. It ends up in `dist/bundle/xport-<version>-linux-x86_64.tar.gz`.
+2. **Install it:** `tar -xzf xport-<version>-linux-x86_64.tar.gz` and `./xport/install.sh`. It copies xport to
+   `~/.local/lib/xport`, adds it to the applications menu and as the `xport` command in `~/.local/bin`, says whether
+   something is missing (with the command that installs it on your distribution) and opens the page. It does not ask
+   for a password.
+3. **The first time**, the page offers «Log in to X»: it opens a regular Chrome window with xport's profile. A separate
+   X account is better than yours. You only do it once.
+
+After that, xport opens from the applications menu or with `xport` in a terminal: it starts the service if it is not
+running and opens the page. `xport stop` closes it, `xport status` tells whether it is running and `xport check` tells
+whether everything it needs is there. To update, install the new package on top. To uninstall,
+`~/.local/lib/xport/uninstall.sh`; your data (the cap's ledger, the tweets, the CSVs and the X session) stays in
+`~/.local/share/xport`.
+
+On Windows and macOS the package is built in CI (a `.zip` with `install.cmd` and an `xport.app` to drag to
+Applications), but it has not been tried on those systems yet, and there xport cannot capture without a window yet: the
+capture is made by the extension loaded in your browser, with the tab in view.
+
+### From the source
+
 You need [uv](https://docs.astral.sh/uv/), which brings the right Python (3.12, pinned in `.python-version`), and
 rootless [Podman](https://podman.io) to build the extension without installing Node. With Node 22 you can also build it
 without Podman. To capture with no window on Linux you need Chrome, Chromium or Edge and
@@ -128,12 +158,12 @@ the capture goes back to a tab in your browser. For now, the same on Windows and
    `bash deploy/native-host/install-linux.sh --chrome` (Chrome, Chrome Beta or Chromium). For a Windows browser with the service in
    WSL, and to diagnose problems, see [deploy/native-host/README.en.md](deploy/native-host/README.en.md).
 
-### In Chrome
+#### In Chrome
 
 1. Open `chrome://extensions` and turn on «Developer mode», at the top right.
 2. Click «Load unpacked» and choose the `extension/dist/chrome-mv3` folder.
 
-### In Firefox
+#### In Firefox
 
 1. Open `about:debugging` and choose «This Firefox».
 2. Click «Load Temporary Add-on…» and choose the `extension/dist/firefox-mv2/manifest.json` file.
@@ -247,8 +277,9 @@ the data folder.
 
 ## How it is built
 
-Continuous integration (`.github/workflows/ci.yml`) runs ruff, mypy and the tests, and builds the service image and
-both versions of the extension, with its tests, with Podman. By hand:
+Continuous integration (`.github/workflows/ci.yml`) runs ruff, mypy and the tests, builds the service image and
+both versions of the extension, with its tests, with Podman, and builds the installable package on Linux, Windows and
+macOS, with a smoke test. By hand:
 
 ```sh
 podman build -f deploy/Containerfile -t xport .
@@ -284,6 +315,10 @@ decisions:
   in one place, and a change the mapper does not understand gives an error, not an empty CSV.
 - The CSV defaults (UTF-8 without BOM, comma, everything quoted, UTC, `<account>_<from>_<to>.csv`) have been settled
   since June 2026. The same range rewrites its file and different ranges live side by side.
+- The installable package (`deploy/bundle/build.py`) brings the portable CPython from python-build-standalone that uv
+  downloads, with the exact dependencies of `uv.lock` installed inside: whoever uses it installs nothing but Chrome and
+  cage. It is built on each system because some dependencies come compiled (pydantic-core, uvloop). The installer
+  (`installer.py`) is run by that same Python, so its messages come in both languages and pytest tests it.
 - The image is Alpine, multi-stage, with no browser: Chromium on musl is not worth it. If one is ever needed, it goes
   in a separate image.
 - Only FastAPI handles CORS; nginx adds no headers, so they are never duplicated.
@@ -309,6 +344,8 @@ compliance/    the cap's ledger (SlidingWindowGate) and GatedProvider
 storage/       data SQLite (deduplicated, finished stretches) and streaming CSV export
 service/       FastAPI: captures, export, cap status, server-side downloads
 cli.py         the command line (Typer)
+launcher.py    the xport command behind the shortcut: starts the service and opens the page
+installer.py   the package's installer
 extension/     extension for Chrome and Firefox (WXT)
 ```
 

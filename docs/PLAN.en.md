@@ -473,6 +473,26 @@ afterwards and both CSVs came out (12 tweets in @esa's: two replies to other peo
 the selector, the form's notice ("Queued: …") stayed in the previous language; now it's redone, and an error the
 service already built is cleared.
 
+**November 11, in the afternoon: the installer for Linux (item 14).** I started Phase 6 with what can be tested on
+this machine. The package brings its own Python: the portable CPython from python-build-standalone that uv downloads,
+without tkinter, idle or the library's tests, with the exact dependencies of `uv.lock` and xport installed inside, plus
+the built extension, the icon and two scripts. `deploy/bundle/build.py` builds it on the system it is for, because
+pydantic-core and uvloop come compiled; the Linux one is 47 MB compressed and 158 MB installed. What the shortcut runs
+is `xport` (`launcher.py`): if no xport answers on 8000 or 8080, it starts the service detached from itself, waits for
+`/healthz` to say xport and opens the page; if something goes wrong, besides printing it, it shows it in a notification,
+because a shortcut has no terminal. `xport stop` closes it with the pid the service leaves in the data folder when it
+starts, and `xport check` says whether Chrome, cage and the extension are there, with the command that installs cage
+on each person's distribution. The installer (`installer.py`) is run by the package's Python, so its messages come in
+both languages and the tests cover it: it closes the running xport, copies the folder to `~/.local/lib/xport`
+(replacing the previous one whole), creates the `.desktop` entry and the `xport` command in `~/.local/bin`, shows what
+is missing and opens the page. The first launch is that page: while xport's profile has no X session, it offers «Log in
+to X», which opens the window without waiting for a capture. I tested it here: the package builds, its service starts
+with its own Python, answers and closes; it installs into a test HOME; the `.desktop` entry passes
+`desktop-file-validate`; the installed service answers and its page, rendered in Chrome, shows the button; the button
+opens the login Chrome, `xport stop` closes it together with the service, and uninstalling keeps the data. For Windows
+and macOS the same script builds a `.zip` with `install.cmd` and an `xport.app`, and CI builds them on both systems
+with the smoke test; I did not try them on those systems, and there is no windowless browser there yet.
+
 ## Where it stands today
 
 It works, and I've used it against real x.com: in June and on November 6 in Chrome Beta, already with
@@ -487,7 +507,9 @@ CSVs without touching anything. Phase 4 (November 10), waiting for X on the rate
 search, was tested against x.com: a day of @AmazonHelp with 2,830 tweets came out in full, hitting X's
 search limit three times. Since the night of November 10, on Linux, the service captures with its own
 Chrome inside cage, with no window in sight (Phase 5), and everything is in Spanish and English. Since
-the 11th, a capture that brings no tweet says why, based on how X sees the account (item 10). The tests
+the 11th, a capture that brings no tweet says why, based on how X sees the account (item 10). Since the
+afternoon of the 11th there is an installer for Linux, tested on this machine: it brings its own Python,
+puts xport in the applications menu and its page walks you through the first X login (item 14). The tests
 run offline, mypy in strict mode and ruff pass, and the Alpine image and the extension build in CI.
 
 Server-side scraping with twscrape is implemented and tested offline, but it's still blocked by the
@@ -532,6 +554,9 @@ What's in the code, where, and how far it's tested. "Real" means against x.com, 
 | Alpine image with nginx, extension build in Podman, CI | `deploy/`, `.github/workflows/ci.yml` | CI |
 | README in Spanish and English, GitHub Pages page, generated logo and icons | `README.md`, `README.en.md`, `docs/` | by eye |
 | Spanish and English everywhere: service, CLI, local page, extension, site and documents, with the computer's language and a selector | `locales/`, `i18n.py`, `extension/locales/`, `lib/i18n.ts`, `docs/en/` | tests (complete catalogs with no hard-coded texts, every document with its pair); vitest |
+| The `xport` launcher: starts the service if it is not running (or uses the running one), opens the page, closes it and tells what is missing to capture without a window | `launcher.py`, `service/pidfile.py` | tests, one with the real service; real on Linux (11/11) |
+| The package with its own Python and the installer: copy, shortcut, command, uninstall that keeps the data | `deploy/bundle/build.py`, `installer.py` | tests; real on Linux (11/11): build, smoke test, installed and uninstalled in a test HOME; Windows and macOS only in CI, **not tried on those systems** |
+| First launch: the page offers to log in to X before the first capture | `service/browser.py` (`login_now`), `POST /browser/login`, `service/page/` | tests with a fake Chrome; real (11/11): the button on the page and the login Chrome |
 
 ## Capturing without the browser in front
 
@@ -757,7 +782,13 @@ because the rest of the plan cites them.
 ### Phase 6: the installer (after this implementation)
 
 14. **Installers for Windows, macOS and Linux**, with what the decision above leaves solved: the service
-    packaged without uv or Python, an "xport" shortcut and the xport profile set up on first launch.
+    packaged without uv or Python, an "xport" shortcut and the xport profile set up on first launch. **Linux,
+    done on November 11** (see "How I built it"): `deploy/bundle/build.py`, `launcher.py` and `installer.py`.
+    Missing: trying the Windows and macOS packages on those systems (CI builds them and runs the smoke test,
+    nothing more); publishing the packages in a GitHub release (CI does not keep them today); signing the
+    Windows one and `xport.app`, because SmartScreen and Gatekeeper warn about an unsigned one; and, on those
+    two systems, the windowless browser of item 13. Until then, there the capture is made by the extension in
+    the everyday browser.
 15. **Publish the extension unlisted** on the Chrome Web Store (works for Chrome and Edge) and sign it
     unlisted on AMO (`web-ext sign --channel=unlisted`), so Chrome doesn't ask for developer mode and
     Firefox doesn't remove it on close. I'll get the accounts for both stores myself.

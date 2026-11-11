@@ -20,8 +20,9 @@ corta.](docs/img/flujo.es.svg)
 
 La captura desde el navegador anda contra x.com: abre la búsqueda de la cuenta, la scrollea sola, sigue cuando X la
 corta y retoma donde quedó. Desde el 10 de noviembre de 2026, en Linux, el servicio usa su propio Chrome, sin ninguna
-ventana a la vista: lo levanta cuando hay capturas en la cola y lo cierra cuando la cola se vacía. El CSV tiene estas
-columnas:
+ventana a la vista: lo levanta cuando hay capturas en la cola y lo cierra cuando la cola se vacía. Desde el 11 de
+noviembre hay un instalador para Linux que trae su propio Python y deja xport en el menú de aplicaciones (ver
+[Instalar](#instalar)). El CSV tiene estas columnas:
 
 | Columna | Qué tiene |
 |---|---|
@@ -45,17 +46,17 @@ adentro de cage.
 
 ## Uso diario: la página
 
-Con el servicio andando, `http://localhost:8000/` es la página de xport. Se abre en el navegador de siempre y sirve
-para varias cuentas a la vez:
+Con el servicio andando, `http://localhost:8000/` es la página de xport; con el instalador, la abre el acceso directo
+«xport». Se abre en el navegador de siempre y sirve para varias cuentas a la vez:
 
 1. **Cuentas y fechas:** una o varias cuentas, separadas por comas o espacios. «Desde» y «Hasta» entran los dos
    («hasta el 31/12/2025 inclusive»), y «Hasta» vacío quiere decir hoy. Hay atajos: último mes, último año y un año
    entero. Si el CSV va a un Excel configurado en castellano, marcá «Para Excel en castellano».
 2. **Capturar:** cada cuenta entra a la cola y se capturan de a una (X frena la búsqueda por cuenta y en paralelo no
    rinde). El servicio abre su propio Chrome con la extensión adentro de una pantalla virtual que nadie ve, así que no
-   tenés que dejar nada a la vista ni tocar el navegador. La primera vez, y cada vez que X cierre la sesión, aparece una
-   ventana común de Chrome para iniciar sesión en X; conviene una cuenta aparte de la tuya. Apenas entrás, la ventana se cierra
-   sola y la captura sigue. Si la cerrás sin iniciar sesión, o si el servicio no puede usar su Chrome (ver
+   tenés que dejar nada a la vista ni tocar el navegador. La primera vez, la página ofrece «Iniciar sesión en X», que
+   abre una ventana común de Chrome con el perfil de xport; conviene una cuenta aparte de la tuya. Si después X cierra la
+   sesión, esa ventana aparece sola. Apenas entrás, la ventana se cierra sola y la captura sigue. Si la cerrás sin iniciar sesión, o si el servicio no puede usar su Chrome (ver
    [Instalar](#instalar)), la cola la toma la extensión de tu navegador como antes: abre la búsqueda en una pestaña y
    **esa pestaña tiene que quedar a la vista** mientras captura.
 3. **Seguirla:** cada captura dice su estado (en cola, en curso, en pausa, terminada o cortada), hasta qué día llegó,
@@ -111,6 +112,32 @@ captura para no dejarte un CSV vacío: hace falta una versión nueva de xport, y
 
 ## Instalar
 
+### Con el instalador (Linux)
+
+El paquete trae su propio Python: no hace falta instalar Python, uv ni Node. Sí hacen falta Chrome, Chromium o Edge y
+[cage](https://github.com/cage-kiosk/cage), la pantalla invisible donde corre el Chrome de xport (`sudo pacman -S cage`
+en Arch, `sudo apt install cage` en Debian y Ubuntu), porque X le contesta 403 a Chrome en modo `--headless`.
+
+1. **Armar el paquete** (todavía no se publica): en la carpeta del repo, `bash deploy/extension-build.sh` y después
+   `uv run python deploy/bundle/build.py`. Queda en `dist/bundle/xport-<versión>-linux-x86_64.tar.gz`.
+2. **Instalarlo:** `tar -xzf xport-<versión>-linux-x86_64.tar.gz` y `./xport/install.sh`. Copia xport a
+   `~/.local/lib/xport`, lo agrega al menú de aplicaciones y como comando `xport` en `~/.local/bin`, dice si falta algo
+   (con el comando que lo instala en tu distribución) y abre la página. No pide contraseña.
+3. **La primera vez**, la página ofrece «Iniciar sesión en X»: abre una ventana común de Chrome con el perfil de xport.
+   Conviene una cuenta de X aparte de la tuya. Se hace una sola vez.
+
+Después, xport se abre desde el menú de aplicaciones o con `xport` en una terminal: arranca el servicio si no está
+corriendo y abre la página. `xport stop` lo cierra, `xport status` dice si está corriendo y `xport check` dice si está
+todo lo que hace falta. Para actualizar, se instala el paquete nuevo encima. Para desinstalar,
+`~/.local/lib/xport/uninstall.sh`; tus datos (el registro del tope, los tweets, los CSV y la sesión de X) quedan en
+`~/.local/share/xport`.
+
+En Windows y macOS el paquete se arma en CI (un `.zip` con `install.cmd` y un `xport.app` para arrastrar a
+Aplicaciones), pero todavía no se probó en esos sistemas, y ahí xport aún no captura sin ventana: la captura la hace la
+extensión cargada en tu navegador, con la pestaña a la vista.
+
+### Desde el código
+
 Hace falta [uv](https://docs.astral.sh/uv/), que trae el Python correcto (3.12, fijado en `.python-version`), y
 [Podman](https://podman.io) sin root para armar la extensión sin instalar Node. Con Node 22 también se puede armar sin
 Podman. Para capturar sin ventana, en Linux, hacen falta Chrome, Chromium o Edge y [cage](https://github.com/cage-kiosk/cage)
@@ -127,12 +154,12 @@ navegador. En Windows y macOS, por ahora, también.
    `bash deploy/native-host/install-linux.sh --chrome` (Chrome, Chrome Beta o Chromium). Para un navegador de Windows con el
    servicio en WSL, y para diagnosticar problemas, ver [deploy/native-host/README.md](deploy/native-host/README.md).
 
-### En Chrome
+#### En Chrome
 
 1. Abrí `chrome://extensions` y prendé «Modo de desarrollador», arriba a la derecha.
 2. Hacé clic en «Cargar descomprimida» y elegí la carpeta `extension/dist/chrome-mv3`.
 
-### En Firefox
+#### En Firefox
 
 1. Abrí `about:debugging` y elegí «Este Firefox».
 2. Hacé clic en «Cargar complemento temporal…» y elegí el archivo `extension/dist/firefox-mv2/manifest.json`.
@@ -246,8 +273,9 @@ crawl. **Nunca subas el `.env`:** tiene cookies de sesión. Lo capturado no vive
 
 ## Cómo se arma
 
-La integración continua (`.github/workflows/ci.yml`) corre ruff, mypy y los tests, y arma con Podman la imagen del
-servicio y las dos versiones de la extensión, con sus tests. A mano:
+La integración continua (`.github/workflows/ci.yml`) corre ruff, mypy y los tests, arma con Podman la imagen del
+servicio y las dos versiones de la extensión, con sus tests, y arma el paquete instalable en Linux, Windows y macOS,
+con una prueba de humo. A mano:
 
 ```sh
 podman build -f deploy/Containerfile -t xport .
@@ -283,6 +311,10 @@ decisiones:
   un solo lugar, y un cambio que el mapper no entiende da un error y no un CSV vacío.
 - Los defaults del CSV (UTF-8 sin BOM, coma, todo entre comillas, UTC, `<cuenta>_<desde>_<hasta>.csv`) están cerrados
   desde junio de 2026. El mismo rango reescribe su archivo y rangos distintos conviven.
+- El paquete instalable (`deploy/bundle/build.py`) trae el CPython portable de python-build-standalone que baja uv,
+  con las dependencias exactas de `uv.lock` instaladas adentro: quien lo usa no instala más que Chrome y cage. Se arma
+  en cada sistema porque algunas dependencias vienen compiladas (pydantic-core, uvloop). El instalador
+  (`installer.py`) lo corre ese mismo Python, así sus mensajes salen en los dos idiomas y se prueba con pytest.
 - La imagen es Alpine, en dos etapas, y sin navegador: Chromium sobre musl no vale la pena. Si alguna vez hace falta
   uno, va en otra imagen.
 - El CORS lo maneja solo FastAPI; nginx no agrega encabezados, para no duplicarlos.
@@ -308,6 +340,8 @@ compliance/    el registro del tope (SlidingWindowGate) y GatedProvider
 storage/       SQLite de datos (deduplicado, tramos terminados) y export CSV en streaming
 service/       FastAPI: capturas, export, estado del tope, bajadas desde el servidor
 cli.py         la línea de comandos (Typer)
+launcher.py    el comando xport del acceso directo: arranca el servicio y abre la página
+installer.py   el instalador del paquete
 extension/     extensión para Chrome y Firefox (WXT)
 ```
 
