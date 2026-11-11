@@ -84,7 +84,7 @@ paths hang from the data folder.
 |---|---|---|
 | `XPORT_DATA_DIR` | the data folder (absolute path) | your system's, see [How to use it](USAGE.en.md#privacy) |
 | `XPORT_BROWSER` | have the service capture with its own Chrome | `true` |
-| `XPORT_BROWSER_BIN`, `XPORT_BROWSER_CAGE` | the browser and cage it uses | the first ones found in `PATH` |
+| `XPORT_BROWSER_BIN`, `XPORT_BROWSER_CAGE` | the browser and cage it uses | found by itself: in `PATH` and, the browser, in the macOS and Windows install folders |
 | `XPORT_EXTENSION_DIR` | the built extension loaded into that Chrome | the package's, or `extension/dist/chrome-mv3` |
 | `BROWSER_PROFILE_DIR` | that Chrome's profile, with the X session | `browser` |
 | `XPORT_NOTIFY` | system notification when a capture finishes or stops | `true` |

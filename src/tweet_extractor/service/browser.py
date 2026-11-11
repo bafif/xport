@@ -65,15 +65,58 @@ LOGIN_URL = "https://x.com/i/flow/login"
 SESSION_COOKIE = "auth_token"
 
 
-def find_browser(explicit: Path | None) -> Path | None:
-    """El ejecutable del navegador: el configurado (`XPORT_BROWSER_BIN`) o el primero de
-    `BROWSER_NAMES` que esté en el PATH."""
+# macOS y Windows no ponen el navegador en el PATH: estas son sus carpetas de instalación, en
+# el mismo orden de preferencia.
+MAC_APPS = (
+    ("Google Chrome.app", "Google Chrome"),
+    ("Chromium.app", "Chromium"),
+    ("Microsoft Edge.app", "Microsoft Edge"),
+    ("Google Chrome Beta.app", "Google Chrome Beta"),
+    ("Microsoft Edge Beta.app", "Microsoft Edge Beta"),
+)
+WINDOWS_ROOTS = ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")
+WINDOWS_EXES = (
+    ("Google", "Chrome", "Application", "chrome.exe"),
+    ("Chromium", "Application", "chrome.exe"),
+    ("Microsoft", "Edge", "Application", "msedge.exe"),
+    ("Google", "Chrome Beta", "Application", "chrome.exe"),
+    ("Microsoft", "Edge Beta", "Application", "msedge.exe"),
+)
+
+
+def installed_browsers(platform: str, env: Mapping[str, str]) -> list[Path]:
+    """Donde se instalan Chrome, Chromium y Edge en macOS (en `/Applications` o en el
+    `~/Applications` de la persona) y en Windows (para todos o solo para la persona)."""
+    if platform == "darwin":
+        bases = [Path("/Applications")]
+        if env.get("HOME"):
+            bases.append(Path(env["HOME"]) / "Applications")
+        return [base / app / "Contents" / "MacOS" / exe for base in bases for app, exe in MAC_APPS]
+    if platform == "win32":
+        roots = [env[key] for key in WINDOWS_ROOTS if env.get(key)]
+        return [Path(root, *parts) for parts in WINDOWS_EXES for root in roots]
+    return []
+
+
+def find_browser(
+    explicit: Path | None,
+    *,
+    platform: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path | None:
+    """El ejecutable del navegador: el configurado (`XPORT_BROWSER_BIN`), el primero de
+    `BROWSER_NAMES` que esté en el PATH o, en macOS y Windows, el primero instalado en su
+    carpeta de siempre."""
     if explicit is not None:
         return explicit if explicit.is_file() else None
     for name in BROWSER_NAMES:
         found = shutil.which(name)
         if found:
             return Path(found)
+    places = installed_browsers(platform or sys.platform, os.environ if env is None else env)
+    for candidate in places:
+        if candidate.is_file():
+            return candidate
     return None
 
 

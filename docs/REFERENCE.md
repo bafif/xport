@@ -83,7 +83,7 @@ Las rutas relativas cuelgan de la carpeta de datos.
 |---|---|---|
 | `XPORT_DATA_DIR` | la carpeta de datos (ruta absoluta) | la de tu sistema, ver [Cómo se usa](USAGE.md#privacidad) |
 | `XPORT_BROWSER` | que el servicio capture con su propio Chrome | `true` |
-| `XPORT_BROWSER_BIN`, `XPORT_BROWSER_CAGE` | el navegador y cage que usa | los primeros que encuentre en el `PATH` |
+| `XPORT_BROWSER_BIN`, `XPORT_BROWSER_CAGE` | el navegador y cage que usa | los busca solo: en el `PATH` y, el navegador, en las carpetas de macOS y Windows |
 | `XPORT_EXTENSION_DIR` | la extensión armada que carga en ese Chrome | la del paquete o `extension/dist/chrome-mv3` |
 | `BROWSER_PROFILE_DIR` | el perfil de ese Chrome, con la sesión de X | `browser` |
 | `XPORT_NOTIFY` | notificación del sistema al terminar o cortarse una captura | `true` |
