@@ -1,120 +1,110 @@
-# native-host — auto-arranque del backend de xport
+# El host de native messaging: el navegador arranca el servicio
 
-[English](README.en.md)
+[English](README.en.md) · [Volver al README](../../README.md)
 
-Hace que **el navegador arranque y baje el FastAPI local solo**, vía la API de
-*native messaging*. Así la extensión deja de depender de tener un `uvicorn` corriendo
-a mano en WSL: abrís la extensión → se levanta el backend; cerrás el navegador → se baja.
+Para correr xport desde el código. Con el instalador no hace falta: el acceso directo «xport» arranca el servicio.
 
-**No reemplaza el servicio HTTP, lo supervisa.** La extensión sigue hablando HTTP
-contra `http://localhost:8000` (igual que antes). El Compliance Gate, los `mappers/` y
-el `storage/` quedan donde están, server-side. Esto solo automatiza el *arranque*.
+Con este host, **el navegador arranca el servicio local cuando se abre la extensión y lo baja cuando el navegador se
+cierra**, por *native messaging*. No reemplaza al servicio: la extensión le sigue hablando por HTTP en
+`http://localhost:8000`, y todo lo que se captura pasa por el mismo registro del tope. Una extensión no puede instalar
+el host por su cuenta, porque su manifiesto va en el sistema (o en el registro de Windows): por eso se instala una vez,
+aparte.
 
 ```
-navegador --connectNative--> host nativo --lanza--> uvicorn (FastAPI)
-   (mientras el puerto siga abierto, el backend sigue vivo)
-   (cierra el puerto = EOF = el host baja uvicorn)
+navegador --connectNative--> host.py --arranca--> uvicorn (el servicio)
+   mientras el canal sigue abierto, el servicio sigue vivo
+   el navegador cierra el canal (EOF) y el host baja el servicio
 ```
 
-## Piezas
+## Las piezas
 
-| archivo | qué es |
+| Archivo | Qué hace |
 |---|---|
-| `host.py` | supervisor (stdlib): arranca uvicorn, espera `/healthz`, bloquea en stdin, lo baja en EOF. Idempotente: si ya hay un server, no arranca otro ni lo mata. |
-| `xport-host.sh` | wrapper que el navegador ejecuta: localiza `uv` y entra al venv (`uv run python host.py`). |
-| `install-linux.sh` | instala el manifest para un navegador **dentro de** WSL/Linux (WSLg). |
-| `install-windows.ps1` | instala el manifest + registro para Firefox/Chrome **en Windows** (bridge a WSL vía `wsl.exe`). |
+| `host.py` | arranca uvicorn, espera `/healthz`, escucha el canal y baja el servicio cuando se cierra. Si ya hay un servicio corriendo, no arranca otro ni lo cierra. |
+| `xport-host.sh` | lo que ejecuta el navegador: busca `uv` y corre `host.py` en el entorno del repo |
+| `install-linux.sh` | instala el host para un navegador de Linux (también dentro de WSL, con WSLg) |
+| `install-windows.ps1` | instala el host para un navegador de Windows, con el repo dentro de WSL |
+| `doctor.sh`, `doctor.ps1` | revisan la instalación, del lado de Linux o WSL y del lado de Windows |
 
-## Elegí tu caso
+## Instalar
 
-### A) Firefox corre en Windows, backend en WSL (lo más común)
-
-Desde **PowerShell en Windows**, una sola vez:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<usuario>\xport\deploy\native-host\install-windows.ps1 -RepoPath /home/<usuario>/xport
-# si tu distro no es la default, sumá: -Distro Ubuntu
-```
-
-Escribe `%LOCALAPPDATA%\xport\xport-host.bat` + el manifest, y la clave de registro
-`HKCU\Software\Mozilla\NativeMessagingHosts\com.xport.host`. El `.bat` hace
-`wsl.exe -- bash xport-host.sh` y `wsl.exe` bridgea el canal nativo hasta WSL.
-
-### B) Firefox/Chrome corre dentro de WSL/Linux (WSLg)
-
-Desde **WSL**, una sola vez:
+### Navegador en Linux
 
 ```bash
 deploy/native-host/install-linux.sh            # Firefox
-deploy/native-host/install-linux.sh --chrome   # Chrome, Chrome Beta/Dev y Chromium
+deploy/native-host/install-linux.sh --chrome   # Chrome, Chrome Beta, Chrome Dev y Chromium
 ```
+
+### Navegador en Windows, repo en WSL
+
+Este camino no se probó de punta a punta. Desde PowerShell en Windows, una vez:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<usuario>\xport\deploy\native-host\install-windows.ps1 -RepoPath /home/<usuario>/xport
+# -Distro <nombre> si no es la distribución por defecto; -Chrome para Chrome
+```
+
+Deja `xport-host.bat` y el manifiesto en `%LOCALAPPDATA%\xport` y registra el host en
+`HKCU\Software\Mozilla\NativeMessagingHosts\com.xport.host` (con `-Chrome`, en la clave de Chrome). El `.bat` corre
+`wsl.exe -- bash xport-host.sh`, y `wsl.exe` lleva el canal hasta WSL.
 
 ## El id de la extensión
 
-El manifest autoriza por id, y los dos están fijados en `extension/wxt.config.ts`: en
-**Firefox**, **`xport@local`** (`browser_specific_settings.gecko.id`); en **Chrome**,
-**`aiildgjidjmeilmjinaililpijenmodi`**, que sale de la clave pública del manifest (`key`), así no cambia
-según la carpeta desde la que se carga. Los instaladores usan esos ids solos; si los cambiás,
-pasá `--ext-id=` / `-ExtId`.
+El manifiesto del host autoriza a la extensión por su id, fijado en `extension/wxt.config.ts`: `xport@local` en Firefox
+(`browser_specific_settings.gecko.id`) y `aiildgjidjmeilmjinaililpijenmodi` en Chrome, que sale de la clave pública del
+manifiesto (`key`) y no cambia según la carpeta desde la que se carga. Los instaladores ya usan esos ids; si cambiás
+alguno, pasalo con `--ext-id=<id>` o `-ExtId <id>`.
 
-## Verificación
+## Comprobar que anda
 
-1. Asegurate de que NO haya un `uvicorn` corriendo a mano (para probar el auto-arranque).
-2. Cargá/recargá la extensión (`about:debugging` en Firefox → "Cargar complemento temporal" → `dist/firefox-mv2/manifest.json`).
-3. En la consola del background (`about:debugging` → "Inspeccionar") debería verse
+1. Que no haya otro servicio de xport corriendo.
+2. Cargá o recargá la extensión: en Firefox, `about:debugging` → «Este Firefox» → «Cargar complemento temporal…» →
+   `extension/dist/firefox-mv2/manifest.json`.
+3. En la consola de la extensión (`about:debugging` → «Inspeccionar») aparece
    `native host conectado: backend local auto-arrancando`.
-4. A los ~1–2 s, `http://localhost:8000/healthz` responde. Logs del host: `~/.local/state/xport/native-host.log`.
-5. Cerrá Firefox → el host recibe EOF y baja uvicorn (salvo `XPORT_HOST_KEEP_ALIVE=1`).
+4. En uno o dos segundos, `http://localhost:8000/healthz` responde. El log del host está en
+   `~/.local/state/xport/native-host.log`.
+5. Al cerrar Firefox, el host baja el servicio (salvo con `XPORT_HOST_KEEP_ALIVE=1`).
 
-## Diagnóstico (doctor)
+## Diagnóstico
 
-Dos chequeos automáticos, uno por lado del borde WSL:
+- **Linux o WSL:** `deploy/native-host/doctor.sh` revisa que el servicio pueda arrancar y, si el puerto 8000 está
+  libre, prueba el host de verdad, sin navegador (`--no-live` saltea esa prueba). Desde Windows se corre con
+  `wsl bash /home/<usuario>/xport/deploy/native-host/doctor.sh`.
+- **Windows:** `doctor.ps1` revisa el registro, el manifiesto, el `.bat` y que Windows llegue al servicio:
 
-- **WSL** — que el backend pueda arrancar (+ auto-test real del supervisor si `:8000` está libre):
-  ```bash
-  deploy/native-host/doctor.sh            # --no-live para saltar el auto-test
-  ```
-- **Windows** — registro + manifest + bridge `.bat`→WSL + alcanzabilidad desde Windows:
   ```powershell
   powershell -ExecutionPolicy Bypass -File \\wsl.localhost\<distro>\home\<usuario>\xport\deploy\native-host\doctor.ps1
-  #   -Distro <d>   si no es la default     -Chrome   para el manifest de Chrome
+  # -Distro <nombre> si no es la distribución por defecto; -Chrome para el host de Chrome
   ```
-  (También podés correr el de WSL desde PowerShell: `wsl bash /home/<usuario>/xport/deploy/native-host/doctor.sh`.)
 
 ## Desinstalar
 
 ```bash
-deploy/native-host/install-linux.sh --uninstall
-# Windows:
+deploy/native-host/install-linux.sh --uninstall            # con --chrome, el de Chrome
+```
+
+```powershell
 powershell -ExecutionPolicy Bypass -File ...\install-windows.ps1 -Uninstall
 ```
 
 ## Variables de entorno (opcionales)
 
-| var | default | para qué |
+| Variable | Por defecto | Para qué |
 |---|---|---|
-| `XPORT_PORT` / `XPORT_HOST` | `8000` / `127.0.0.1` | dónde bindea uvicorn (debe matchear el `DEFAULT_BASE` de la extensión) |
-| `XPORT_HOST_KEEP_ALIVE` | `0` | `1` = NO bajar uvicorn en EOF. Con **Chrome MV3** se prende solo (su service worker es efímero y cerraría el puerto al dormirse). |
-| `XPORT_HOST_LOG` | `~/.local/state/xport/native-host.log` | logfile del supervisor |
+| `XPORT_PORT`, `XPORT_HOST` | `8000`, `127.0.0.1` | dónde escucha el servicio; tiene que ser la dirección que usa la extensión |
+| `XPORT_HOST_KEEP_ALIVE` | `0` | con `1`, el host no baja el servicio cuando se cierra el canal; con Chrome se prende solo |
+| `XPORT_HOST_LOG` | `~/.local/state/xport/native-host.log` | el log del host |
 
-## Caveats
+## A tener en cuenta
 
-- **WSL en modo NAT + `localhost` (IPv4 vs IPv6)**: el forwarding de WSL2 reenvía IPv4
-  `127.0.0.1`; `localhost` en Windows resuelve a `::1` (IPv6) primero. El navegador hace
-  fallback a IPv4 (la extensión anda con `localhost:8000`), pero herramientas estrictas
-  como `Invoke-WebRequest` de PowerShell no — por eso `doctor.ps1` usa `127.0.0.1`. Si
-  Windows **no** alcanza el backend ni por `127.0.0.1` (pero sí responde dentro de WSL),
-  el forwarding está roto: poné `localhostForwarding=true` bajo `[wsl2]` en `%UserProfile%\.wslconfig`
-  y corré `wsl --shutdown`, o pasá a `networkingMode=mirrored`. (La IP de WSL `172.x` sirve
-  de fallback pero **cambia en cada reinicio**, por eso no se hardcodea.)
-- **Chrome MV3**: el service worker se duerme y cerraría el puerto → el host bajaría
-  uvicorn. El host reconoce a Chrome por el origen `chrome-extension://…` que le pasa como
-  argumento y en ese caso deja uvicorn vivo, como con `XPORT_HOST_KEEP_ALIVE=1`; se baja
-  al reiniciar o a mano. **Firefox MV2** tiene background persistente: anda sin tocar nada.
-- **Ledger del gate compartido**: el host, un `uvicorn` manual y la CLI usan la misma
-  carpeta de datos por usuario (`~/.local/share/xport` en Linux; `XPORT_DATA_DIR` la
-  cambia), arranquen desde donde arranquen, así que el ledger es uno solo. Si ya hay
-  otro xport en 8000 u 8080, el servicio no arranca y el log del host dice por qué. El
-  auto-arranque no abre ningún camino que saltee el gate.
-- **Una sola vez, fuera del navegador**: native messaging no se puede shippear solo por
-  la web store — el manifest del host vive en el FS / registro. Por eso hay un instalador.
+- **Chrome:** el service worker de una extensión MV3 se duerme y cerraría el canal. El host reconoce a Chrome por el
+  origen `chrome-extension://…` que recibe y deja el servicio vivo, como con `XPORT_HOST_KEEP_ALIVE=1`; se baja al
+  reiniciar o a mano. Firefox (MV2) tiene un background persistente y no necesita nada.
+- **Un solo registro del tope:** el host, un `uvicorn` levantado a mano y la CLI usan la misma carpeta de datos, así
+  que el registro es uno solo. Si ya hay otro xport en el puerto 8000 o el 8080, el servicio no arranca y el log del
+  host dice por qué.
+- **WSL en modo NAT:** WSL reenvía `127.0.0.1`, pero en Windows `localhost` resuelve primero a `::1`. El navegador
+  vuelve solo a IPv4; `Invoke-WebRequest` no, y por eso `doctor.ps1` usa `127.0.0.1`. Si Windows no llega al servicio
+  ni por `127.0.0.1` y dentro de WSL sí responde, el reenvío está roto: poné `localhostForwarding=true` bajo `[wsl2]`
+  en `%UserProfile%\.wslconfig` y corré `wsl --shutdown`, o pasá a `networkingMode=mirrored`.
