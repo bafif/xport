@@ -87,7 +87,7 @@ def test_el_puerto_sale_del_entorno() -> None:
 def test_el_servicio_corre_con_el_mismo_python(tmp_path: Path) -> None:
     cmd = launcher.service_command(8000, tmp_path / "python3")
     assert cmd[0] == str(tmp_path / "python3")
-    assert cmd[1:4] == ["-m", "uvicorn", launcher.APP]
+    assert cmd[1:5] == ["-I", "-m", "uvicorn", launcher.APP]  # aislado del entorno
     assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
     assert cmd[cmd.index("--port") + 1] == "8000"
 
@@ -292,3 +292,49 @@ def test_arranca_y_baja_el_servicio_de_verdad(monkeypatch: pytest.MonkeyPatch) -
         for proc in procs:
             if proc.poll() is None:
                 proc.kill()
+
+
+# ── lo que hace falta para capturar sin ventana (`xport check`) ──
+
+
+def test_como_instalar_cage_segun_la_distro(tmp_path: Path) -> None:
+    rel = tmp_path / "os-release"
+    assert launcher.package_command("cage", rel) is None  # sin el archivo
+    rel.write_text("ID=arch\n")
+    assert launcher.package_command("cage", rel) == "sudo pacman -S cage"
+    rel.write_text('NAME="Linux Mint"\nID=linuxmint\nID_LIKE="ubuntu debian"\n')
+    assert launcher.package_command("cage", rel) == "sudo apt install cage"
+    rel.write_text("ID=fedora\n")
+    assert launcher.package_command("cage", rel) == "sudo dnf install cage"
+    rel.write_text("ID=nixos\n")
+    assert launcher.package_command("cage", rel) is None
+
+
+def test_lo_que_falta_para_capturar_sin_ventana(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(launcher, "find_browser", lambda explicit: None)
+    monkeypatch.setattr(launcher, "find_virtual_display", lambda explicit=None: None)
+    monkeypatch.setattr(launcher, "package_command", lambda package: f"sudo pacman -S {package}")
+    settings = Settings(xport_extension_dir=tmp_path)
+    lines = launcher.requirements(settings, "linux")
+    assert [ok for ok, _ in lines] == [False, False, False]
+    assert "sudo pacman -S cage" in lines[1][1]
+    windows = launcher.requirements(settings, "win32")
+    assert "todavía no captura sin ventana" in windows[1][1]
+
+
+def test_check_con_todo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "manifest.json").write_text("{}")
+    monkeypatch.setattr(launcher, "find_browser", lambda explicit: Path("/usr/bin/chromium"))
+    monkeypatch.setattr(
+        launcher, "find_virtual_display", lambda explicit=None: Path("/usr/bin/cage")
+    )
+    monkeypatch.setenv("XPORT_EXTENSION_DIR", str(tmp_path))
+    monkeypatch.setattr(launcher.sys, "platform", "linux")
+    assert launcher.main(["check"]) == 0
+    out = capsys.readouterr().out
+    assert "✔ Navegador: /usr/bin/chromium" in out
+    assert "✔ Pantalla invisible (cage): /usr/bin/cage" in out

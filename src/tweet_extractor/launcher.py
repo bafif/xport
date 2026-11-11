@@ -5,6 +5,8 @@
 - `xport start`: lo arranca sin abrir la página.
 - `xport stop`: lo baja (el instalador lo usa antes de reemplazar los archivos).
 - `xport status`: dice si está corriendo.
+- `xport check`: dice si están el navegador, la pantalla virtual y la extensión, y cómo
+  instalar lo que falte (el instalador lo muestra al terminar).
 
 El servicio queda en segundo plano, separado del lanzador: sigue vivo cuando el lanzador
 termina, porque lo usan la página, la extensión y el navegador propio de xport. Si ya corre otro
@@ -38,6 +40,7 @@ from pydantic import ValidationError
 
 from tweet_extractor.config import Settings
 from tweet_extractor.i18n import LANGS, argv_lang, parse_lang, set_lang, system_lang, t
+from tweet_extractor.service.browser import find_browser, find_virtual_display
 from tweet_extractor.service.notify import system_notify
 from tweet_extractor.service.pidfile import clear_pid, pid_path, read_pid
 from tweet_extractor.service.routers import SERVICE_NAME
@@ -50,7 +53,8 @@ STOP_TIMEOUT_S = 15.0
 POLL_S = 0.25
 LOG_FILE = "service.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
-COMMANDS = ("open", "start", "stop", "status")
+COMMANDS = ("open", "start", "stop", "status", "check")
+OS_RELEASE = Path("/etc/os-release")
 
 
 class Probe(StrEnum):
@@ -117,8 +121,10 @@ def service_command(port: int, python: Path | None = None) -> list[str]:
         quiet = exe.with_name("pythonw.exe")
         if quiet.is_file():
             exe = quiet
+    # `-I`: ni PYTHONPATH ni los paquetes del usuario se meten en el Python del instalador.
     return [
         str(exe),
+        "-I",
         "-m",
         "uvicorn",
         APP,
@@ -260,6 +266,65 @@ def stop(
     raise LaunchError(t("launcher.stop_failed", pid=pid))
 
 
+def package_command(package: str, os_release: Path = OS_RELEASE) -> str | None:
+    """Cómo se instala un paquete en esta distribución de Linux, si es una conocida."""
+    ids: list[str] = []
+    try:
+        for line in os_release.read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition("=")
+            if key in ("ID", "ID_LIKE"):
+                ids += value.strip().strip('"').lower().split()
+    except OSError:
+        return None
+    for family, tool in (
+        ("arch", "pacman -S"),
+        ("debian", "apt install"),
+        ("ubuntu", "apt install"),
+        ("fedora", "dnf install"),
+        ("rhel", "dnf install"),
+        ("suse", "zypper install"),
+        ("opensuse", "zypper install"),
+    ):
+        if family in ids:
+            return f"sudo {tool} {package}"
+    return None
+
+
+def requirements(settings: Settings, platform: str | None = None) -> list[tuple[bool, str]]:
+    """Lo que hace falta para capturar sin ninguna ventana (punto 13 de docs/PLAN.md): cada
+    cosa, si está, y qué hacer si falta."""
+    browser = find_browser(settings.xport_browser_bin)
+    ext = settings.xport_extension_dir
+    has_ext = ext is not None and (ext / "manifest.json").is_file()
+    lines = [
+        (True, t("check.browser", path=browser))
+        if browser is not None
+        else (False, t("check.no_browser")),
+        (True, t("check.extension", path=ext)) if has_ext else (False, t("check.no_extension")),
+    ]
+    if (platform or sys.platform).startswith("linux"):
+        cage = find_virtual_display(settings.xport_browser_cage)
+        if cage is not None:
+            lines.insert(1, (True, t("check.cage", path=cage)))
+        else:
+            cmd = package_command("cage")
+            hint = t("check.no_cage_cmd", cmd=cmd) if cmd else t("check.no_cage")
+            lines.insert(1, (False, hint))
+    else:
+        # Windows y macOS todavía no tienen el navegador sin ventana (el plan B del punto 13).
+        lines.insert(1, (False, t("check.no_hidden_browser", path=ext or "-")))
+    return lines
+
+
+def print_requirements(settings: Settings) -> bool:
+    """Las muestra y dice si está todo."""
+    lines = requirements(settings)
+    for ok, line in lines:
+        print(f"{'✔' if ok else '✘'} {line}")
+    print(t("check.data_dir", path=settings.xport_data_dir))
+    return all(ok for ok, _ in lines)
+
+
 def open_page(url: str) -> None:
     if not webbrowser.open(url):
         print(t("launcher.open_manually", url=url))
@@ -300,6 +365,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else t("launcher.not_running")
             )
             return 0 if running else 3
+        if args.command == "check":
+            return 0 if print_requirements(settings) else 2
         if args.command == "stop":
             print(t("launcher.stopped") if stop(settings, port) else t("launcher.not_running"))
             return 0
