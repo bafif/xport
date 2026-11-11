@@ -110,7 +110,7 @@ reinstall: `~/.local/share/xport` on Linux, `%LOCALAPPDATA%\xport` on Windows an
 ## Building the installer
 
 The package is built on the same system it is for, because some dependencies come compiled. You need git,
-[uv](https://docs.astral.sh/uv/) and Node 22 or newer:
+[uv](https://docs.astral.sh/uv/) and Node 26 or newer:
 
 - Linux: with your distribution's package manager, or [fnm](https://github.com/Schniz/fnm) for Node.
 - macOS: with [Homebrew](https://brew.sh), `brew install uv node`.

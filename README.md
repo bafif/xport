@@ -67,7 +67,7 @@ sistema, se arma con unos pocos comandos ([cómo](docs/INSTALL.md#armar-el-insta
 
 ### En Linux, desde la terminal
 
-Con [uv](https://docs.astral.sh/uv/) y Node 22 instalados:
+Con [uv](https://docs.astral.sh/uv/) y Node 26 instalados:
 
 ```sh
 git clone https://github.com/bafif/xport && cd xport

@@ -34,7 +34,7 @@ Without Node on the machine, from the repository root and with Podman:
 bash deploy/extension-build.sh   # type check, tests and both versions in dist/
 ```
 
-With Node 22 (the version is in `.node-version`), from `extension/`:
+With Node 26 (the version is in `.node-version`), from `extension/`:
 
 ```bash
 npm ci                 # dependencies from package-lock.json

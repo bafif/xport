@@ -65,7 +65,7 @@ system, it takes a few commands to build one ([how](docs/INSTALL.en.md#building-
 
 ### On Linux, from the terminal
 
-With [uv](https://docs.astral.sh/uv/) and Node 22 installed:
+With [uv](https://docs.astral.sh/uv/) and Node 26 installed:
 
 ```sh
 git clone https://github.com/bafif/xport && cd xport

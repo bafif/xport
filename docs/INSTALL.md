@@ -109,7 +109,7 @@ reinstalás: `~/.local/share/xport` en Linux, `%LOCALAPPDATA%\xport` en Windows 
 ## Armar el instalador
 
 El paquete se arma en el mismo sistema para el que es, porque algunas dependencias vienen compiladas. Hacen falta git,
-[uv](https://docs.astral.sh/uv/) y Node 22 o más nuevo:
+[uv](https://docs.astral.sh/uv/) y Node 26 o más nuevo:
 
 - Linux: con el gestor de paquetes de tu distribución, o [fnm](https://github.com/Schniz/fnm) para Node.
 - macOS: con [Homebrew](https://brew.sh), `brew install uv node`.
